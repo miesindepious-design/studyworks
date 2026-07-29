@@ -1,5 +1,4 @@
 {
-  "version": 3,
   "buildCommand": "npm run build:all",
   "installCommand": "npm install",
   "outputDirectory": "dist",
