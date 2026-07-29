@@ -1,0 +1,418 @@
+// StudyWorks Prisma schema
+// Run: npx prisma migrate dev --name init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Auth (Better Auth tables) ─────────────────────────────────────────────────
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  emailVerified Boolean  @default(false)
+  image         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tier          Tier     @default(FREE)
+  stripeCustomerId       String? @unique
+  stripeSubscriptionId   String? @unique
+  stripePriceId          String?
+  stripeCurrentPeriodEnd DateTime?
+
+  sessions      Session[]
+  accounts      Account[]
+  verifications Verification[]
+
+  notes             Note[]
+  contacts          Contact[]
+  flashcards        Flashcard[]
+  folders           Folder[]
+  practiceQuestions PracticeQuestion[]
+  savedSearches     SavedSearch[]
+  aiSettings        AISettings?
+
+  // Phase 2
+  streak            Streak?
+  folderShares      FolderShare[]
+  supportTickets    SupportTicket[]
+  inboundEmailToken InboundEmailToken?
+
+  // Phase 3: multiplayer quiz
+  gameRooms   GameRoom[]
+  gamePlayers GamePlayer[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  userId                String
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([providerId, accountId])
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user       User     @relation(fields: [identifier], references: [email], onDelete: Cascade)
+
+  @@index([identifier])
+}
+
+// ── Subscription tier ─────────────────────────────────────────────────────────
+enum Tier {
+  FREE
+  PRO
+}
+
+// ── AI Settings ───────────────────────────────────────────────────────────────
+model AISettings {
+  id                   String  @id @default(cuid())
+  userId               String  @unique
+  provider             String  @default("gemini")
+  model                String  @default("gemini-1.5-flash")
+  enabled              Boolean @default(false)
+  encryptedApiKey      String? // stored encrypted server-side
+  customSummaryPrompt  String?
+  customFlashcardPrompt String?
+  customQAPrompt       String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ── Notes ─────────────────────────────────────────────────────────────────────
+model Note {
+  id          String   @id @default(cuid())
+  userId      String
+  title       String
+  content     String   @db.Text
+  type        String   @default("note") // note | article | idea | project
+  tags        String[] @default([])
+  summary     String?  @db.Text
+  folderId    String?
+  nextReminder DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user      User      @relation(fields: [userId],  references: [id], onDelete: Cascade)
+  folder    Folder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  highlights    Highlight[]
+  personalNotes PersonalNote[]
+  attachments   Attachment[]
+
+  @@index([userId])
+  @@index([userId, folderId])
+  @@index([userId, type])
+}
+
+model Highlight {
+  id        String   @id @default(cuid())
+  noteId    String
+  text      String
+  color     String
+  note      String?  // optional user annotation attached to the highlight
+  createdAt DateTime @default(now())
+
+  note_rel Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  @@index([noteId])
+}
+
+model PersonalNote {
+  id        String   @id @default(cuid())
+  noteId    String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  @@index([noteId])
+}
+
+model Attachment {
+  id         String   @id @default(cuid())
+  noteId     String
+  name       String
+  type       String   // pdf | image | audio
+  storageKey String   // S3/R2 object key
+  url        String   // presigned or public URL
+  size       Int
+  uploadedAt DateTime @default(now())
+
+  note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  @@index([noteId])
+}
+
+// ── Contacts ──────────────────────────────────────────────────────────────────
+model Contact {
+  id           String    @id @default(cuid())
+  userId       String
+  name         String
+  role         String
+  email        String?
+  phone        String?
+  notes        String?   @db.Text
+  tags         String[]  @default([])
+  folderId     String?
+  nextReminder DateTime?
+  lastContacted DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user   User    @relation(fields: [userId],   references: [id], onDelete: Cascade)
+  folder Folder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+}
+
+// ── Flashcards ────────────────────────────────────────────────────────────────
+model Flashcard {
+  id          String    @id @default(cuid())
+  userId      String
+  question    String    @db.Text
+  answer      String    @db.Text
+  tags        String[]  @default([])
+  folderId    String?
+  difficulty  String?   // easy | medium | hard
+  nextReview  DateTime?
+  interval    Int?
+  repetitions Int?
+  ef          Float?    // SM-2 easiness factor; defaults to 2.5 if unset
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user   User    @relation(fields: [userId],   references: [id], onDelete: Cascade)
+  folder Folder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([userId, nextReview])
+}
+
+// ── Practice Questions ────────────────────────────────────────────────────────
+model PracticeQuestion {
+  id       String   @id @default(cuid())
+  userId   String
+  question String   @db.Text
+  answer   String   @db.Text
+  type     String   // multiple-choice | true-false | open
+  options  String[] @default([])
+  noteId   String?
+
+  // Spaced-repetition state. Same shape as Flashcard so a single SM-2
+  // implementation can drive both. The first version of the schema didn't
+  // have these; existing rows will see `null` and the client treats that
+  // as "due immediately" (nextReview: undefined → falls to the front of
+  // the queue).
+  nextReview          DateTime?
+  interval            Int?
+  repetitions         Int?
+  ef                  Float?
+  lastAnsweredCorrect Boolean?
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@index([userId, nextReview])
+}
+
+// ── Folders ───────────────────────────────────────────────────────────────────
+model Folder {
+  id          String  @id @default(cuid())
+  userId      String
+  name        String
+  isSmart     Boolean @default(false)
+  smartFilter String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notes     Note[]
+  contacts  Contact[]
+  flashcards Flashcard[]
+
+  @@index([userId])
+}
+
+// ── Saved Searches ────────────────────────────────────────────────────────────
+model SavedSearch {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  query     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+}
+
+// ── Phase 2: Streaks (cross-device) ───────────────────────────────────────────
+// One row per user. Client merges local IDB streak with this on sync:
+// counts are summed per-day (max wins per day), streak recomputed.
+model Streak {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  lastReviewDate String?  // YYYY-MM-DD
+  currentStreak  Int      @default(0)
+  longestStreak  Int      @default(0)
+  totalReviews   Int      @default(0)
+  dailyCounts    Json     @default("{}") // { "2026-07-25": 14, ... } pruned to 90d
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ── Phase 2: Folder sharing ───────────────────────────────────────────────────
+// Read-only share links: /shared/:token shows the folder's notes.
+model FolderShare {
+  id        String    @id @default(cuid())
+  token     String    @unique @default(cuid()) // unguessable URL token
+  folderId  String
+  userId    String    // owner
+  createdAt DateTime  @default(now())
+  expiresAt DateTime? // null = never expires
+  revoked   Boolean   @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([folderId])
+  @@index([userId])
+}
+
+// ── Phase 2: Support inbox ────────────────────────────────────────────────────
+model SupportTicket {
+  id        String   @id @default(cuid())
+  userId    String
+  subject   String
+  body      String
+  status    String   @default("open") // open | replied | closed
+  reply     String?  // support's reply (single-thread for now)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@index([status])
+}
+
+// ── Phase 2: Email-to-save ────────────────────────────────────────────────────
+// Each user gets a secret inbound address token: save-<token>@inbound.domain.
+// The mail provider (Resend/Mailgun/Cloudflare Email Routing) POSTs parsed
+// emails to /api/inbound-email; we look up the token and create a note.
+// ── Phase 3: Multiplayer quiz (real-time, room-code based) ────────────────────
+// A GameRoom is created by a host, joined via a shareable code. Questions come
+// from the host's flashcards or an AI-generated topic. Players answer in real
+// time over WebSocket; XP = base × speed bonus (faster answer = more XP).
+model GameRoom {
+  id          String   @id @default(cuid())
+  code        String   @unique @default(cuid()) // short shareable code (we shorten in app)
+  hostId      String
+  status      String   @default("lobby") // lobby | live | finished
+  source      String   @default("flashcards") // flashcards | topic
+  topic       String?  // when source === 'topic'
+  questionIds String[] // ordered GameQuestion ids
+  settings    Json?    // { perQuestionSec, baseXp }
+  createdAt   DateTime @default(now())
+
+  host     User          @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  players  GamePlayer[]
+  questions GameQuestion[]
+  answers  GameAnswer[]
+  @@index([hostId])
+}
+
+model GamePlayer {
+  id        String   @id @default(cuid())
+  roomId    String
+  userId    String
+  name      String
+  xp        Int      @default(0)
+  joinedAt  DateTime @default(now())
+
+  room  GameRoom   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers GameAnswer[]
+  @@unique([roomId, userId])
+  @@index([roomId])
+}
+
+model GameQuestion {
+  id        String   @id @default(cuid())
+  roomId    String
+  // Snapshot of the question so the game is self-contained (doesn't depend on
+  // the host's live flashcard data after creation).
+  prompt    String
+  options   String[] // answer choices (shuffled at creation)
+  answerIdx Int      // index into options of the correct answer
+  order     Int      // position in the round
+
+  room     GameRoom      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  answers  GameAnswer[]
+  @@index([roomId])
+}
+
+model GameAnswer {
+  id          String   @id @default(cuid())
+  roomId      String
+  questionId  String
+  playerId    String
+  choiceIdx   Int?     // null = timed out / no answer
+  correct     Boolean  @default(false)
+  responseMs  Int?     // time taken to answer (null = timeout)
+  xpAwarded   Int      @default(0)
+  answeredAt  DateTime @default(now())
+
+  room     GameRoom      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  question GameQuestion  @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  player   GamePlayer    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  @@index([roomId])
+  @@index([playerId])
+}
+
+// ── Phase 2: Email-to-save ────────────────────────────────────────────────────
+// Each user gets a secret inbound address token: save-<token>@inbound.domain.
+// The mail provider (Resend/Mailgun/Cloudflare Email Routing) POSTs parsed
+// emails to /api/inbound-email; we look up the token and create a note.
+model InboundEmailToken {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  token     String   @unique @default(cuid())
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

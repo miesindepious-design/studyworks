@@ -1,0 +1,38 @@
+{
+  "name": "studyworks-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:migrate": "prisma migrate dev",
+    "db:generate": "prisma generate",
+    "db:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1086.0",
+    "@aws-sdk/s3-request-presigner": "^3.1086.0",
+    "@hono/node-server": "^1.14.3",
+    "@hono/zod-validator": "^0.4.3",
+    "@prisma/client": "^6.6.0",
+    "better-auth": "^1.2.7",
+    "dotenv": "^16.4.7",
+    "hono": "^4.12.32",
+    "resend": "^4.5.1",
+    "stripe": "^17.7.0",
+    "ws": "^8.21.1",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.1",
+    "prisma": "^6.6.0",
+    "tsx": "^4.19.3",
+    "typescript": "~5.6.2",
+    "vitest": "^2.1.8"
+  }
+}

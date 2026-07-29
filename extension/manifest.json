@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "StudyWorks Web Clipper",
+  "version": "1.0.0",
+  "description": "Save the current page to StudyWorks as a note with one click.",
+  "permissions": ["activeTab", "contextMenus"],
+  "action": {
+    "default_title": "Save to StudyWorks",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "48": "icon-48.png",
+    "128": "icon-128.png"
+  }
+}
