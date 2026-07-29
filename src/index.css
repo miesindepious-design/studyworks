@@ -174,6 +174,14 @@ body {
   0%   { background-position: -480px 0; }
   100% { background-position: 480px 0; }
 }
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
 
 .animate-in  { animation: fadeIn var(--t) var(--ease) both; }
 .animate-up  { animation: slideUp var(--t-slow) var(--ease) both; }
@@ -189,6 +197,64 @@ body {
 .stagger > *:nth-child(7)  { animation-delay: 210ms; }
 .stagger > *:nth-child(8)  { animation-delay: 245ms; }
 .stagger > *:nth-child(n+9){ animation-delay: 280ms; }
+
+/* ── studyworks2 Design System Merge ───────────────────────────────────────── */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fade-in .25s ease both;
+}
+
+.bg-noise {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 0);
+  background-size: 24px 24px;
+}
+
+.cyan-glow {
+  box-shadow: 0 0 20px -3px rgba(45, 212, 191, 0.25);
+}
+
+.cyan-glow-sm {
+  box-shadow: 0 0 10px -2px rgba(45, 212, 191, 0.2);
+}
+
+.cyan-border-glow {
+  border-color: rgba(45, 212, 191, 0.5);
+  box-shadow: 0 0 12px -2px rgba(45, 212, 191, 0.3);
+}
+
+.heading-font {
+  font-family: 'Hanken Grotesk', system-ui, sans-serif;
+}
+
+.mono-font {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Selection */
+::selection {
+  background: rgba(45, 212, 191, 0.35);
+  color: black;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0c0c0e;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2a2e;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
