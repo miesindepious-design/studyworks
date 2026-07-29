@@ -1,3 +1,12 @@
+export type TabType = 
+  | 'dashboard' 
+  | 'notes' 
+  | 'contacts' 
+  | 'flashcards' 
+  | 'pricing' 
+  | 'settings' 
+  | 'multiplayer';
+
 export interface Folder {
   id: string;
   name: string;

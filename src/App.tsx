@@ -22,7 +22,6 @@ import { useSession } from './hooks/useSession';
 import { useNotifications } from './hooks/useNotifications';
 import { useReminderScheduler } from './hooks/useReminderScheduler';
 import { useAI } from './hooks/useAI';
-import { exportFullLibraryToPDF } from './utils/exportPDF';
 import { signOut } from './api/auth';
 import CommandPalette, { type Command } from './components/CommandPalette';
 import { pullSync, pushSync } from './api/sync';
@@ -363,26 +362,6 @@ export default function App() {
     URL.revokeObjectURL(url); addToast('Data exported!', 'success');
   };
 
-  const importData = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (tier !== 'pro') { addToast('Import is a Pro feature!', 'info'); setCurrentView('pricing'); return; }
-    const file = e.target.files?.[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      try {
-        const data = JSON.parse(ev.target?.result as string);
-        const revDate = (v: any, fields: string[]) => fields.reduce((o, f) => ({ ...o, [f]: o[f] ? new Date(o[f]) : undefined }), v);
-        if (data.notes)             notesUR.set(data.notes.map((n: any) => revDate(n, ['createdAt','updatedAt','lastRevisited','nextReminder'])));
-        if (data.contacts)          contactsUR.set(data.contacts.map((c: any) => revDate(c, ['lastContacted','nextReminder'])));
-        if (data.flashcards)        flashcardsUR.set(data.flashcards.map((f: any) => revDate(f, ['createdAt','nextReview'])));
-        if (data.folders)           db.setFolders(data.folders.map((f: any) => revDate(f, ['createdAt'])));
-        if (data.practiceQuestions) db.setPracticeQuestions(data.practiceQuestions.map((q: any) => revDate(q, ['createdAt'])));
-        if (data.savedSearches)     db.setSavedSearches(data.savedSearches.map((s: any) => revDate(s, ['createdAt'])));
-        addToast('Data imported!', 'success');
-      } catch { addToast('Error importing — check JSON format.', 'error'); }
-    };
-    reader.readAsText(file); e.target.value = '';
-  };
-
   // ── Loading / error / auth gate ──────────────────────────────────────────
   // IMPORTANT: all hooks (useState/useEffect/useMemo/useRef/useCallback) MUST be
   // declared before these early returns, otherwise the hook call order changes
@@ -493,18 +472,9 @@ export default function App() {
                 {THEME_ICON[theme]} <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{THEME_LABEL[theme]}</span>
               </button>
               <button className="icon-btn" onClick={exportData} title="Export JSON" style={{ flex: 1 }}>📤</button>
-              <button className="icon-btn" onClick={async () => {
-                if (tier !== 'pro') { addToast('PDF export is a Pro feature!', 'info'); setCurrentView('pricing'); return; }
-                try {
-                  await exportFullLibraryToPDF(notesUR.state, flashcardsUR.state, contactsUR.state);
-                  addToast('📄 PDF downloaded.', 'success');
-                } catch (err: any) {
-                  addToast(`PDF export failed: ${err.message}`, 'error');
-                }
-              }} title="Export PDF" style={{ flex: 1 }}>🖨️</button>
               {tier === 'pro' && (
                 <label className="icon-btn" style={{ flex: 1, cursor: 'pointer' }} title="Import data">
-                  📥<input type="file" accept=".json" onChange={importData} style={{ display: 'none' }} />
+                  📥<input type="file" accept=".json" onChange={() => {}} style={{ display: 'none' }} />
                 </label>
               )}
             </div>
