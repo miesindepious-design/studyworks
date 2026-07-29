@@ -11,4 +11,4 @@ const server = serve({ fetch: app.fetch, port }, () => {
 }) as unknown as Server;
 
 // Attach the multiplayer quiz WebSocket server to the same HTTP server.
-attachGameWebSocket(server);
+attachGameWebSocket();

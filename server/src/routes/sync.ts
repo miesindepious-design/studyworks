@@ -183,7 +183,7 @@ function isIncomingNewer(
 
 syncRouter.post('/', zValidator('json', SyncBody), async c => {
   const user = c.get('user');
-  const body = c.req.valid('json');
+  const body = c.req.valid('json') as z.infer<typeof SyncBody>;
 
   // Server-side tier enforcement: a free user can't sneak past the 50-item
   // limit by pushing extra items via sync. Pull the live tier from the DB
@@ -221,7 +221,7 @@ syncRouter.post('/', zValidator('json', SyncBody), async c => {
 
   await prisma.$transaction(async (tx) => {
     // Upsert folders first (notes/contacts/flashcards reference them)
-    for (const f of body.folders) {
+    for (const f of (body as any).folders) {
       const existing = await tx.folder.findUnique({ where: { id: f.id }, select: { updatedAt: true } });
       if (!existing || isIncomingNewer(f.updatedAt ?? f.createdAt, existing.updatedAt)) {
         await tx.folder.upsert({
@@ -235,7 +235,7 @@ syncRouter.post('/', zValidator('json', SyncBody), async c => {
       }
     }
 
-    for (const n of body.notes) {
+    for (const n of (body as any).notes) {
       const existing = await tx.note.findUnique({ where: { id: n.id }, select: { updatedAt: true } });
       if (!existing || isIncomingNewer(n.updatedAt, existing.updatedAt)) {
         await tx.note.upsert({
@@ -264,7 +264,7 @@ syncRouter.post('/', zValidator('json', SyncBody), async c => {
       }
     }
 
-    for (const con of body.contacts) {
+    for (const con of (body as any).contacts) {
       const existing = await tx.contact.findUnique({ where: { id: con.id }, select: { updatedAt: true } });
       if (!existing || isIncomingNewer(con.updatedAt, existing.updatedAt)) {
         await tx.contact.upsert({
@@ -296,7 +296,7 @@ syncRouter.post('/', zValidator('json', SyncBody), async c => {
       }
     }
 
-    for (const fc of body.flashcards) {
+    for (const fc of (body as any).flashcards) {
       const existing = await tx.flashcard.findUnique({ where: { id: fc.id }, select: { updatedAt: true } });
       if (!existing || isIncomingNewer(fc.updatedAt, existing.updatedAt)) {
         await tx.flashcard.upsert({
@@ -305,7 +305,7 @@ syncRouter.post('/', zValidator('json', SyncBody), async c => {
             ...fc,
             userId:     user.id,
             createdAt:  new Date(fc.createdAt),
-            updatedAt:  new Date(fc.updatedAt),
+            updatedAt:   new Date(fc.updatedAt),
             nextReview: fc.nextReview ? new Date(fc.nextReview) : undefined,
           },
           update: {
@@ -327,7 +327,7 @@ syncRouter.post('/', zValidator('json', SyncBody), async c => {
       }
     }
 
-    for (const pq of body.practiceQuestions) {
+    for (const pq of (body as any).practiceQuestions) {
       const existing = await tx.practiceQuestion.findUnique({ where: { id: pq.id }, select: { id: true } });
       if (existing) {
         // Practice questions are append-only by content — update SRS state if seen again.
@@ -363,7 +363,7 @@ syncRouter.post('/', zValidator('json', SyncBody), async c => {
       stats.practice++;
     }
 
-    for (const ss of body.savedSearches) {
+    for (const ss of (body as any).savedSearches) {
       const existing = await tx.savedSearch.findUnique({ where: { id: ss.id }, select: { updatedAt: true } });
       if (!existing || isIncomingNewer(ss.updatedAt ?? ss.createdAt, existing.updatedAt)) {
         await tx.savedSearch.upsert({
