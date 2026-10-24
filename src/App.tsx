@@ -12,6 +12,7 @@ import ShortcutsModal from './components/ShortcutsModal';
 import LoadingScreen from './components/LoadingScreen';
 import OpeningSequence from './components/OpeningSequence';
 import SettingsView from './components/SettingsView';
+import StudyRoom from './components/StudyRoom';
 import MultiplayerQuiz from './components/MultiplayerQuiz';
 import AuthPage from './components/AuthPage';
 import ConfirmModal from './components/ConfirmModal';
@@ -28,7 +29,7 @@ import { pullSync, pushSync } from './api/sync';
 import { syncStreak } from './db/streaks';
 import { mergeByLWW, mergeTier } from './utils/merge';
 
-type View  = 'dashboard' | 'notes' | 'contacts' | 'flashcards' | 'pricing' | 'settings' | 'multiplayer';
+type View  = 'dashboard' | 'notes' | 'contacts' | 'flashcards' | 'pricing' | 'settings' | 'multiplayer' | 'studyRoom';
 type Theme = 'light' | 'dark' | 'system';
 type Tier  = 'free' | 'pro';
 
@@ -51,6 +52,7 @@ const NAV_ITEMS: { view: View; icon: string; label: string }[] = [
   { view: 'contacts',   icon: '👥', label: 'People'      },
   { view: 'flashcards', icon: '💡', label: 'Flashcards'  },
   { view: 'pricing',    icon: '💎', label: 'Pricing'     },
+  { view: 'studyRoom',  icon: '📹', label: 'Study Room'  },
   { view: 'multiplayer',icon: '🎮', label: 'Quiz Battle' },
   { view: 'settings',   icon: '⚙️', label: 'Settings'    },
 ];
@@ -570,6 +572,15 @@ export default function App() {
                 currentTier={tier}
                 onDowngrade={handleDowngradeRequest}
                 onCheckoutResult={handleCheckoutResult}
+                addToast={addToast}
+              />
+            )}
+            {currentView === 'studyRoom' && (
+              <StudyRoom
+                userId={session.user!.id}
+                userName={session.user!.name || session.user!.email.split('@')[0]}
+                tier={tier}
+                setCurrentView={navigateTo}
                 addToast={addToast}
               />
             )}

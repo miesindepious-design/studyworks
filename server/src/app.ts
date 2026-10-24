@@ -20,6 +20,7 @@ import { sharesRouter } from './routes/shares.js';
 import { supportRouter } from './routes/support.js';
 import { emailSaveRouter, inboundEmailRouter } from './routes/emailSave.js';
 import { gameRouter } from './routes/game.js';
+import { studyRoomRouter } from './routes/studyRoom.js';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
@@ -61,6 +62,7 @@ app.route('/api/inbound-email', inboundEmailRouter);
 
 // Phase 3: multiplayer quiz
 app.route('/api/game',    gameRouter);
+app.route('/api/study-room', studyRoomRouter);
 
 // ── 404 ────────────────────────────────────────────────────────────────────────
 app.notFound(c => c.json({ error: 'Not found' }, 404));
