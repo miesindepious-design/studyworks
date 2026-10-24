@@ -86,6 +86,7 @@ export interface Flashcard {
   interval?: number;
   repetitions?: number;
   ef?: number; // SM-2 easiness factor; defaults to 2.5 if unset
+  type?: 'standard' | 'fill-in';
 }
 
 export interface PracticeQuestion {

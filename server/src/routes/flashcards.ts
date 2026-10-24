@@ -16,6 +16,7 @@ const FlashcardBody = z.object({
   tags:        z.array(z.string()).default([]),
   folderId:    z.string().optional().nullable(),
   difficulty:  z.enum(['easy', 'medium', 'hard']).optional().nullable(),
+  type:        z.enum(['standard', 'fill-in']).optional().nullable(),
   nextReview:  z.string().datetime().optional().nullable(),
   interval:    z.number().int().nonnegative().optional().nullable(),
   repetitions: z.number().int().nonnegative().optional().nullable(),

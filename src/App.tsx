@@ -64,6 +64,7 @@ const PAGE_TITLES: Record<View, string> = {
   flashcards: 'Flashcards',
   pricing:    'Pricing',
   multiplayer:'Quiz Battle',
+  studyRoom:  'Study Room',
   settings:   'Settings',
 };
 

@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from './client';
+import { apiPost } from './client';
 
 export interface StudyRoom {
   id: string;

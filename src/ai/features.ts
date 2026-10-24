@@ -36,8 +36,10 @@ export async function generateSummary(
 
 // ── 2.2 Flashcard generation ──────────────────────────────────────────────────
 export interface GeneratedFlashcard {
-  question: string;
-  answer:   string;
+  question:    string;
+  answer:      string;
+  difficulty?: 'easy' | 'medium' | 'hard';
+  type?:       'standard' | 'fill-in';
 }
 
 export async function generateFlashcards(
@@ -45,7 +47,7 @@ export async function generateFlashcards(
 ): Promise<GeneratedFlashcard[]> {
   const customPrompt = config.customFlashcardPrompt;
   const prompt = customPrompt ||
-    `Create exactly ${count} flashcards from the note below.\nReturn a JSON object with a "flashcards" array. Each item has "question" and "answer" strings.\nKeep questions specific and answers concise (1–3 sentences max).`;
+    `Create exactly ${count} high-yield flashcards from the note below. Focus on exam-relevant facts, definitions, mechanisms, edge cases, and commonly confused concepts. Mark difficulty: easy, medium, or hard. Include a mix of standard and fill-in-the-blank questions to strengthen recall.Return JSON: { "flashcards": [ { "question", "answer", "difficulty": "easy|medium|hard", "type": "standard|fill-in" } ] }`;
 
   const raw = await chatComplete({
     ...cfg(config),
@@ -55,12 +57,12 @@ export async function generateFlashcards(
       { role: 'user', content: `${prompt}\n\nTitle: ${title}\n\nContent:\n${content}` },
     ],
     temperature: 0.5,
-    maxTokens: 1200,
+    maxTokens: 4096,
   });
 
   try {
     const parsed = JSON.parse(raw);
-    const cards: GeneratedFlashcard[] = parsed.flashcards ?? parsed.cards ?? [];
+    const cards: GeneratedFlashcard[] = (parsed.flashcards ?? parsed.cards ?? []);
     return cards.slice(0, count);
   } catch {
     const match = raw.match(/\[[\s\S]*\]/);

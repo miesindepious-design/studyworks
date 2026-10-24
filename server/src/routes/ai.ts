@@ -228,8 +228,7 @@ aiRouter.post('/flashcards', requirePro, zValidator('json', z.object({
   try { cfg = await loadAIConfig(user.id); }
   catch (e) { return c.json({ error: (e as Error).message }, 400); }
 
-  const basePrompt = cfg.customFlashcardPrompt ||
-    'Create exactly {{count}} flashcards from the note below.\nReturn a JSON object with a "flashcards" array. Each item has "question" and "answer" strings.\nKeep questions specific and answers concise (1–3 sentences max).';
+  const basePrompt = cfg.customFlashcardPrompt ||`Create exactly {{count}} high-yield flashcards from the note below. Focus on exam-relevant facts, definitions, mechanisms, edge cases, and commonly confused concepts. Mark difficulty: easy, medium, or hard. Include a mix of standard and fill-in-the-blank questions to strengthen recall.Return JSON: { "flashcards": [ { "question", "answer", "difficulty": "easy|medium|hard", "type": "standard|fill-in" } ] }`;
   const prompt = basePrompt.replace('{{count}}', String(count));
 
   try {
@@ -242,7 +241,13 @@ aiRouter.post('/flashcards', requirePro, zValidator('json', z.object({
       temperature: 0.5, maxTokens: 4096, jsonMode: true,
     });
     const parsed = JSON.parse(raw);
-    const cards = (parsed.flashcards ?? parsed.cards ?? []).slice(0, count);
+    const cards = (parsed.flashcards ?? parsed.cards ?? []).slice(0, count).map((c: any) => ({
+      question:    c.question,
+      answer:      c.answer,
+      difficulty:  c.difficulty ?? 'medium',
+      type:        c.type ?? 'standard',
+      tags:        ['ai-generated'],
+    }));
     return c.json({ flashcards: cards });
   } catch (e) {
     return c.json({ error: (e as Error).message }, 502);

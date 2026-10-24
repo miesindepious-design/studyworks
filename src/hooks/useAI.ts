@@ -118,7 +118,7 @@ export function useAI(): UseAIResult {
     if (!isReady) throw new Error('AI not configured');
     if (source === 'server') {
       const cards = await serverAI.serverFlashcards(title, toPlainText(content), count);
-      return cards.map(c => ({ question: c.question, answer: c.answer }));
+      return cards.map(c => ({ question: c.question, answer: c.answer, difficulty: c.difficulty as any, type: c.type as any }));
     }
     return aiFlashcards(title, toPlainText(content), count, effective);
   }, [source, effective, isReady]);

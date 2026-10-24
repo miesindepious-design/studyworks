@@ -110,6 +110,8 @@ export default function FlashcardsView({
 
   const reviewCards       = dueCards.length > 0 ? dueCards : flashcards;
   const currentReviewCard = reviewCards[reviewIndex % Math.max(reviewCards.length, 1)];
+  const [fillInput, setFillInput] = useState('');
+  const [fillSubmitted, setFillSubmitted] = useState(false);
 
   // ── Intensive study mode ───────────────────────────────────────────────────
   // Picks a subset of cards (the current filtered set), shuffles them, and
@@ -287,6 +289,12 @@ export default function FlashcardsView({
     }
     if (studyMode !== 'intensive') intensiveOriginalLenRef.current = 0;
   }, [studyMode, intensiveQueue]);
+
+  // Reset fill-in state when moving to the next review card.
+  useEffect(() => {
+    setFillInput('');
+    setFillSubmitted(false);
+  }, [currentReviewCard?.id]);
 
   // End the session when every original card has been mastered at least once.
   const intensiveAllDone = intensiveOriginalLenRef.current > 0 && intensiveMastered >= intensiveOriginalLenRef.current;
@@ -493,7 +501,30 @@ export default function FlashcardsView({
               </div>
               <div className="flip-face back" style={{ minHeight: '240px' }}>
                 <p className="text-xs" style={{ marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent)' }}>Answer</p>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 700 }}>{currentReviewCard?.answer}</h3>
+                {currentReviewCard?.type === 'fill-in' ? (
+                  <div>
+                    <p className="text-sm text-muted" style={{ marginBottom: '0.75rem' }}>Type the missing answer from memory.</p>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <input
+                        className="input"
+                        placeholder="Type your answer…"
+                        value={fillInput}
+                        onChange={e => setFillInput(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && !fillSubmitted && setFillSubmitted(true)}
+                        disabled={fillSubmitted}
+                      />
+                      <button className="btn btn-primary btn-sm" onClick={() => setFillSubmitted(true)} disabled={fillSubmitted || !fillInput.trim()}>Check</button>
+                    </div>
+                    {fillSubmitted && (
+                      <div className="animate-in" style={{ marginTop: '0.75rem', background: 'var(--surface-2)', borderRadius: 'var(--radius)', padding: '0.75rem', border: '1px solid var(--border)' }}>
+                        <p className="text-xs" style={{ color: 'var(--accent)', marginBottom: '0.25rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Expected answer</p>
+                        <p style={{ fontWeight: 700 }}>{currentReviewCard?.answer}</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: 700 }}>{currentReviewCard?.answer}</h3>
+                )}
               </div>
             </div>
           </div>

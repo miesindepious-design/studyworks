@@ -411,17 +411,19 @@ export default function NotesView({
     setIsGenerating(note.id);
     try {
       const text = sourceText ?? note.content;
-      // Request as many cards as the content supports (server caps at 40).
-      // ~1 card per 200 chars of text, min 10, max 40.
-      const est = Math.min(40, Math.max(10, Math.round(toPlainText(text).length / 200)));
+      // Generate high-volume exam-style flashcards when possible.
+      const len = toPlainText(text).length;
+      const est = Math.min(60, Math.max(15, Math.round(len / 180)));
       const generated = await ai.generateFlashcards(note.title, text, est);
       const newCards: Flashcard[] = generated.map((g, i) => ({
         id: `${note.id}-fc-${Date.now()}-${i}`,
         question: g.question,
         answer:   g.answer,
         tags:     [...note.tags, 'ai-generated'],
-        createdAt: new Date(),
-        folderId: note.folderId,
+        difficulty: g.difficulty ?? 'medium',
+        type:       g.type ?? 'standard',
+        createdAt:  new Date(),
+        folderId:   note.folderId,
       }));
       // Append to existing flashcards — don't replace the whole deck
       setFlashcards([...flashcards, ...newCards]);

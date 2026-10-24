@@ -61,7 +61,7 @@ export async function serverSummary(title: string, content: string): Promise<str
 }
 
 export async function serverFlashcards(title: string, content: string, count = 5) {
-  const res = await apiPost<{ flashcards: { question: string; answer: string }[]; error?: string }>(
+  const res = await apiPost<{ flashcards: { question: string; answer: string; difficulty?: string; type?: string }[]; error?: string }>(
     '/api/ai/flashcards', { title, content, count }
   );
   if (res.error) throw new Error(res.error);

@@ -11,7 +11,7 @@ interface Props {
 
 type StudyPhase = 'idle' | 'creating' | 'ready' | 'error';
 
-export default function StudyRoom({ userId, userName, tier, setCurrentView, addToast }: Props) {
+export default function StudyRoom({ userName, tier, setCurrentView, addToast }: Props) {
   const [phase, setPhase] = useState<StudyPhase>('idle');
   const [roomName, setRoomName] = useState('');
   const [room, setRoom] = useState<{ id: string; name: string; url: string | null; provider: string; maxParticipants: number } | null>(null);
