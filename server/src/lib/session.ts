@@ -32,8 +32,15 @@ export async function requireAuth(c: Context, next: Next) {
   // session cache, which can be stale after an upgrade).
   const dbUser = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { tier: true, educationLevel: true },
+    select: { id: true, email: true, tier: true, educationLevel: true },
   });
+
+  const adminEmail = process.env.ADMIN_EMAIL;
+  if (adminEmail && dbUser?.email && dbUser.email.toLowerCase() === adminEmail.toLowerCase()) {
+    await prisma.user.update({ where: { id: dbUser.id }, data: { tier: 'PRO' } });
+    dbUser.tier = 'PRO';
+  }
+
   c.set('user', {
     id:    session.user.id,
     email: session.user.email,
