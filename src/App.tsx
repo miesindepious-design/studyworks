@@ -13,6 +13,7 @@ import LoadingScreen from './components/LoadingScreen';
 import OpeningSequence from './components/OpeningSequence';
 import SettingsView from './components/SettingsView';
 import StudyRoom from './components/StudyRoom';
+import TutorView from './components/TutorView';
 import MultiplayerQuiz from './components/MultiplayerQuiz';
 import AuthPage from './components/AuthPage';
 import ConfirmModal from './components/ConfirmModal';
@@ -29,7 +30,7 @@ import { pullSync, pushSync } from './api/sync';
 import { syncStreak } from './db/streaks';
 import { mergeByLWW, mergeTier } from './utils/merge';
 
-type View  = 'dashboard' | 'notes' | 'contacts' | 'flashcards' | 'pricing' | 'settings' | 'multiplayer' | 'studyRoom';
+type View  = 'dashboard' | 'notes' | 'contacts' | 'flashcards' | 'pricing' | 'settings' | 'multiplayer' | 'studyRoom' | 'tutor';
 type Theme = 'light' | 'dark' | 'system';
 type Tier  = 'free' | 'pro';
 
@@ -52,6 +53,7 @@ const NAV_ITEMS: { view: View; icon: string; label: string }[] = [
   { view: 'contacts',   icon: '👥', label: 'People'      },
   { view: 'flashcards', icon: '💡', label: 'Flashcards'  },
   { view: 'pricing',    icon: '💎', label: 'Pricing'     },
+  { view: 'tutor',      icon: '🎓', label: 'AI Tutor'    },
   { view: 'studyRoom',  icon: '📹', label: 'Study Room'  },
   { view: 'multiplayer',icon: '🎮', label: 'Quiz Battle' },
   { view: 'settings',   icon: '⚙️', label: 'Settings'    },
@@ -63,6 +65,7 @@ const PAGE_TITLES: Record<View, string> = {
   contacts:   'People & Reminders',
   flashcards: 'Flashcards',
   pricing:    'Pricing',
+  tutor:      'AI Tutor',
   multiplayer:'Quiz Battle',
   studyRoom:  'Study Room',
   settings:   'Settings',
@@ -580,6 +583,13 @@ export default function App() {
               <StudyRoom
                 userId={session.user!.id}
                 userName={session.user!.name || session.user!.email.split('@')[0]}
+                tier={tier}
+                setCurrentView={navigateTo}
+                addToast={addToast}
+              />
+            )}
+            {currentView === 'tutor' && (
+              <TutorView
                 tier={tier}
                 setCurrentView={navigateTo}
                 addToast={addToast}

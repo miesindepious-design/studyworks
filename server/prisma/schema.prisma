@@ -26,6 +26,9 @@ model User {
   stripePriceId          String?
   stripeCurrentPeriodEnd DateTime?
 
+  // AI Tutor: education level for adaptive lesson complexity
+  educationLevel String? // "high-school" | "college-freshman" | "college-sophomore" | "college-junior" | "college-senior" | "university" | "graduate" | "phd"
+
   sessions      Session[]
   accounts      Account[]
   verifications Verification[]

@@ -151,6 +151,40 @@ export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts,
     unsupported: '🚫 Not supported',
   };
 
+  const [profileLevel, setProfileLevel] = useState<string | null>(null);
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  useEffect(() => {
+    // Load profile from server if possible
+    (async () => {
+      try {
+        const res = await fetch('/api/ai/profile', { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          setProfileLevel(data.user?.educationLevel ?? null);
+        }
+      } catch {}
+    })();
+  }, []);
+
+  const handleSaveProfile = async () => {
+    setSavingProfile(true);
+    try {
+      const res = await fetch('/api/ai/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ educationLevel: profileLevel }),
+      });
+      if (!res.ok) throw new Error('Failed to save profile');
+      onAddToast('Profile saved.', 'success');
+    } catch (err: any) {
+      onAddToast(err.message || 'Failed to save profile', 'error');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
   return (
     <div className="animate-in">
       <div className="page-header">
@@ -204,6 +238,35 @@ export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts,
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* AI Tutor level */}
+          <div style={{ background: 'var(--surface-2)', padding: '0.875rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+            <p style={{ fontWeight: 700, fontSize: '0.875rem', marginBottom: '0.25rem' }}>🎓 AI Tutor level</p>
+            <p className="text-xs text-muted" style={{ marginBottom: '0.5rem', lineHeight: 1.6 }}>This sets the base lesson complexity for the AI Tutor.</p>
+            <select
+              className="select"
+              value={profileLevel ?? ''}
+              onChange={e => setProfileLevel(e.target.value || null)}
+              style={{ width: '100%' }}
+            >
+              <option value="">Select level…</option>
+              {[
+                { v: 'high-school', l: 'High School' },
+                { v: 'college-freshman', l: 'College Freshman' },
+                { v: 'college-sophomore', l: 'College Sophomore' },
+                { v: 'college-junior', l: 'College Junior' },
+                { v: 'college-senior', l: 'College Senior / Final Year' },
+                { v: 'university', l: 'University' },
+                { v: 'graduate', l: 'Graduate' },
+                { v: 'phd', l: 'PhD / Research' },
+              ].map(item => (
+                <option key={item.v} value={item.v}>{item.l}</option>
+              ))}
+            </select>
+            <button className="btn btn-primary btn-sm" style={{ marginTop: '0.5rem', width: '100%' }} onClick={handleSaveProfile} disabled={savingProfile || !profileLevel}>
+              {savingProfile ? 'Saving…' : 'Save tutor level'}
+            </button>
           </div>
 
           {/* API Key */}

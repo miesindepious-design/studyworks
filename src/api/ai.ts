@@ -142,3 +142,35 @@ export function narrowPracticeQuestion(
     createdAt: new Date(),
   };
 }
+
+export interface TutorRequest {
+  topic: string;
+  mode: 'lesson' | 'simpler' | 'deeper' | 'quiz';
+  educationLevel?: string | null;
+  history?: { role: 'system' | 'user' | 'assistant'; content: string }[];
+  lastAnswer?: string | null;
+}
+
+export interface TutorResponse {
+  topic: string;
+  mode: 'lesson' | 'simpler' | 'deeper' | 'quiz';
+  educationLevel: string | null;
+  response: string;
+}
+
+export async function serverTutor(body: TutorRequest): Promise<TutorResponse> {
+  const res = await apiPost<TutorResponse>('/api/ai/tutor', {
+    topic: body.topic,
+    mode: body.mode,
+    educationLevel: body.educationLevel ?? null,
+    history: body.history ?? [],
+    lastAnswer: body.lastAnswer ?? null,
+  });
+  return res;
+}
+
+export async function saveUserProfile(educationLevel: string | null) {
+  return apiPut<{ user: { id: string; email: string; educationLevel: string | null } }>('/api/ai/profile', {
+    educationLevel,
+  });
+}

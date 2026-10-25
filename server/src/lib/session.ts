@@ -11,6 +11,7 @@ export type HonoUser = {
   email: string;
   name: string | null;
   tier: 'FREE' | 'PRO';
+  educationLevel?: string | null;
 };
 
 declare module 'hono' {
@@ -29,12 +30,16 @@ export async function requireAuth(c: Context, next: Next) {
 
   // Attach to context. tier is authoritative from Prisma (not the Better Auth
   // session cache, which can be stale after an upgrade).
-  const dbUser = await prisma.user.findUnique({ where: { id: session.user.id }, select: { tier: true } });
+  const dbUser = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { tier: true, educationLevel: true },
+  });
   c.set('user', {
     id:    session.user.id,
     email: session.user.email,
     name:  session.user.name ?? null,
     tier:  (dbUser?.tier ?? 'FREE') as 'FREE' | 'PRO',
+    educationLevel: dbUser?.educationLevel ?? null,
   });
   c.set('session', session.session as any);
 

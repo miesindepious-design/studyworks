@@ -447,3 +447,94 @@ Generate 4-5 insights. Each "body" should be 1-2 sentences, specific and actiona
     return c.json({ error: (e as Error).message }, 502);
   }
 });
+
+// ── AI Tutor ──────────────────────────────────────────────────────────────────
+type TutorMode = 'lesson' | 'simpler' | 'deeper' | 'quiz';
+
+const TutorRequestBody = z.object({
+  topic:       z.string().min(1),
+  mode:        z.enum(['lesson', 'simpler', 'deeper', 'quiz']).default('lesson'),
+  educationLevel: z.string().optional().nullable(),
+  history: z.array(z.object({
+    role: z.enum(['system', 'user', 'assistant']),
+    content: z.string(),
+  })).default([]),
+  lastAnswer: z.string().optional().nullable(),
+});
+
+aiRouter.post('/tutor', requirePro, zValidator('json', TutorRequestBody), async c => {
+  const user = c.get('user');
+  const { topic, mode, educationLevel, history, lastAnswer } = c.req.valid('json');
+
+  let cfg;
+  try { cfg = await loadAIConfig(user.id); }
+  catch (e) { return c.json({ error: (e as Error).message }, 400); }
+
+  let effectiveLevel = educationLevel ?? user.educationLevel ?? 'college';
+  const levelLabel: Record<string, string> = {
+    'high-school':        'high school',
+    'college-freshman':   'first-year college',
+    'college-sophomore':  'second-year college',
+    'college-junior':     'third-year college / upper-division',
+    'college-senior':     'final-year college',
+    'university':         'university level',
+    'graduate':           'graduate level',
+    'phd':                'PhD / research level',
+    'college':            'college level',
+  };
+  const audience = levelLabel[effectiveLevel] ?? 'college level';
+
+  const modeInstructions: Record<TutorMode, string> = {
+    lesson: `Teach the requested topic from scratch as a structured lesson for a ${audience} student. Start with a brief motivation paragraph, then clear section headings, definitions, worked examples, and common pitfalls. End with a short recap. Keep the tone encouraging and precise.`,
+    simpler: `The student found the previous explanation too hard. Re-explain the same topic at a simpler level for ${audience}. Use more everyday analogies, shorter sentences, and explicit step-by-step reasoning. Avoid jargon where possible, or define every term you use.`,
+    deeper: `The student wants to go beyond the standard curriculum. Extend the lesson into a more advanced, research-oriented treatment suitable for ${audience}. Include stronger formalism, edge cases, modern interpretations, and references to deeper ideas.`,
+    quiz: `Generate a short mastery quiz for the topic so far. Mix recall, conceptual, and application questions. After each question, give brief feedback. Finish with a short assessment of whether the student seems ready to move on.`,
+  };
+
+  const messages = [
+    { role: 'system', content: `${SYSTEM_BASE}\nYou are an expert AI tutor. ${modeInstructions[mode]}` },
+    ...history,
+    { role: 'user', content: lastAnswer ? `Student answer: ${lastAnswer}\nContinue the tutoring session appropriately.` : `Topic: ${topic}` },
+  ];
+
+  try {
+    const raw = await callProvider({
+      provider: cfg.provider,
+      model: cfg.model,
+      apiKey: cfg.apiKey,
+      messages,
+      temperature: mode === 'quiz' ? 0.4 : 0.7,
+      maxTokens: mode === 'quiz' ? 1200 : 2200,
+    });
+
+    return c.json({
+      topic,
+      mode,
+      educationLevel: effectiveLevel,
+      response: raw.trim(),
+    });
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 502);
+  }
+});
+
+const ProfileBody = z.object({ educationLevel: z.string().optional().nullable() });
+
+aiRouter.put('/profile', zValidator('json', ProfileBody), async c => {
+  const user = c.get('user');
+  const body = c.req.valid('json');
+
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      educationLevel: body.educationLevel ?? null,
+    },
+    select: {
+      id: true,
+      email: true,
+      educationLevel: true,
+    },
+  });
+
+  return c.json({ user: updated });
+});
