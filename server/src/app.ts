@@ -30,7 +30,12 @@ export const app = new Hono();
 app.use('*', logger());
 app.use('*', secureHeaders());
 app.use('*', cors({
-  origin:      [FRONTEND_URL],
+  origin:      [
+    FRONTEND_URL,
+    'https://studyworksfirst-git-master-miesindepious-designs-projects.vercel.app',
+    'https://studyworks.vercel.app',
+    'https://studyworks-miesindepious-designs-projects.vercel.app',
+  ],
   credentials: true,
   allowHeaders:  ['Content-Type', 'Authorization'],
   allowMethods:  ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

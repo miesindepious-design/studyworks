@@ -17,7 +17,14 @@ export const auth = betterAuth({
   // Auth's internal router must use the same basePath. Its default is
   // /api/auth, which would 404 against our /auth/* mount.
   basePath: '/auth',
-  trustedOrigins: [process.env.FRONTEND_URL || 'http://localhost:5173'],
+  trustedOrigins: [
+    process.env.FRONTEND_URL || 'http://localhost:5173',
+    'https://studyworksfirst-git-master-miesindepious-designs-projects.vercel.app',
+    'https://studyworks.vercel.app',
+    'https://studyworks-miesindepious-designs-projects.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:3000',
+  ],
 
   emailAndPassword: {
     enabled: true,
