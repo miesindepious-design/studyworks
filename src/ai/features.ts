@@ -43,11 +43,13 @@ export interface GeneratedFlashcard {
 }
 
 export async function generateFlashcards(
-  title: string, content: string, count = 5, config: AIConfig
+  title: string, content: string, count = 5, config: AIConfig, hard = false
 ): Promise<GeneratedFlashcard[]> {
   const customPrompt = config.customFlashcardPrompt;
-  const prompt = customPrompt ||
-    `Create exactly ${count} high-yield flashcards from the note below. Focus on exam-relevant facts, definitions, mechanisms, edge cases, and commonly confused concepts. Mark difficulty: easy, medium, or hard. Include a mix of standard and fill-in-the-blank questions to strengthen recall.Return JSON: { "flashcards": [ { "question", "answer", "difficulty": "easy|medium|hard", "type": "standard|fill-in" } ] }`;
+  const defaultPrompt = hard
+    ? `Create exactly ${count} hard-difficulty flashcards from the note below. Focus on the most complex, commonly misunderstood, and exam-critical areas. Prioritize edge cases, mechanisms, and tricky distinctions. Mark difficulty: mostly hard, some medium. Include a mix of standard and fill-in-the-blank questions to strengthen recall.Return JSON: { "flashcards": [ { "question", "answer", "difficulty": "easy|medium|hard", "type": "standard|fill-in" } ] }`
+    : `Create exactly ${count} high-yield flashcards from the note below. Focus on exam-relevant facts, definitions, mechanisms, edge cases, and commonly confused concepts. Mark difficulty: easy, medium, or hard. Include a mix of standard and fill-in-the-blank questions to strengthen recall.Return JSON: { "flashcards": [ { "question", "answer", "difficulty": "easy|medium|hard", "type": "standard|fill-in" } ] }`;
+  const prompt = customPrompt || defaultPrompt;
 
   const raw = await chatComplete({
     ...cfg(config),

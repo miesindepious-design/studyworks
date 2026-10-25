@@ -219,16 +219,20 @@ aiRouter.post('/summary', requirePro, zValidator('json', z.object({
 aiRouter.post('/flashcards', requirePro, zValidator('json', z.object({
   title:   z.string(),
   content: z.string(),
-  count:   z.number().int().min(1).max(40).default(5),
+  count:   z.number().int().min(1).max(60).default(10),
+  hard:    z.boolean().default(false),
 })), async c => {
   const user = c.get('user');
-  const { title, content, count } = c.req.valid('json');
+  const { title, content, count, hard } = c.req.valid('json');
 
   let cfg;
   try { cfg = await loadAIConfig(user.id); }
   catch (e) { return c.json({ error: (e as Error).message }, 400); }
 
-  const basePrompt = cfg.customFlashcardPrompt ||`Create exactly {{count}} high-yield flashcards from the note below. Focus on exam-relevant facts, definitions, mechanisms, edge cases, and commonly confused concepts. Mark difficulty: easy, medium, or hard. Include a mix of standard and fill-in-the-blank questions to strengthen recall.Return JSON: { "flashcards": [ { "question", "answer", "difficulty": "easy|medium|hard", "type": "standard|fill-in" } ] }`;
+  const defaultPrompt = hard
+    ? `Create exactly {{count}} hard-difficulty flashcards from the note below. Focus on the most complex, commonly misunderstood, and exam-critical areas. Prioritize edge cases, mechanisms, and tricky distinctions. Mark difficulty: mostly hard, some medium. Include a mix of standard and fill-in-the-blank questions to strengthen recall.Return JSON: { "flashcards": [ { "question", "answer", "difficulty": "easy|medium|hard", "type": "standard|fill-in" } ] }`
+    : `Create exactly {{count}} high-yield flashcards from the note below. Focus on exam-relevant facts, definitions, mechanisms, edge cases, and commonly confused concepts. Mark difficulty: easy, medium, or hard. Include a mix of standard and fill-in-the-blank questions to strengthen recall.Return JSON: { "flashcards": [ { "question", "answer", "difficulty": "easy|medium|hard", "type": "standard|fill-in" } ] }`;
+  const basePrompt = cfg.customFlashcardPrompt || defaultPrompt;
   const prompt = basePrompt.replace('{{count}}', String(count));
 
   try {

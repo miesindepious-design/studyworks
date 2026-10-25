@@ -59,7 +59,7 @@ export interface UseAIResult {
   source:       'server' | 'client' | 'none';
 
   generateSummary:           (title: string, content: string) => Promise<string>;
-  generateFlashcards:        (title: string, content: string, count?: number) => Promise<GeneratedFlashcard[]>;
+  generateFlashcards:        (title: string, content: string, count?: number, hard?: boolean) => Promise<GeneratedFlashcard[]>;
   generatePracticeQuestions: (title: string, content: string, count?: number) => Promise<GeneratedPracticeQuestion[]>;
   smartQA:                   (query: string, notes: Note[]) => Promise<string>;
   semanticSearch:            (query: string, notes: Note[]) => Promise<Note[]>;
@@ -114,13 +114,13 @@ export function useAI(): UseAIResult {
     return aiSummary(title, toPlainText(content), effective);
   }, [source, effective, isReady]);
 
-  const generateFlashcards = useCallback(async (title: string, content: string, count = 5) => {
+  const generateFlashcards = useCallback(async (title: string, content: string, count = 5, hard = false) => {
     if (!isReady) throw new Error('AI not configured');
     if (source === 'server') {
-      const cards = await serverAI.serverFlashcards(title, toPlainText(content), count);
+      const cards = await serverAI.serverFlashcards(title, toPlainText(content), count, hard);
       return cards.map(c => ({ question: c.question, answer: c.answer, difficulty: c.difficulty as any, type: c.type as any }));
     }
-    return aiFlashcards(title, toPlainText(content), count, effective);
+    return aiFlashcards(title, toPlainText(content), count, effective, hard);
   }, [source, effective, isReady]);
 
   const generatePracticeQuestions = useCallback(async (title: string, content: string, count = 4): Promise<PracticeQuestion[]> => {

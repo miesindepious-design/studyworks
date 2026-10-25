@@ -405,16 +405,15 @@ export default function NotesView({
   // extracted from an uploaded PDF), use that instead of the note's own
   // content. This lets us generate from a PDF even when the note body is
   // empty or just a title.
-  const generateFlashcards = async (note: Note, sourceText?: string) => {
+  const generateFlashcards = async (note: Note, sourceText?: string, hard = false) => {
     if (tier !== 'pro') { addToast('AI Flashcards is a Pro feature!', 'info'); setCurrentView('pricing'); return; }
-    if (!ai.isReady) { addToast('Configure your OpenAI API key in Settings first.', 'info'); setCurrentView('settings'); return; }
+    if (!ai.isReady) { addToast('Configure your API key in Settings first.', 'info'); setCurrentView('settings'); return; }
     setIsGenerating(note.id);
     try {
       const text = sourceText ?? note.content;
-      // Generate high-volume exam-style flashcards when possible.
       const len = toPlainText(text).length;
       const est = Math.min(60, Math.max(15, Math.round(len / 180)));
-      const generated = await ai.generateFlashcards(note.title, text, est);
+      const generated = await ai.generateFlashcards(note.title, text, est, hard);
       const newCards: Flashcard[] = generated.map((g, i) => ({
         id: `${note.id}-fc-${Date.now()}-${i}`,
         question: g.question,
@@ -425,9 +424,8 @@ export default function NotesView({
         createdAt:  new Date(),
         folderId:   note.folderId,
       }));
-      // Append to existing flashcards — don't replace the whole deck
       setFlashcards([...flashcards, ...newCards]);
-      addToast(`${newCards.length} flashcards added!`, 'success');
+      addToast(`${newCards.length} flashcard${newCards.length === 1 ? '' : 's'} added!`, 'success');
     } catch (err: any) {
       addToast(`Flashcard generation failed: ${err.message}`, 'error');
     } finally {
@@ -886,6 +884,16 @@ export default function NotesView({
                     >
                       {isGenerating === note.id ? '⏳' : '📝 Flashcards'}
                     </button>
+                    {tier === 'pro' && (
+                      <button
+                        className="btn btn-ghost btn-xs"
+                        onClick={() => generateFlashcards(note, undefined, true)}
+                        disabled={isGenerating === note.id}
+                        title={ai.isReady ? 'Generate harder flashcards from difficult areas' : 'Add API key in Settings'}
+                      >
+                        {isGenerating === note.id ? '⏳' : '🔥 Harder set'}
+                      </button>
+                    )}
                     {tier === 'pro' && (
                       <button
                         className="btn btn-ghost btn-xs"
