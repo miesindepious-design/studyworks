@@ -13,18 +13,19 @@ export default function ConfirmModal({
   danger = false, onConfirm, onCancel,
 }: ConfirmModalProps) {
   return (
-    <div
-      style={{ position: 'fixed', inset: 0, zIndex: 9998, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
-      onClick={onCancel}
-    >
+    <div className="modal-backdrop" onClick={onCancel}>
       <div
-        className="card animate-in"
-        style={{ maxWidth: '420px', width: '100%', padding: '1.75rem' }}
+        className="modal-panel"
         onClick={e => e.stopPropagation()}
       >
-        <h3 style={{ fontWeight: 700, fontSize: '1.0625rem', marginBottom: '0.625rem' }}>{title}</h3>
-        <p className="text-sm text-muted" style={{ lineHeight: 1.7, marginBottom: '1.5rem' }}>{description}</p>
-        <div style={{ display: 'flex', gap: '0.625rem', justifyContent: 'flex-end' }}>
+        <div className="modal-header">
+          <span className="modal-title">{title}</span>
+          <button className="btn btn-ghost btn-sm" onClick={onCancel} style={{ color: 'var(--text-3)' }}>✕</button>
+        </div>
+        <div className="modal-body">
+          <p style={{ lineHeight: 1.7, fontSize: '0.9375rem', color: 'var(--text-2)' }}>{description}</p>
+        </div>
+        <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onCancel}>{cancelLabel}</button>
           <button
             className={`btn ${danger ? 'btn-danger' : 'btn-primary'}`}

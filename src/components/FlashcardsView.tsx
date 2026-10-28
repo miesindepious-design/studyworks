@@ -373,13 +373,13 @@ export default function FlashcardsView({
           {tier === 'pro' && flashcards.length > 0 && studyMode === 'browse' && (
             <button className="btn btn-secondary" onClick={startReview}>
               🧠 Spaced Review
-              {dueCards.length > 0 && <span style={{ background: 'var(--danger)', color: '#fff', borderRadius: 'var(--radius-full)', padding: '0 6px', fontSize: '0.7rem', marginLeft: '4px', fontWeight: 700 }}>{dueCards.length}</span>}
+              {dueCards.length > 0 && <span className="badge badge-danger" style={{ marginLeft: 4 }}>{dueCards.length}</span>}
             </button>
           )}
           {tier === 'pro' && practiceQuestions.length > 0 && studyMode === 'browse' && (
             <button className="btn btn-secondary" onClick={startPracticeReview}>
               ❓ Practice Review
-              {duePracticeQuestions.length > 0 && <span style={{ background: 'var(--danger)', color: '#fff', borderRadius: 'var(--radius-full)', padding: '0 6px', fontSize: '0.7rem', marginLeft: '4px', fontWeight: 700 }}>{duePracticeQuestions.length}</span>}
+              {duePracticeQuestions.length > 0 && <span className="badge badge-danger" style={{ marginLeft: 4 }}>{duePracticeQuestions.length}</span>}
             </button>
           )}
           {tier === 'pro' && studyMode === 'browse' && filteredCards.length > 0 && (
@@ -404,32 +404,34 @@ export default function FlashcardsView({
             <span className="card-title">📊 Statistics</span>
             <button className="btn btn-ghost btn-sm" onClick={() => setShowStats(false)}>✕</button>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
+          <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
             {[
               { label: 'Total',      value: stats.total,       color: 'var(--accent)'   },
               { label: 'Reviewed',   value: stats.reviewed,    color: 'var(--accent-2)' },
               { label: 'Due today',  value: stats.due,         color: stats.due > 0 ? 'var(--danger)' : 'var(--success)' },
-              { label: 'Easy',       value: stats.easy,        color: '#22c55e'           },
-              { label: 'Medium',     value: stats.medium,      color: '#f59e0b'           },
-              { label: 'Hard',       value: stats.hard,        color: '#ef4444'           },
+              { label: 'Easy',       value: stats.easy,        color: 'var(--success)' },
+              { label: 'Medium',     value: stats.medium,      color: 'var(--warning)' },
+              { label: 'Hard',       value: stats.hard,        color: 'var(--danger)' },
               { label: 'Avg interval', value: `${stats.avgInterval}d`, color: 'var(--text-2)' },
             ].map(s => (
-              <div key={s.label} style={{ background: 'var(--surface-2)', borderRadius: 'var(--radius)', padding: '0.75rem', border: '1px solid var(--border)', textAlign: 'center' }}>
+              <div key={s.label} className="stat-card" style={{ flexDirection: 'column', alignItems: 'center', gap: '0.35rem', padding: '0.875rem' }}>
                 <p style={{ fontSize: '1.5rem', fontWeight: 800, color: s.color }}>{s.value}</p>
-                <p className="text-xs text-muted" style={{ marginTop: '0.2rem' }}>{s.label}</p>
+                <p className="text-xs text-muted">{s.label}</p>
               </div>
             ))}
           </div>
           {stats.total > 0 && (
             <div>
               <p className="text-xs text-muted" style={{ marginBottom: '0.375rem' }}>Difficulty distribution</p>
-              <div style={{ display: 'flex', height: '8px', borderRadius: 'var(--radius-full)', overflow: 'hidden', gap: '2px' }}>
-                {stats.easy   > 0 && <div style={{ flex: stats.easy,   background: '#22c55e', borderRadius: 'var(--radius-full)' }} />}
-                {stats.medium > 0 && <div style={{ flex: stats.medium, background: '#f59e0b', borderRadius: 'var(--radius-full)' }} />}
-                {stats.hard   > 0 && <div style={{ flex: stats.hard,   background: '#ef4444', borderRadius: 'var(--radius-full)' }} />}
-                {(stats.total - stats.easy - stats.medium - stats.hard) > 0 && (
-                  <div style={{ flex: stats.total - stats.easy - stats.medium - stats.hard, background: 'var(--border)', borderRadius: 'var(--radius-full)' }} />
-                )}
+              <div className="progress-bar">
+                <div className="progress-fill" style={{ width: `${(stats.easy / stats.total) * 100}%`, background: 'linear-gradient(90deg, var(--success), #34d399)' }} />
+                <div className="progress-fill" style={{ width: `${(stats.medium / stats.total) * 100}%`, background: 'linear-gradient(90deg, var(--warning), #fbbf24)', marginLeft: 2 }} />
+                <div className="progress-fill" style={{ width: `${(stats.hard / stats.total) * 100}%`, background: 'linear-gradient(90deg, var(--danger), #fb7185)', marginLeft: 2 }} />
+              </div>
+              <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
+                <span className="text-xs text-muted" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--success)', display: 'inline-block' }} /> Easy {stats.easy}</span>
+                <span className="text-xs text-muted" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--warning)', display: 'inline-block' }} /> Medium {stats.medium}</span>
+                <span className="text-xs text-muted" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--danger)', display: 'inline-block' }} /> Hard {stats.hard}</span>
               </div>
             </div>
           )}
@@ -532,7 +534,7 @@ export default function FlashcardsView({
             {reviewFlipped ? (
               <div style={{ display: 'flex', justifyContent: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>
                 {RATE_BTNS.map(b => (
-                  <button key={b.label} className="btn btn-secondary" onClick={() => rateCard(b.quality)} style={{ borderColor: b.color, color: b.color, minWidth: '90px' }}>
+                  <button key={b.label} className={`rate-btn ${b.label.toLowerCase()}`} onClick={() => rateCard(b.quality)}>
                     {b.emoji} {b.label}
                   </button>
                 ))}

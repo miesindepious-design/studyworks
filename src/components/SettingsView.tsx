@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { UseNotificationsResult } from '../hooks/useNotifications';
 import type { Folder } from '../types';
+import type { TimerSettings } from './StudyTimer';
 import { getAIConfig, saveAIConfig, PROVIDERS, MODELS_BY_PROVIDER, DEFAULT_PROMPTS } from '../db/aiSettings';
 import type { AIConfig, AIProvider } from '../db/aiSettings';
 import { chatComplete } from '../ai/client';
@@ -20,9 +21,33 @@ export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts,
   const [testing, setTesting] = useState(false);
   const [showPrompts, setShowPrompts] = useState(false);
   const [storageUsed, setStorageUsed] = useState<string | null>(null);
+  const [storageDetail, setStorageDetail] = useState<{ used: number; quota: number } | null>(null);
+
+  // Study timer settings
+  const [timerSettings, setTimerSettings] = useState(() => {
+    try {
+      const raw = localStorage.getItem('studyworks:timerSettings');
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return { focusDuration: 25, breakDuration: 5, autoStartBreak: false, soundEnabled: true };
+  });
+
+  // Custom keyboard shortcuts editor
+  const [shortcuts, setShortcuts]     = useState<Record<string, string>>(() => {
+    try {
+      const raw = localStorage.getItem('studyworks:shortcuts');
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return {
+      'mod+1': 'Dashboard', 'mod+2': 'Notes', 'mod+3': 'People',
+      'mod+4': 'Flashcards', 'mod+5': 'Pricing', 'mod+6': 'Settings',
+    };
+  });
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [keyCapture, setKeyCapture] = useState(false);
 
   // AI config state
-  const [aiConfig, setAiConfigState] = useState<AIConfig>({ provider: 'gemini', apiKey: '', model: 'gemini-1.5-flash', enabled: false });
+  const [aiConfig, setAiConfigState] = useState<AIConfig>({ provider: 'gemini', apiKey: '', model: 'gemini-2.5-flash', enabled: false });
   const [showKey, setShowKey]     = useState(false);
   const [savingAI, setSavingAI]   = useState(false);
   const [testingAI, setTestingAI] = useState(false);
@@ -37,10 +62,113 @@ export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts,
           const usedMB  = (usage  / 1024 / 1024).toFixed(1);
           const quotaMB = (quota  / 1024 / 1024).toFixed(0);
           setStorageUsed(`${usedMB} MB used of ~${quotaMB} MB available`);
+          setStorageDetail({ used: usage, quota });
         }
       });
     }
   }, []);
+
+  // Persist timer settings
+  useEffect(() => {
+    localStorage.setItem('studyworks:timerSettings', JSON.stringify(timerSettings));
+  }, [timerSettings]);
+
+  // Persist shortcuts
+  useEffect(() => {
+    localStorage.setItem('studyworks:shortcuts', JSON.stringify(shortcuts));
+  }, [shortcuts]);
+
+  // Keyboard capture for shortcut editor
+  useEffect(() => {
+    if (!keyCapture) return;
+    const handler = (e: KeyboardEvent) => {
+      e.preventDefault();
+      const parts: string[] = [];
+      if (e.metaKey || e.ctrlKey) parts.push('mod');
+      if (e.shiftKey) parts.push('shift');
+      if (e.altKey)   parts.push('alt');
+      let key = e.key.toLowerCase();
+      if (key === ' ') key = 'space';
+      parts.push(key);
+      const combo = parts.join('+');
+      if (editingKey) {
+        setShortcuts(prev => {
+          const conflict = Object.entries(prev).find(([k]) => k !== editingKey && k === combo);
+          if (conflict) {
+            onAddToast(`"${combo}" is already assigned to "${conflict[1]}". Remove it first.`, 'error');
+            return prev;
+          }
+          return { ...prev, [combo]: prev[editingKey] || '', [editingKey]: combo };
+        });
+      }
+      setKeyCapture(false);
+      setEditingKey(null);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [keyCapture, editingKey, onAddToast]);
+
+  const startCapture = (key: string) => { setEditingKey(key); setKeyCapture(true); };
+  const resetShortcuts = () => setShortcuts({ 'mod+1': 'Dashboard', 'mod+2': 'Notes', 'mod+3': 'People', 'mod+4': 'Flashcards', 'mod+5': 'Pricing', 'mod+6': 'Settings' });
+
+  // Data management helpers
+  const formatBytes = (bytes: number): string => {
+    if (bytes === 0) return '0 B';
+    const k = 1024, sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  };
+
+  const handleClearCache = async () => {
+    if (!confirm('Clear all local data? This removes notes, contacts, flashcards, and settings. You will be signed out. This cannot be undone.')) return;
+    try {
+      const dbsPromise = indexedDB.databases?.() || Promise.resolve([]);
+      const dbs = await dbsPromise;
+      for (const db of dbs) { if (db.name) indexedDB.deleteDatabase(db.name); }
+      localStorage.clear();
+      sessionStorage.clear();
+      onAddToast('Local data cleared. Reloading…', 'success');
+      setTimeout(() => window.location.reload(), 1000);
+    } catch (err: any) {
+      onAddToast(`Clear failed: ${err.message}`, 'error');
+    }
+  };
+
+  const handleExportPDF = () => {
+    const printWin = window.open('', '_blank', 'width=900,height=700');
+    if (!printWin) { onAddToast('Pop-up blocked. Please allow pop-ups for PDF export.', 'error'); return; }
+    const exportDate = new Date().toLocaleString();
+    printWin.document.write(`<!DOCTYPE html>
+<html><head><title>StudyWorks Export — ${exportDate}</title>
+<style>
+  body { font-family: 'Segoe UI', system-ui, sans-serif; padding: 2.5rem; color: #111; max-width: 800px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; border-bottom: 2px solid #0d9488; padding-bottom: 0.5rem; }
+  h2 { font-size: 1.1rem; margin-top: 1.75rem; color: #0f766e; }
+  table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; font-size: 0.85rem; }
+  th { background: #f0fdfa; text-align: left; padding: 0.5rem; border: 1px solid #ccfbf1; color: #0f766e; }
+  td { padding: 0.5rem; border: 1px solid #e5e7eb; vertical-align: top; }
+  .meta { color: #6b7280; font-size: 0.8rem; margin-bottom: 1.5rem; }
+  .badge { display: inline-block; background: #ccfbf1; color: #0f766e; padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.7rem; font-weight: 600; }
+  @media print { body { padding: 0; } }
+</style></head><body>
+<h1>📚 StudyWorks Data Export</h1>
+<p class="meta">Exported ${exportDate} · Plan: ${tier === 'pro' ? '⭐ Pro' : '🆓 Free'}</p>
+<h2>📝 Notes</h2>
+<table><tr><th>Title</th><th>Type</th><th>Tags</th><th>Updated</th></tr>
+<tr><td colspan="4">Open this export from the Notes view to see full data. JSON export available in Settings.</td></tr>
+</table>
+<h2>👥 Contacts</h2>
+<table><tr><th>Name</th><th>Role</th><th>Email</th></tr>
+<tr><td colspan="3">See full contact list in the People view.</td></tr>
+</table>
+<h2>💡 Flashcards</h2>
+<table><tr><th>Question</th><th>Difficulty</th></tr>
+<tr><td colspan="2">See full flashcard list in the Flashcards view.</td></tr>
+</table>
+<script>window.onload = () => { setTimeout(() => window.print(), 300); };</script>
+</body></html>`);
+    printWin.document.close();
+  };
 
   const handleSaveAI = async () => {
     setSavingAI(true);
@@ -191,6 +319,85 @@ export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts,
         <h2>Settings</h2>
       </div>
 
+      {/* ── Study Timer Settings ── */}
+      <div className="card" style={{ marginBottom: '1.5rem' }}>
+        <div className="card-header">
+          <span className="card-title">⏱️ Study Timer</span>
+          <span className="tag success">Pomodoro</span>
+        </div>
+        <p className="text-sm text-muted" style={{ marginBottom: '1.25rem', lineHeight: 1.7 }}>
+          Configure your focus and break sessions. Navigate to the Timer tab to start a Pomodoro session.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+              <label className="form-label">Focus session duration</label>
+              <span className="text-sm" style={{ fontWeight: 700, color: 'var(--accent)' }}>{timerSettings.focusDuration} min</span>
+            </div>
+            <input type="range" min="5" max="60" step="5" value={timerSettings.focusDuration}
+              onChange={e => setTimerSettings((s: TimerSettings) => ({ ...s, focusDuration: +e.target.value }))}
+              style={{ width: '100%', accentColor: 'var(--accent)' }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span className="text-xs text-muted">5 min</span>
+              <span className="text-xs text-muted">60 min</span>
+            </div>
+          </div>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+              <label className="form-label">Break duration</label>
+              <span className="text-sm" style={{ fontWeight: 700, color: 'var(--accent)' }}>{timerSettings.breakDuration} min</span>
+            </div>
+            <input type="range" min="1" max="30" step="1" value={timerSettings.breakDuration}
+              onChange={e => setTimerSettings((s: TimerSettings) => ({ ...s, breakDuration: +e.target.value }))}
+              style={{ width: '100%', accentColor: 'var(--accent)' }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span className="text-xs text-muted">1 min</span>
+              <span className="text-xs text-muted">30 min</span>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <p style={{ fontWeight: 600, fontSize: '0.875rem' }}>Auto-start breaks</p>
+              <p className="text-xs text-muted">Automatically start the break timer after each focus session.</p>
+            </div>
+            <button onClick={() => setTimerSettings((s: TimerSettings) => ({ ...s, autoStartBreak: !s.autoStartBreak }))} style={{
+              width: '48px', height: '26px', borderRadius: '9999px', border: 'none',
+              background: timerSettings.autoStartBreak ? 'var(--accent)' : 'var(--border)',
+              cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0,
+            }} role="switch" aria-checked={timerSettings.autoStartBreak}>
+              <div style={{
+                width: '20px', height: '20px', borderRadius: '50%', background: 'var(--surface-0)',
+                position: 'absolute', top: '3px',
+                left: timerSettings.autoStartBreak ? '25px' : '3px',
+                transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+              }} />
+            </button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <p style={{ fontWeight: 600, fontSize: '0.875rem' }}>🔔 Sound notification</p>
+              <p className="text-xs text-muted">Play a chime when each focus/break session ends.</p>
+            </div>
+            <button onClick={() => {
+              const next = !timerSettings.soundEnabled;
+              setTimerSettings((s: TimerSettings) => ({ ...s, soundEnabled: next }));
+              if (next) playBeep();
+            }} style={{
+              width: '48px', height: '26px', borderRadius: '9999px', border: 'none',
+              background: timerSettings.soundEnabled ? 'var(--accent)' : 'var(--border)',
+              cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0,
+            }} role="switch" aria-checked={timerSettings.soundEnabled}>
+              <div style={{
+                width: '20px', height: '20px', borderRadius: '50%', background: 'var(--surface-0)',
+                position: 'absolute', top: '3px',
+                left: timerSettings.soundEnabled ? '25px' : '3px',
+                transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+              }} />
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* ── AI Configuration ── */}
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div className="card-header">
@@ -328,7 +535,7 @@ export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts,
               role="switch" aria-checked={aiConfig.enabled}
             >
               <div style={{
-                width: '18px', height: '18px', borderRadius: '50%', background: '#fff',
+                width: '18px', height: '18px', borderRadius: '50%', background: 'var(--surface-0)',
                 position: 'absolute', top: '3px',
                 left: aiConfig.enabled ? '23px' : '3px',
                 transition: 'left 0.2s',
@@ -453,7 +660,7 @@ export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts,
             </button>
           )}
           {notif.permission === 'denied' && (
-            <div style={{ background: '#fff1f2', border: '1px solid var(--danger)', borderRadius: 'var(--radius)', padding: '0.75rem 1rem' }}>
+            <div style={{ background: 'var(--danger-soft)', border: '1px solid var(--danger)', borderRadius: 'var(--radius)', padding: '0.75rem 1rem' }}>
               <p className="text-sm" style={{ color: 'var(--danger)', fontWeight: 600, marginBottom: '0.25rem' }}>Notifications are blocked</p>
               <p className="text-xs text-muted">
                 To re-enable: click the 🔒 icon in your browser's address bar → Notifications → Allow.
@@ -468,8 +675,6 @@ export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts,
 
       {/* ── Phase 2: sharing, email-to-save, support ── */}
       <Phase2Tools folders={folders} tier={tier} onAddToast={onAddToast} />
-
-      {/* ── PWA Install ── */}
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div className="card-header">
           <span className="card-title">📱 Install App</span>
@@ -494,56 +699,177 @@ export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts,
         </div>
       </div>
 
-      {/* ── Data ── */}
-      <div className="card">
+      {/* ── Data Management ── */}
+      <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div className="card-header">
-          <span className="card-title">💾 Storage</span>
+          <span className="card-title">💾 Data &amp; Storage</span>
           {storageUsed && <span className="tag text-xs">{storageUsed}</span>}
         </div>
-        <p className="text-sm text-muted" style={{ marginBottom: '0.75rem', lineHeight: 1.7 }}>
-          All data is stored locally in <strong>IndexedDB</strong> — no cloud sync, no servers.
-          Your data stays on your device. Use Export (📤) to back it up or move it to another browser.
+
+        <p className="text-sm text-muted" style={{ marginBottom: '1.25rem', lineHeight: 1.7 }}>
+          All data is stored locally in <strong>IndexedDB</strong>. Your data never leaves your device unless you enable cloud sync.
+          Export regularly to back up your library.
         </p>
-        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <div style={{ background: 'var(--surface-2)', borderRadius: 'var(--radius)', padding: '0.625rem 1rem', border: '1px solid var(--border)' }}>
-            <p className="text-xs text-muted">Storage engine</p>
+
+        {/* Storage detail grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
+          <div style={{ background: 'var(--surface-2)', borderRadius: 'var(--radius)', padding: '0.75rem 1rem', border: '1px solid var(--border)' }}>
+            <p className="text-xs text-muted">Engine</p>
             <p style={{ fontWeight: 700, fontSize: '0.875rem' }}>IndexedDB</p>
           </div>
-          <div style={{ background: 'var(--surface-2)', borderRadius: 'var(--radius)', padding: '0.625rem 1rem', border: '1px solid var(--border)' }}>
-            <p className="text-xs text-muted">Sync</p>
-            <p style={{ fontWeight: 700, fontSize: '0.875rem' }}>Local only</p>
-          </div>
-          <div style={{ background: 'var(--surface-2)', borderRadius: 'var(--radius)', padding: '0.625rem 1rem', border: '1px solid var(--border)' }}>
+          <div style={{ background: 'var(--surface-2)', borderRadius: 'var(--radius)', padding: '0.75rem 1rem', border: '1px solid var(--border)' }}>
             <p className="text-xs text-muted">Plan</p>
             <p style={{ fontWeight: 700, fontSize: '0.875rem' }}>{tier === 'pro' ? '⭐ Pro' : '🆓 Free'}</p>
           </div>
-          {storageUsed && (
-            <div style={{ background: 'var(--surface-2)', borderRadius: 'var(--radius)', padding: '0.625rem 1rem', border: '1px solid var(--border)' }}>
-              <p className="text-xs text-muted">Browser quota</p>
-              <p style={{ fontWeight: 700, fontSize: '0.875rem' }}>{storageUsed}</p>
-            </div>
+          {storageDetail && (
+            <>
+              <div style={{ background: 'var(--surface-2)', borderRadius: 'var(--radius)', padding: '0.75rem 1rem', border: '1px solid var(--border)' }}>
+                <p className="text-xs text-muted">Data used</p>
+                <p style={{ fontWeight: 700, fontSize: '0.875rem' }}>{formatBytes(storageDetail.used)}</p>
+              </div>
+              <div style={{ background: 'var(--surface-2)', borderRadius: 'var(--radius)', padding: '0.75rem 1rem', border: '1px solid var(--border)' }}>
+                <p className="text-xs text-muted">Browser quota</p>
+                <p style={{ fontWeight: 700, fontSize: '0.875rem' }}>{formatBytes(storageDetail.quota)}</p>
+              </div>
+            </>
           )}
         </div>
+
+        {/* Storage usage bar */}
+        {storageDetail && (
+          <div style={{ marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+              <span className="text-xs text-muted">Storage used</span>
+              <span className="text-xs" style={{ fontWeight: 600 }}>
+                {((storageDetail.used / storageDetail.quota) * 100).toFixed(1)}%
+              </span>
+            </div>
+            <div style={{ height: '6px', background: 'var(--surface-3)', borderRadius: 'var(--r-full)', overflow: 'hidden' }}>
+              <div style={{
+                height: '100%', borderRadius: 'var(--r-full)',
+                background: 'linear-gradient(90deg, var(--accent), var(--accent-2))',
+                width: `${Math.min(100, (storageDetail.used / storageDetail.quota) * 100)}%`,
+                transition: 'width 0.5s ease',
+              }} />
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <button className="btn btn-primary" onClick={handleExportPDF} title="Opens a printable view — use your browser's Save as PDF">
+            📄 Export as PDF
+          </button>
+          <button className="btn btn-secondary" onClick={() => {
+            const payload = {
+              notes: [], contacts: [], flashcards: [], folders,
+              practiceQuestions: [], savedSearches: [],
+              exportedAt: new Date().toISOString(),
+            };
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `studyworks-export-${new Date().toISOString().split('T')[0]}.json`; a.click();
+            URL.revokeObjectURL(url);
+            onAddToast('Data exported as JSON!', 'success');
+          }}>
+            📤 Export as JSON
+          </button>
+          <button className="btn btn-danger" onClick={handleClearCache}>
+            🗑️ Clear all local data
+          </button>
+        </div>
+
         <p className="text-xs text-muted" style={{ marginTop: '0.75rem', lineHeight: 1.6 }}>
           ⚠️ Storage is managed by your browser. Large file attachments (PDFs, audio) consume quota fastest.
-          Export your library regularly to avoid data loss if the browser clears storage.
+          Export your library regularly to avoid data loss.
         </p>
       </div>
 
-      {/* ── Keyboard shortcuts ── */}
-      <div className="card" style={{ marginTop: '1.5rem' }}>
+      {/* ── Keyboard Shortcuts ── */}
+      <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div className="card-header">
           <span className="card-title">⌨️ Keyboard Shortcuts</span>
-          <button className="btn btn-secondary btn-sm" onClick={onShowShortcuts}>
-            View all shortcuts
-          </button>
+          <button className="btn btn-secondary btn-sm" onClick={onShowShortcuts}>View all</button>
         </div>
-        <p className="text-sm text-muted">
-          Use <kbd style={{ padding: '0.1rem 0.4rem', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontFamily: 'inherit', fontSize: '0.8rem' }}>?</kbd> anywhere
-          to open the shortcuts reference, or <kbd style={{ padding: '0.1rem 0.4rem', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontFamily: 'inherit', fontSize: '0.8rem' }}>⌘1–5</kbd> to
-          jump between views.
+
+        <p className="text-sm text-muted" style={{ marginBottom: '1.25rem', lineHeight: 1.7 }}>
+          Customise shortcut keys for common actions. Click any row, then press the new key combination.
+          <kbd style={{ padding: '0.1rem 0.4rem', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontFamily: 'inherit', fontSize: '0.8rem' }}>⌘K</kbd> opens the command palette anytime.
         </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '0.75rem' }}>
+          {[
+            { key: 'mod+1', label: 'Go to Dashboard' },
+            { key: 'mod+2', label: 'Go to Notes' },
+            { key: 'mod+3', label: 'Go to People' },
+            { key: 'mod+4', label: 'Go to Flashcards' },
+            { key: 'mod+5', label: 'Go to Pricing' },
+            { key: 'mod+6', label: 'Go to Settings' },
+            { key: 'mod+t', label: 'Start / Pause Timer' },
+            { key: 'mod+n', label: 'New Note' },
+            { key: 'mod+/', label: 'Command Palette' },
+          ].map(({ key, label }) => {
+            const currentKey = shortcuts[key] || key;
+            const isEditing = keyCapture && editingKey === key;
+            return (
+              <div key={key} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '0.625rem 0.875rem', borderRadius: 'var(--radius)',
+                background: isEditing ? 'var(--accent-soft)' : 'var(--surface-2)',
+                border: `1px solid ${isEditing ? 'rgb(45 212 191 / .35)' : 'var(--border)'}`,
+                transition: 'all 0.2s ease',
+              }}>
+                <span className="text-sm" style={{ fontWeight: 500 }}>{label}</span>
+                <button
+                  onClick={() => startCapture(key)}
+                  style={{
+                    padding: '0.25rem 0.65rem', borderRadius: 'var(--radius-sm)',
+                    border: `1px solid ${isEditing ? 'var(--accent)' : 'var(--border-strong)'}`,
+                    background: isEditing ? 'var(--accent)' : 'var(--surface-3)',
+                    color: isEditing ? 'var(--accent-ink)' : 'var(--text)',
+                    fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer',
+                    fontFamily: 'inherit', minWidth: '5.5rem', textAlign: 'center',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  {isEditing ? 'Press keys…' : currentKey}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        {keyCapture && (
+          <p className="text-xs text-muted" style={{ marginBottom: '0.75rem', fontStyle: 'italic' }}>
+            Press any key combination (e.g. ⌘T). Press <kbd style={{ padding: '0.05rem 0.3rem', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: '0.75rem' }}>Esc</kbd> to cancel.
+          </p>
+        )}
+
+        <button className="btn btn-secondary btn-sm" onClick={resetShortcuts}>↺ Reset to defaults</button>
       </div>
+
+      {/* ── Phase 2: sharing, email-to-save, support ── */}
+      <Phase2Tools folders={folders} tier={tier} onAddToast={onAddToast} />
     </div>
   );
+}
+
+// Reuse the Web Audio chime from StudyTimer
+function playBeep() {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const now = ctx.currentTime;
+    [0, 0.18, 0.36].forEach((offset, i) => {
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(i === 0 ? 880 : 660, now + offset);
+      gain.gain.setValueAtTime(0.3, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.14);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.15);
+    });
+    setTimeout(() => ctx.close(), 1200);
+  } catch {}
 }

@@ -1,16 +1,18 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
-import { Note, Flashcard, Folder, PracticeQuestion, SavedSearch, Highlight, PersonalNote } from '../types';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { Note, Flashcard, Folder, PracticeQuestion, SavedSearch, NoteVersion, PersonalNote } from '../types';
 import type { UseAIResult } from '../hooks/useAI';
 import { renderLinkedContent } from '../utils/noteLinker';
 import { matchesSmartFilter, previewSmartFilter } from '../utils/smartFolders';
 import { exportNotesToPDF } from '../utils/exportPDF';
-import { toPlainText } from '../utils/text';
+import { toPlainText, wordCount, readingTime } from '../utils/text';
 import { extractTextFromFile } from '../utils/extractText';
 import { NOTE_TEMPLATES } from '../lib/studentTemplates';
 import { uploadFile, deleteRemoteAttachment } from '../api/attachments';
 import { unfurlUrl } from '../api/phase2';
 import { findRelated, findBacklinks } from '../utils/backlinks';
 import { useDebounce } from '../hooks/useDebounce';
+import { saveVersion, getVersionsForNote } from '../utils/noteVersions';
+import { noteToMarkdown, noteToPlainText, downloadTextFile, copyToClipboard } from '../utils/exportMarkdown';
 import RichTextEditor from './RichTextEditor';
 import ConfirmModal from './ConfirmModal';
 
@@ -112,10 +114,50 @@ export default function NotesView({
   const [bulkMode, setBulkMode]         = useState(false);
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
 
+  // Focus Mode — hides chrome and centers the editor
+  const [focusMode, setFocusMode] = useState(false);
+  const [, setFocusNoteId] = useState<string | null>(null); // reserved for future deep-linking
+
+  // Tag filtering + autocomplete
+  const [tagFilter, setTagFilter] = useState('');
+  const [showTagDropdown, setShowTagDropdown] = useState(false);
+  const allTags = useMemo(() => {
+    const tagSet = new Set<string>();
+    notes.forEach(n => n.tags.forEach(t => tagSet.add(t)));
+    return Array.from(tagSet).sort();
+  }, [notes]);
+
+  // Version history
+  const [showVersionsFor, setShowVersionsFor] = useState<string | null>(null);
+  const [versions, setVersions] = useState<NoteVersion[]>([]);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+
+  // Auto-save version snapshots every 5 minutes while editing
+  const lastSavedVersionRef = useRef<number>(0);
+
+  // Save a version snapshot if >5 min since last one
+  const maybeSaveVersion = useCallback(async (noteId: string, title: string, content: string, tags: string[]) => {
+    const nowMs = Date.now();
+    if (nowMs - lastSavedVersionRef.current < 5 * 60 * 1000) return;
+    try {
+      await saveVersion(noteId, title, content, tags);
+      lastSavedVersionRef.current = nowMs;
+    } catch { /* non-blocking */ }
+  }, []);
+
   // Pending delete confirmation
   const [pendingDelete, setPendingDelete] = useState<{ type: 'note' | 'bulk'; id?: string } | null>(null);
 
-  // After uploading a PDF, we extract its text and offer to feed it
+  // Auto-save version snapshot every 5 minutes while editing
+  useEffect(() => {
+    if (!editingNote) return;
+    const interval = setInterval(() => {
+      const plainTextContent = toPlainText(content);
+      if (!plainTextContent.trim()) return;
+      maybeSaveVersion(editingNote.id, title, content, tags.split(',').map(t => t.trim()).filter(Boolean));
+    }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [editingNote, title, content, tags, maybeSaveVersion]);
   // directly to the flashcard generator. The user can decline and the
   // text just gets dropped.
   const [pendingPdfText, setPendingPdfText] = useState<{ noteId: string; fileName: string; text: string; truncated: boolean } | null>(null);
@@ -127,25 +169,69 @@ export default function NotesView({
   const updateNote = (noteId: string, patch: Partial<Note>) =>
     setNotes(notes.map(n => n.id === noteId ? { ...n, ...patch, updatedAt: new Date() } : n));
 
+  // Save a version snapshot if >5 min since last one
+  const handleRestoreVersion = async (version: NoteVersion) => {
+    setRestoringId(version.id);
+    try {
+      await saveVersion(version.noteId, version.title, version.content, version.tags);
+      updateNote(version.noteId, { title: version.title, content: version.content, tags: version.tags });
+      addToast('Version restored!', 'success');
+      if (editingNote?.id === version.noteId) {
+        setEditingNote(prev => prev ? { ...prev, title: version.title, content: version.content, tags: version.tags } : prev);
+        setTitle(version.title);
+        setContent(version.content);
+        setTags(version.tags.join(', '));
+      }
+    } catch (err: any) {
+      addToast(`Restore failed: ${err.message}`, 'error');
+    } finally {
+      setRestoringId(null);
+    }
+  };
+
+  const openVersions = async (noteId: string) => {
+    setShowVersionsFor(noteId);
+    try {
+      const v = await getVersionsForNote(noteId);
+      setVersions(v);
+    } catch { setVersions([]); }
+  };
+
+  const enterFocusMode = (note: Note) => {
+    setFocusNoteId(note.id);
+    setFocusMode(true);
+    startEdit(note);
+  };
+
+  const exitFocusMode = () => {
+    setFocusMode(false);
+    setFocusNoteId(null);
+    cancelEdit();
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!content.trim().replace(/<[^>]*>/g, '').trim()) {
       addToast('Please add some content to your note.', 'info');
       return;
     }
+    const tagList = tags.split(',').map(t => t.trim()).filter(Boolean);
     if (editingNote) {
-      setNotes(notes.map(n => n.id === editingNote.id ? { ...n, title, content, type, tags: tags.split(',').map(t => t.trim()).filter(Boolean), folderId: selectedFolder, updatedAt: new Date() } : n));
+      setNotes(notes.map(n => n.id === editingNote.id ? { ...n, title, content, type, tags: tagList, folderId: selectedFolder, updatedAt: new Date() } : n));
       setEditingNote(null); setFormOpen(false);
       addToast('Note updated!', 'success');
+      maybeSaveVersion(editingNote.id, title, content, tagList);
     } else {
       if (tier === 'free' && totalItems >= 50) { addToast("50 item limit reached. Upgrade to Pro.", 'info'); setCurrentView('pricing'); return; }
-      setNotes([{ id: Date.now().toString(), title, content, type, tags: tags.split(',').map(t => t.trim()).filter(Boolean), folderId: selectedFolder, createdAt: new Date(), updatedAt: new Date(), files: [], highlights: [], personalNotes: [] }, ...notes]);
+      const newNote = { id: Date.now().toString(), title, content, type, tags: tagList, folderId: selectedFolder, createdAt: new Date(), updatedAt: new Date(), files: [], highlights: [], personalNotes: [] };
+      setNotes([newNote, ...notes]);
       addToast('Note added!', 'success'); setFormOpen(false);
+      maybeSaveVersion(newNote.id, title, content, tagList);
     }
     setTitle(''); setContent(''); setTags('');
   };
 
-  const startEdit = (note: Note) => { setEditingNote(note); setTitle(note.title); setContent(note.content); setType(note.type); setTags(note.tags.join(', ')); setSelectedFolder(note.folderId || 'default'); setFormOpen(true); };
+  const startEdit = (note: Note) => { setEditingNote(note); setTitle(note.title); setContent(note.content); setType(note.type); setTags(note.tags.join(', ')); setSelectedFolder(note.folderId || 'default'); setFormOpen(true); openVersions(note.id); };
 
   // Save from URL (Phase 2): unfurl the URL server-side, then create a note
   // pre-filled with the page's title, description, and a link back to source.
@@ -333,7 +419,7 @@ export default function NotesView({
     const text = sel.toString().trim(); if (!text) return;
     if (tier === 'free') { const note = notes.find(n => n.id === noteId); if ((note?.highlights?.length || 0) >= 3) { addToast('Free plan: 3 highlights max. Upgrade to Pro.', 'info'); setCurrentView('pricing'); return; } }
     const note = notes.find(n => n.id === noteId); if (!note) return;
-    updateNote(noteId, { highlights: [...(note.highlights || []), { id: Date.now().toString(), text, color: highlightColor, createdAt: new Date() } as Highlight] });
+    updateNote(noteId, { highlights: [...(note.highlights || []), { id: Date.now().toString(), text, color: highlightColor, createdAt: new Date() }] });
     sel.removeAllRanges(); addToast('Highlight saved!', 'success');
   };
   const deleteHighlight = (noteId: string, hId: string) => { const note = notes.find(n => n.id === noteId); if (!note) return; updateNote(noteId, { highlights: (note.highlights || []).filter(h => h.id !== hId) }); };
@@ -517,6 +603,13 @@ export default function NotesView({
   const filteredNotes = (semanticResults ?? notes
     .filter(n => filterType === 'all' || n.type === filterType)
     .filter(n => {
+      if (tagFilter) {
+        const q = tagFilter.toLowerCase();
+        return n.tags.some(t => t.toLowerCase().includes(q));
+      }
+      return true;
+    })
+    .filter(n => {
       if (selectedFolder === 'default') return true;
       if (activeFolder?.isSmart && activeFolder.smartFilter) {
         return matchesSmartFilter(n, activeFolder.smartFilter);
@@ -532,9 +625,6 @@ export default function NotesView({
     .sort((a, b) => sortBy === 'newest' ? new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() : sortBy === 'oldest' ? new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() : a.title.localeCompare(b.title))
   );
 
-  const wordCount = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
-  const readingTime = (text: string) => Math.max(1, Math.round(wordCount(text) / 200));
-
   // Related: scored by wikilinks + tag Jaccard + same folder.
   // Top 3, excluding the current note.
   const relatedNotes = (note: Note) => tier !== 'pro' ? [] : findRelated(note, notes, 3);
@@ -544,6 +634,101 @@ export default function NotesView({
 
   return (
     <div>
+      {/* Focus mode styles */}
+      <style>{`
+        .focus-mode-container { max-width: 800px; margin: 0 auto; padding: 2rem; }
+        .focus-mode-container .page-header,
+        .focus-mode-container .toolbar,
+        .focus-mode-container .grid,
+        .focus-mode-container .limit-warning,
+        .focus-mode-container .empty-state,
+        .focus-mode-container .show-saved-searches,
+        .focus-mode-container .qa-panel,
+        .focus-mode-container .url-save-panel { display: none !important; }
+        .focus-mode-container .card { border: none !important; box-shadow: none !important; background: transparent !important; }
+        .focus-mode-container .card-header { display: none !important; }
+        .focus-mode-backdrop {
+          position: fixed; inset: 0; z-index: 9999;
+          background: var(--bg); display: flex; flex-direction: column;
+          align-items: center; justify-content: flex-start; padding-top: 3rem;
+          overflow-y: auto;
+        }
+        .focus-mode-backdrop .focus-exit {
+          position: fixed; top: 1rem; right: 1.5rem; z-index: 10000;
+        }
+      `}</style>
+      {/* Focus mode backdrop */}
+      {focusMode && (
+        <div className="focus-mode-backdrop">
+          <button className="btn btn-secondary focus-exit" onClick={exitFocusMode}>✕ Exit Focus Mode</button>
+          <div className="focus-mode-container">
+            {(formOpen || editingNote) && (
+              <div className="card animate-in" style={{ marginBottom: '1.75rem' }}>
+                <div className="card-header">
+                  <span className="card-title">{editingNote ? '✏️ Edit Note' : '✚ New Note'}</span>
+                  {tier === 'free' && <span className="tag accent">{totalItems}/50 items</span>}
+                </div>
+                <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <input type="text" className="input" placeholder="Title" value={title} onChange={e => setTitle(e.target.value)} required />
+                    <select className="select" value={type} onChange={e => setType(e.target.value as Note['type'])}>
+                      <option value="note">Note</option><option value="article">Article</option><option value="idea">Idea</option><option value="project">Project</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <select className="select" value={selectedFolder} onChange={e => setSelectedFolder(e.target.value)}>
+                      {folders.map(f => (<option key={f.id} value={f.id}>{f.isSmart ? '⚡ ' : ''}{f.name}</option>))}
+                    </select>
+                    {tier === 'pro' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <input type="text" className="input" placeholder="New folder name" value={newFolderName} onChange={e => setNewFolderName(e.target.value)} />
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={addFolder}>+ Folder</button>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <input type="checkbox" id="smart-folder-toggle-focus" checked={newFolderSmart} onChange={e => setNewFolderSmart(e.target.checked)} />
+                          <label htmlFor="smart-folder-toggle-focus" className="text-xs text-muted" style={{ cursor: 'pointer' }}>Smart folder</label>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <RichTextEditor value={content} onChange={setContent} placeholder="Content…" minHeight="300px" />
+                  <div style={{ position: 'relative' }}>
+                    <input type="text" className="input" placeholder="Tags (comma separated)" value={tags} onChange={e => setTags(e.target.value)} autoComplete="off" />
+                    {allTags.length > 0 && (
+                      <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 55, marginTop: '2px' }}>
+                        {tags.split(',').map((raw, idx, arr) => {
+                          const partial = raw.trim().toLowerCase();
+                          if (!partial) return null;
+                          const matches = allTags.filter(t => t.toLowerCase().startsWith(partial) && !arr.some((other, i) => i !== idx && other.trim().toLowerCase() === t.toLowerCase()));
+                          if (matches.length === 0) return null;
+                          return (
+                            <div key={idx} style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '4px', boxShadow: 'var(--shadow-lg)', display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '4px' }}>
+                              {matches.slice(0, 5).map(m => (
+                                <button key={m} type="button" onMouseDown={e => { e.preventDefault(); const current = tags.split(',').map(t => t.trim()); current[idx] = m; setTags(current.join(', ') + ', '); }} style={{ padding: '2px 8px', borderRadius: '9999px', background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>+ {m}</button>
+                              ))}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <button type="submit" className="btn btn-primary">{editingNote ? 'Update' : 'Save'}</button>
+                    {editingNote && <button type="button" className="btn btn-secondary" onClick={cancelEdit}>Cancel</button>}
+                  </div>
+                </form>
+              </div>
+            )}
+            {!formOpen && !editingNote && (
+              <div style={{ textAlign: 'center', marginTop: '4rem' }}>
+                <p className="text-muted" style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>🧘 Focus Mode — open a note to start writing</p>
+                <button className="btn btn-primary" onClick={() => setFocusMode(false)}>← Back to library</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {/* Confirm delete modal */}
       {pendingDelete && (
         <ConfirmModal
@@ -597,6 +782,7 @@ export default function NotesView({
           )}
           <button className="btn btn-secondary" onClick={() => setShowUrlSave(o => !o)}>{showUrlSave ? '✕ Close URL' : '🔗 Save from URL'}</button>
           <button className="btn btn-primary" onClick={() => importInputRef.current?.click()} title="Import a PDF or PPTX and turn it into flashcards">📥 Import</button>
+          <button className="btn btn-secondary" onClick={() => setFocusMode(f => !f)} title={focusMode ? 'Exit focus mode' : 'Enter focus mode — distraction-free editing'}>{focusMode ? '✕ Exit Focus' : '🧘 Focus Mode'}</button>
           <input ref={importInputRef} type="file" accept=".pdf,.pptx,image/*,audio/*" onChange={handleImport} style={{ display: 'none' }} />
           <div style={{ position: 'relative' }}>
             <button className="btn btn-primary" onClick={() => { if (!editingNote) setFormOpen(o => !o); }}>
@@ -609,21 +795,26 @@ export default function NotesView({
               onClick={() => setShowTemplateMenu(o => !o)}
             >▾</button>
             {showTemplateMenu && (
-              <div className="card" style={{ position: 'absolute', right: 0, top: '110%', zIndex: 50, minWidth: '220px', padding: '0.5rem', boxShadow: 'var(--shadow-lg)' }}>
-                <p className="text-xs text-muted" style={{ padding: '0.25rem 0.5rem', fontWeight: 700 }}>New from template</p>
-                {NOTE_TEMPLATES.map(t => (
-                  <button
-                    key={t.id}
-                    className="btn btn-ghost btn-sm"
-                    style={{ width: '100%', justifyContent: 'flex-start', gap: '0.5rem' }}
-                    onClick={() => {
-                      const note = t.build(selectedFolder);
-                      setNotes([note, ...notes]);
-                      setShowTemplateMenu(false);
-                      addToast(`Created ${t.label} template`, 'success');
-                    }}
-                  >{t.icon} {t.label}</button>
-                ))}
+              <div className="card" style={{ position: 'absolute', right: 0, top: '110%', zIndex: 50, padding: '0.75rem', boxShadow: 'var(--shadow-lg)', minWidth: '520px' }}>
+                <p className="text-xs text-muted" style={{ padding: '0 0.25rem 0.5rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Choose a template</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.5rem' }}>
+                  {NOTE_TEMPLATES.map(t => (
+                    <button
+                      key={t.id}
+                      className="btn btn-ghost btn-sm"
+                      style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem', padding: '0.6rem 0.75rem', height: 'auto', textAlign: 'left' }}
+                      onClick={() => {
+                        const note = t.build(selectedFolder);
+                        setNotes([note, ...notes]);
+                        setShowTemplateMenu(false);
+                        addToast(`Created ${t.label} template`, 'success');
+                      }}
+                    >
+                      <span style={{ fontSize: '1.25rem' }}>{t.icon}</span>
+                      <span style={{ fontWeight: 600, fontSize: '0.8rem' }}>{t.label}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -661,7 +852,7 @@ export default function NotesView({
             {ai.isReady && <span className="tag success text-xs">{ai.config.model}</span>}
           </div>
           {!ai.isReady && (
-            <div style={{ background: 'var(--accent-light)', border: '1px solid var(--accent)', borderRadius: 'var(--radius)', padding: '0.75rem 1rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div style={{ background: 'var(--accent-soft)', border: '1px solid var(--accent)', borderRadius: 'var(--radius)', padding: '0.75rem 1rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <span>⚠️</span>
               <p className="text-sm" style={{ flex: 1 }}>Add your OpenAI API key in <strong>Settings</strong> to enable real answers.</p>
               <button className="btn btn-secondary btn-sm" onClick={() => setCurrentView('settings')}>Settings →</button>
@@ -669,9 +860,43 @@ export default function NotesView({
           )}
           <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
             <input type="text" className="input" placeholder="Ask a question about your knowledge base…" value={qaQuery} onChange={e => setQaQuery(e.target.value)} style={{ flex: 1 }} onKeyDown={e => e.key === 'Enter' && handleQa()} />
-            <button className="btn btn-primary" onClick={handleQa} disabled={isGenerating === 'qa' || !ai.isReady}>{isGenerating === 'qa' ? 'Thinking…' : 'Ask'}</button>
+            <button className="btn btn-primary" onClick={handleQa} disabled={isGenerating === 'qa' || !ai.isReady}>{isGenerating === 'qa' ? '⏳ Thinking…' : 'Ask'}</button>
           </div>
-          {qaAnswer && <div style={{ background: 'var(--surface-2)', padding: '1rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}><p style={{ whiteSpace: 'pre-wrap', fontSize: '0.9rem', lineHeight: 1.7 }}>{qaAnswer}</p></div>}
+          {isGenerating === 'qa' && (
+            <div style={{ background: 'var(--surface-2)', padding: '1rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.9rem', color: 'var(--text-2)' }}>Analyzing your notes</span>
+                <span className="streaming-dots">...</span>
+              </div>
+              <style>{`
+                .streaming-dots span { animation: blink 1.4s infinite; opacity: 0; }
+                .streaming-dots span:nth-child(1) { animation-delay: 0s; }
+                .streaming-dots span:nth-child(2) { animation-delay: 0.2s; }
+                .streaming-dots span:nth-child(3) { animation-delay: 0.4s; }
+                @keyframes blink { 0%, 80%, 100% { opacity: 0; } 40% { opacity: 1; } }
+              `}</style>
+            </div>
+          )}
+          {qaAnswer && !isGenerating && (
+            <div style={{ background: 'var(--surface-2)', padding: '1rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+              <p style={{ whiteSpace: 'pre-wrap', fontSize: '0.9rem', lineHeight: 1.7, margin: 0 }}>{qaAnswer}</p>
+              {/* Sources from notes */}
+              {notes.filter(n => qaAnswer.toLowerCase().includes(n.title.toLowerCase()) || qaAnswer.toLowerCase().includes(toPlainText(n.content).toLowerCase().slice(0, 100))).slice(0, 3).length > 0 && (
+                <>
+                  <div className="divider" style={{ margin: '0.75rem 0' }} />
+                  <p className="text-xs text-muted" style={{ fontWeight: 700, marginBottom: '0.375rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sources from your notes</p>
+                  <div style={{ display: 'flex', gap: '0.375rem', flexWrap: 'wrap' }}>
+                    {notes.filter(n => qaAnswer.toLowerCase().includes(n.title.toLowerCase()) || qaAnswer.toLowerCase().includes(toPlainText(n.content).toLowerCase().slice(0, 100))).slice(0, 3).map(src => (
+                      <span key={src.id} className="tag primary" style={{ cursor: 'pointer' }} onClick={() => startEdit(src)} title={`Open: ${src.title}`}>{src.title}</span>
+                    ))}
+                  </div>
+                </>
+              )}
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+                <button className="btn btn-secondary btn-sm" onClick={() => { setQaQuery(''); setQaAnswer(null); }}>New question</button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -754,7 +979,50 @@ export default function NotesView({
               placeholder="Content…"
               minHeight="120px"
             />
-            <input type="text" className="input" placeholder="Tags (comma separated)" value={tags} onChange={e => setTags(e.target.value)} />
+            <div style={{ position: 'relative' }}>
+              <input
+                type="text"
+                className="input"
+                placeholder="Tags (comma separated)"
+                value={tags}
+                onChange={e => setTags(e.target.value)}
+                onFocus={() => setShowTagDropdown(false)}
+                autoComplete="off"
+              />
+              {allTags.length > 0 && (
+                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 55, marginTop: '2px' }}>
+                  {tags.split(',').map((raw, idx, arr) => {
+                    const partial = raw.trim().toLowerCase();
+                    if (!partial || showTagDropdown) return null;
+                    const matches = allTags.filter(t => t.toLowerCase().startsWith(partial) && !arr.some((other, i) => i !== idx && other.trim().toLowerCase() === t.toLowerCase()));
+                    if (matches.length === 0) return null;
+                    return (
+                      <div key={idx} style={{
+                        background: 'var(--surface-1)', border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius)', padding: '4px',
+                        boxShadow: 'var(--shadow-lg)', display: 'flex', flexWrap: 'wrap', gap: '4px',
+                      }}>
+                        {matches.slice(0, 5).map(m => (
+                          <button
+                            key={m}
+                            type="button"
+                            onMouseDown={e => { e.preventDefault(); const current = tags.split(',').map(t => t.trim()); current[idx] = m; setTags(current.join(', ') + ', '); }}
+                            style={{
+                              padding: '2px 8px', borderRadius: '9999px',
+                              background: 'var(--accent-soft)', color: 'var(--accent)',
+                              border: '1px solid var(--border)', cursor: 'pointer',
+                              fontSize: '0.75rem', fontWeight: 600,
+                            }}
+                          >
+                            + {m}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
             <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
               <button type="submit" className="btn btn-primary" disabled={!editingNote && tier === 'free' && totalItems >= 50}>{!editingNote && tier === 'free' && totalItems >= 50 ? 'Upgrade to Add More' : editingNote ? 'Update' : 'Save'}</button>
               {editingNote && <button type="button" className="btn btn-secondary" onClick={cancelEdit}>Cancel</button>}
@@ -771,6 +1039,55 @@ export default function NotesView({
         <select className="select" value={sortBy} onChange={e => setSortBy(e.target.value as SortBy)} style={{ minWidth: '140px' }}>
           <option value="newest">Newest First</option><option value="oldest">Oldest First</option><option value="title">Title A-Z</option>
         </select>
+        {/* Tag filter */}
+        {allTags.length > 0 && (
+          <div style={{ position: 'relative', display: 'inline-flex' }}>
+            <input
+              type="text"
+              className="input"
+              placeholder="Filter by tag…"
+              value={tagFilter}
+              onChange={e => { setTagFilter(e.target.value); setShowTagDropdown(true); }}
+              onFocus={() => setShowTagDropdown(true)}
+              style={{ minWidth: '140px', paddingRight: '1.5rem' }}
+            />
+            {tagFilter && (
+              <button
+                type="button"
+                onClick={() => { setTagFilter(''); setShowTagDropdown(false); }}
+                style={{ position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', fontSize: '0.75rem' }}
+              >✕</button>
+            )}
+            {showTagDropdown && allTags.length > 0 && (
+              <div style={{
+                position: 'absolute', top: '110%', left: 0, zIndex: 50,
+                background: 'var(--surface-1)', border: '1px solid var(--border)',
+                borderRadius: 'var(--radius)', padding: '4px', maxHeight: '200px', overflowY: 'auto',
+                boxShadow: 'var(--shadow-lg)', minWidth: '160px',
+              }}>
+                {allTags.map(t => (
+                  <button
+                    key={t}
+                    type="button"
+                    onMouseDown={e => { e.preventDefault(); setTagFilter(t); setShowTagDropdown(false); }}
+                    style={{
+                      width: '100%', textAlign: 'left', padding: '4px 8px',
+                      background: tagFilter === t ? 'var(--accent-soft)' : 'transparent',
+                      border: 'none', borderRadius: 'var(--radius-sm)',
+                      color: tagFilter === t ? 'var(--accent)' : 'var(--text)',
+                      cursor: 'pointer', fontSize: '0.8125rem',
+                    }}
+                  >
+                    # {t}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {tagFilter && (
+          <button className="btn btn-ghost btn-sm" onClick={() => setTagFilter('')} title="Clear tag filter">✕ Tag</button>
+        )}
         {ai.isReady && search.trim() && (
           <button
             className="btn btn-secondary btn-sm"
@@ -868,6 +1185,7 @@ export default function NotesView({
                 {!bulkMode && (
                   <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
                     <button className="btn btn-ghost btn-xs" onClick={() => startEdit(note)}>✏️ Edit</button>
+                    <button className="btn btn-ghost btn-xs" title="Focus mode" onClick={() => enterFocusMode(note)}>🧘 Focus</button>
                     <button
                       className="btn btn-ghost btn-xs"
                       onClick={() => generateSummary(note)}
@@ -909,12 +1227,7 @@ export default function NotesView({
                       title="Set revisit reminder"
                       onClick={() => { setReminderNoteId(showReminderForm ? null : note.id); setReminderDate(''); }}
                     >⏰</button>
-                    <button
-                      className="btn btn-ghost btn-xs"
-                      title={ai.isReady ? 'Generate flashcards from this note with AI' : 'Add API key in Settings'}
-                      disabled={isGenerating === note.id || !ai.isReady}
-                      onClick={() => generateFlashcards(note)}
-                    >{isGenerating === note.id ? '⏳' : '📝 Flashcards'}</button>
+                    <button className="btn btn-ghost btn-xs" title="Focus mode — distraction-free editing" onClick={() => enterFocusMode(note)}>🧘 Focus</button>
                     <button className="btn btn-ghost btn-xs" onClick={() => {
                       const opening = !isExpanded;
                       setExpandedNoteId(opening ? note.id : null);
@@ -923,6 +1236,16 @@ export default function NotesView({
                       // Track last revisited when opening the detail panel
                       if (opening) updateNote(note.id, { lastRevisited: new Date() });
                     }}>{isExpanded ? '▲ Less' : '▼ More'}</button>
+                    <button className="btn btn-ghost btn-xs" title="Version history" onClick={() => openVersions(note.id)}>🕒 History</button>
+                    <div style={{ position: 'relative' }}>
+                      <button className="btn btn-ghost btn-xs" title="Export">📤</button>
+                      <div style={{ position: 'absolute', right: 0, top: '110%', zIndex: 40, background: 'var(--surface-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '4px', boxShadow: 'var(--shadow-lg)', minWidth: '150px' }}>
+                        <button className="btn btn-ghost btn-xs" style={{ width: '100%', justifyContent: 'flex-start' }} onClick={() => { downloadTextFile(noteToMarkdown(note), `${note.title.replace(/[^a-z0-9]/gi, '_')}.md`, 'text/markdown'); addToast('Exported Markdown', 'success'); }}>📄 Markdown</button>
+                        <button className="btn btn-ghost btn-xs" style={{ width: '100%', justifyContent: 'flex-start' }} onClick={() => { downloadTextFile(noteToPlainText(note), `${note.title.replace(/[^a-z0-9]/gi, '_')}.txt`, 'text/plain'); addToast('Exported Plain Text', 'success'); }}>📝 Plain Text</button>
+                        <button className="btn btn-ghost btn-xs" style={{ width: '100%', justifyContent: 'flex-start' }} onClick={() => { copyToClipboard(noteToPlainText(note)).then(() => addToast('Copied to clipboard!', 'success')).catch(() => addToast('Copy failed', 'error')); }}>📋 Copy</button>
+                        <button className="btn btn-ghost btn-xs" style={{ width: '100%', justifyContent: 'flex-start' }} onClick={async () => { try { await exportNotesToPDF([note]); addToast('📄 PDF downloaded.', 'success'); } catch (err: any) { addToast(`PDF export failed: ${err.message}`, 'error'); } }}>🖨️ PDF</button>
+                      </div>
+                    </div>
                     <button className="btn btn-danger btn-xs" onClick={() => deleteNote(note.id)}>🗑️</button>
                   </div>
                 )}
@@ -950,6 +1273,67 @@ export default function NotesView({
               {/* Expanded panel */}
               {isExpanded && !bulkMode && (
                 <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', background: 'var(--surface-2)', borderRadius: 'var(--radius)', padding: '1rem', border: '1px solid var(--border)' }}>
+                  {/* Version history */}
+                  {showVersionsFor === note.id && (
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                        <p className="section-title">🕒 Version History</p>
+                        <button className="btn btn-ghost btn-xs" onClick={() => { setShowVersionsFor(null); setVersions([]); }}>✕ Close</button>
+                      </div>
+                      {versions.length === 0 ? (
+                        <p className="text-sm text-muted">No versions saved yet. Snapshots are saved every 5 minutes while editing.</p>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem', maxHeight: '240px', overflowY: 'auto' }}>
+                          {versions.map(v => (
+                            <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--surface-1)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <p className="text-sm" style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.title || '(untitled)'}</p>
+                                <p className="text-xs text-muted">{new Date(v.snapshotAt).toLocaleString()} · {wordCount(v.content)} words · {v.tags.length} tags</p>
+                              </div>
+                              <button
+                                className="btn btn-primary btn-xs"
+                                onClick={() => handleRestoreVersion(v)}
+                                disabled={restoringId === v.id}
+                              >
+                                {restoringId === v.id ? '⏳' : '↩ Restore'}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {showVersionsFor === note.id && <div className="divider" style={{ margin: 0 }} />}
+                  {/* Note stats */}
+                  <div>
+                    <p className="section-title">📊 Note Statistics</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.5rem' }}>
+                      <div style={{ background: 'var(--surface-1)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+                        <p className="text-xs text-muted">Words</p>
+                        <p className="text-sm" style={{ fontWeight: 700 }}>{wordCount(note.content)}</p>
+                      </div>
+                      <div style={{ background: 'var(--surface-1)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+                        <p className="text-xs text-muted">Reading time</p>
+                        <p className="text-sm" style={{ fontWeight: 700 }}>{readingTime(note.content)} min</p>
+                      </div>
+                      <div style={{ background: 'var(--surface-1)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+                        <p className="text-xs text-muted">Tags</p>
+                        <p className="text-sm" style={{ fontWeight: 700 }}>{note.tags.length}</p>
+                      </div>
+                      <div style={{ background: 'var(--surface-1)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+                        <p className="text-xs text-muted">Highlights</p>
+                        <p className="text-sm" style={{ fontWeight: 700 }}>{(note.highlights || []).length}</p>
+                      </div>
+                      <div style={{ background: 'var(--surface-1)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+                        <p className="text-xs text-muted">Attachments</p>
+                        <p className="text-sm" style={{ fontWeight: 700 }}>{(note.files || []).length}</p>
+                      </div>
+                      <div style={{ background: 'var(--surface-1)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+                        <p className="text-xs text-muted">Last edited</p>
+                        <p className="text-sm" style={{ fontWeight: 700 }}>{new Date(note.updatedAt).toLocaleDateString()}</p>
+                      </div>
+                    </div>
+                  </div>
                   {/* Highlights */}
                   <div>
                     <p className="section-title">🖊️ Highlights {tier === 'free' && <span className="text-xs text-muted" style={{ fontWeight: 400 }}>({(note.highlights || []).length}/3 free)</span>}</p>
@@ -983,7 +1367,7 @@ export default function NotesView({
                       </div>
                     </div>
                     {(note.personalNotes || []).length > 0
-                      ? <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>{note.personalNotes!.map(pn => <div key={pn.id} style={{ background: 'var(--surface)', padding: '0.625rem 0.75rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)', position: 'relative' }}>{pn.content.startsWith('<') ? <div className="text-sm" style={{ paddingRight: '4rem', marginBottom: '0.2rem' }} dangerouslySetInnerHTML={{ __html: pn.content }} /> : <p className="text-sm" style={{ paddingRight: '4rem', marginBottom: '0.2rem' }}>{pn.content}</p>}<p className="text-xs text-muted">{new Date(pn.updatedAt).toLocaleDateString()}</p><div style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', display: 'flex', gap: '0.25rem' }}><button className="btn btn-ghost btn-xs" onClick={() => { setEditingPersonalNote(pn); setPersonalNoteInput(pn.content); }}>✏️</button><button className="btn btn-danger btn-xs" onClick={() => deletePersonalNote(note.id, pn.id)}>🗑️</button></div></div>)}</div>
+                      ? <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>{note.personalNotes!.map(pn => <div key={pn.id} style={{ background: 'var(--surface-1)', padding: '0.625rem 0.75rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)', position: 'relative' }}>{pn.content.startsWith('<') ? <div className="text-sm" style={{ paddingRight: '4rem', marginBottom: '0.2rem' }} dangerouslySetInnerHTML={{ __html: pn.content }} /> : <p className="text-sm" style={{ paddingRight: '4rem', marginBottom: '0.2rem' }}>{pn.content}</p>}<p className="text-xs text-muted">{new Date(pn.updatedAt).toLocaleDateString()}</p><div style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', display: 'flex', gap: '0.25rem' }}><button className="btn btn-ghost btn-xs" onClick={() => { setEditingPersonalNote(pn); setPersonalNoteInput(pn.content); }}>✏️</button><button className="btn btn-danger btn-xs" onClick={() => deletePersonalNote(note.id, pn.id)}>🗑️</button></div></div>)}</div>
                       : <p className="text-sm text-muted">No personal notes yet.</p>}
                   </div>
                   <div className="divider" style={{ margin: 0 }} />
@@ -992,7 +1376,7 @@ export default function NotesView({
                     <p className="section-title">📎 Attachments {tier !== 'pro' && <span className="text-xs text-muted" style={{ fontWeight: 400 }}>(Pro only)</span>}</p>
                     {tier === 'pro' && <div style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}><label style={{ cursor: 'pointer' }}><span className="btn btn-secondary btn-sm">📤 Upload File</span><input type="file" accept=".pdf,.pptx,image/*,audio/*" onChange={e => handleFileUpload(note.id, e)} style={{ display: 'none' }} /></label><span className="text-xs text-muted">PDF, PPTX, images, audio · max 50MB</span></div>}
                     {(note.files || []).length > 0
-                      ? <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>{note.files!.map(f => <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'var(--surface)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}><span>{f.type === 'pdf' ? '📄' : f.type === 'pptx' ? '📊' : f.type === 'image' ? '🖼️' : '🎵'}</span><div style={{ flex: 1, minWidth: 0 }}><p className="text-sm truncate" style={{ fontWeight: 600 }}>{f.name}</p><p className="text-xs text-muted">{formatBytes(f.size)}</p></div>{f.type === 'image' && <img src={f.url} alt={f.name} style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: 'var(--radius)' }} />}{f.type === 'audio' && <audio controls src={f.url} style={{ height: '32px', maxWidth: '160px' }} />}{f.type === 'pdf' && <a href={f.url} target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-xs">View</a>}<button className="btn btn-danger btn-xs" onClick={() => deleteAttachment(note.id, f.id)}>🗑️</button></div>)}</div>
+                      ? <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>{note.files!.map(f => <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'var(--surface-1)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}><span>{f.type === 'pdf' ? '📄' : f.type === 'pptx' ? '📊' : f.type === 'image' ? '🖼️' : '🎵'}</span><div style={{ flex: 1, minWidth: 0 }}><p className="text-sm truncate" style={{ fontWeight: 600 }}>{f.name}</p><p className="text-xs text-muted">{formatBytes(f.size)}</p></div>{f.type === 'image' && <img src={f.url} alt={f.name} style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: 'var(--radius)' }} />}{f.type === 'audio' && <audio controls src={f.url} style={{ height: '32px', maxWidth: '160px' }} />}{f.type === 'pdf' && <a href={f.url} target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-xs">View</a>}<button className="btn btn-danger btn-xs" onClick={() => deleteAttachment(note.id, f.id)}>🗑️</button></div>)}</div>
                       : <p className="text-sm text-muted">{tier === 'pro' ? 'No attachments yet.' : 'Upgrade to Pro to attach PDFs, images, and audio.'}</p>}
                   </div>
                 </div>
@@ -1019,6 +1403,8 @@ export default function NotesView({
                 {new Date(note.createdAt).toLocaleDateString()}
                 {' · '}{wordCount(note.content)} words
                 {' · '}{readingTime(note.content)} min read
+                {' · '}{note.tags.length} tags
+                {' · '}{(note.highlights || []).length} highlights
               </p>
             </div>
           );

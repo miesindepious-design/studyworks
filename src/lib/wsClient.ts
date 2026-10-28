@@ -21,8 +21,10 @@
  *   error      { message }
  */
 
+export type PowerUpType = '50/50' | 'extra-time' | 'double-points';
+
 export type ServerMessage =
-  | { type: 'question'; index: number; total: number; prompt: string; options: string[]; questionId: string; deadline: number }
+  | { type: 'question'; index: number; total: number; prompt: string; options: string[]; questionId: string; deadline: number; explanation?: string }
   | { type: 'reveal'; answerIdx: number }
   | { type: 'scores'; scores: { userId: string; name: string; xp: number }[] }
   | { type: 'answer-ack'; userId: string; correct: boolean; xp: number }
@@ -31,7 +33,9 @@ export type ServerMessage =
   | { type: 'chat'; userId: string; name: string; text: string }
   | { type: 'finished'; ranking: { userId: string; name: string; xp: number; rank: number }[]; winnerId: string | null }
   | { type: 'room-ended'; reason: string }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  | { type: 'lobby-reaction'; emoji: string; userId: string; userName: string; timestamp: number }
+  | { type: 'power-up-used'; userId: string; powerUp: PowerUpType };
 
 export interface GameSocketHandlers {
   onMessage: (msg: ServerMessage) => void;
@@ -67,6 +71,18 @@ export class GameSocket {
 
   sendChat(text: string) {
     this.send({ type: 'chat', text });
+  }
+
+  sendPowerUp(roomCode: string, powerUp: PowerUpType) {
+    this.send({ type: 'use-power-up', roomCode, powerUp });
+  }
+
+  sendReaction(emoji: string) {
+    this.send({ type: 'lobby-reaction', emoji });
+  }
+
+  toggleSpectate(roomCode: string, spectate: boolean) {
+    this.send({ type: 'toggle-spectate', roomCode, spectate });
   }
 
   private send(obj: unknown) {

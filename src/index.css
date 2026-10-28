@@ -1,7 +1,7 @@
 /* ════════════════════════════════════════════════════════════════════════════
-   StudyWorks — Midnight Focus design system
-   Dark-first. Near-black layered surfaces, real depth, one aurora/cyan accent.
-   A refined light mode is provided via [data-theme="light"].
+   StudyWorks — Focused Playfulness design system
+   Soft layered surfaces, indigo/violet primary, glassy accents.
+   A refined dark mode is provided via [data-theme="dark"].
    ════════════════════════════════════════════════════════════════════════════ */
 
 *, *::before, *::after {
@@ -11,51 +11,52 @@
 }
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
-  /* ── Aurora accent (the single living color) ── */
-  --accent:        #2dd4bf;   /* teal/aurora */
-  --accent-2:      #38bdf8;   /* sky, for duotone glows */
-  --accent-3:      #818cf8;   /* indigo, used sparingly for depth */ /*!*/
-  --accent-ink:    #04221f;   /* text on accent */
-  --accent-glow:   rgb(45 212 191 / .35);
-  --accent-soft:   rgb(45 212 191 / .12);
-  --accent-soft-2: rgb(56 189 248 / .10);
+  /* ── Primary / Secondary / Tertiary ── */
+  --accent:        #4648d4;   /* indigo */
+  --accent-2:      #8b5cf6;   /* violet */
+  --accent-3:      #6366f1;   /* primary indigo */
+  --accent-ink:    #ffffff;
+  --accent-glow:   rgb(99 102 241 / .25);
+  --accent-soft:   rgb(99 102 241 / .12);
+  --accent-soft-2: rgb(139 92 246 / .10);
 
-  /* ── Surfaces (near-black, layered by elevation) ── */
-  --bg:            #070809;
-  --bg-grad:       radial-gradient(1200px 800px at 78% -8%, rgb(45 212 191 / .10), transparent 60%),
-                   radial-gradient(1000px 700px at 8% 4%, rgb(129 140 248 / .08), transparent 55%);
-  --surface-0:     #0d0f11;   /* deepest panel */
-  --surface-1:     #131619;   /* cards */
-  --surface-2:     #1a1e22;   /* raised / hover */
-  --surface-3:     #23282d;   /* inputs / active */
-  --border:        #23282d;
-  --border-soft:   #1a1e22;
-  --border-strong: #2f363c;
+  /* ── Surfaces (soft, layered) ── */
+  --bg:            #faf8ff;
+  --bg-grad:       radial-gradient(1200px 800px at 78% -8%, rgb(99 102 241 / .08), transparent 60%),
+                   radial-gradient(1000px 700px at 8% 4%, rgb(139 92 246 / .06), transparent 55%);
+  --surface-0:     #ffffff;
+  --surface-1:     #ffffff;
+  --surface-2:     #f2f3ff;
+  --surface-3:     #eaedff;
+  --border:        #c7c4d7;
+  --border-soft:   #dae2fd;
+  --border-strong: #767586;
+  --border-focus:  rgb(99 102 241 / .35);
 
   /* ── Ink ── */
-  --text:          #eef2f4;
-  --text-2:        #aab4bb;
-  --text-3:        #6b767d;
-  --text-faint:    #424b51;
+  --text:          #131b2e;
+  --text-2:        #464554;
+  --text-3:        #767586;
+  --text-faint:    #aab4bb;
 
   /* ── Semantic ── */
-  --success:       #34d399;
-  --success-soft:  rgb(52 211 153 / .14);
-  --warning:       #fbbf24;
-  --warning-soft:  rgb(251 191 36 / .14);
-  --danger:        #fb7185;
-  --danger-soft:   rgb(251 113 133 / .14);
-  --info:          #38bdf8;
-  --info-soft:     rgb(56 189 248 / .14);
+  --success:       #22c55e;
+  --success-soft:  rgb(34 197 94 / .14);
+  --warning:       #f59e0b;
+  --warning-soft:  rgb(245 158 11 / .14);
+  --danger:        #ef4444;
+  --danger-soft:   rgb(239 68 68 / .14);
+  --info:          #6366f1;
+  --info-soft:     rgb(99 102 241 / .14);
 
-  /* ── Depth: layered, colored, directional ── */
-  --shadow-sm:  0 1px 2px rgb(0 0 0 / .4);
-  --shadow:     0 2px 8px rgb(0 0 0 / .5), 0 1px 2px rgb(0 0 0 / .4);
-  --shadow-md:  0 8px 24px rgb(0 0 0 / .55), 0 2px 6px rgb(0 0 0 / .4);
-  --shadow-lg:  0 24px 60px rgb(0 0 0 / .65), 0 8px 20px rgb(0 0 0 / .5);
-  --shadow-glow: 0 10px 40px rgb(45 212 191 / .18);
+  /* ── Depth ── */
+  --shadow-sm:  0 1px 2px rgb(15 23 34 / .06);
+  --shadow:     0 2px 10px rgb(15 23 34 / .07), 0 1px 2px rgb(15 23 34 / .05);
+  --shadow-md:  0 10px 30px rgb(15 23 34 / .10), 0 3px 8px rgb(15 23 34 / .06);
+  --shadow-lg:  0 30px 70px rgb(15 23 34 / .16), 0 10px 24px rgb(15 23 34 / .10);
+  --shadow-glow: 0 12px 44px rgb(99 102 241 / .16);
 
   /* ── Radii ── */
   --r-xs:   0.375rem;
@@ -70,54 +71,55 @@
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
   /* ── Motion ── */
-  --ease:        cubic-bezier(.22, 1, .36, 1);   /* expo-out, tactile */
+  --ease:        cubic-bezier(.22, 1, .36, 1);
   --ease-out:    cubic-bezier(.4, 0, .2, 1);
   --t-fast:      140ms;
   --t:           220ms;
   --t-slow:      420ms;
 }
 
-[data-theme="light"] {
-  color-scheme: light;
+[data-theme="dark"] {
+  color-scheme: dark;
 
-  --accent:      #0d9488;
-  --accent-2:    #0284c7;
-  --accent-3:    #6366f1;
-  --accent-ink:  #ffffff;
-  --accent-glow: rgb(13 148 136 / .25);
-  --accent-soft: rgb(13 148 136 / .10);
-  --accent-soft-2: rgb(2 132 199 / .08);
+  --accent:        #6366f1;
+  --accent-2:      #8b5cf6;
+  --accent-3:      #4648d4;
+  --accent-ink:    #ffffff;
+  --accent-glow:   rgb(99 102 241 / .35);
+  --accent-soft:   rgb(99 102 241 / .18);
+  --accent-soft-2: rgb(139 92 246 / .14);
 
-  --bg:          #f4f6f8;
-  --bg-grad:     radial-gradient(1200px 800px at 80% -10%, rgb(13 148 136 / .07), transparent 60%),
-                 radial-gradient(1000px 700px at 0% 0%, rgb(99 102 241 / .06), transparent 55%);
-  --surface-0:   #ffffff;
-  --surface-1:   #ffffff;
-  --surface-2:   #f1f4f6;
-  --surface-3:   #e7ebee;
-  --border:      #e2e8ee;
-  --border-soft: #eef2f5;
-  --border-strong: #d2dae0;
+  --bg:            #0f172a;
+  --bg-grad:       radial-gradient(1200px 800px at 78% -8%, rgb(99 102 241 / .12), transparent 60%),
+                   radial-gradient(1000px 700px at 8% 4%, rgb(139 92 246 / .08), transparent 55%);
+  --surface-0:     #1e293b;
+  --surface-1:     #1e293b;
+  --surface-2:     #283044;
+  --surface-3:     #323b5c;
+  --border:        #334155;
+  --border-soft:   #283044;
+  --border-strong: #475569;
+  --border-focus:  rgb(99 102 241 / .45);
 
-  --text:        #0f1722;
-  --text-2:      #46535e;
-  --text-3:      #76828c;
-  --text-faint:  #aab4bb;
+  --text:          #f1f5f9;
+  --text-2:        #cbd5e1;
+  --text-3:        #94a3b8;
+  --text-faint:    #64748b;
 
-  --success:     #059669;
-  --success-soft: rgb(5 150 105 / .12);
-  --warning:     #b45309;
-  --warning-soft: rgb(180 83 9 / .12);
-  --danger:      #e11d48;
-  --danger-soft: rgb(225 29 72 / .12);
-  --info:        #0284c7;
-  --info-soft:   rgb(2 132 199 / .12);
+  --success:       #34d399;
+  --success-soft:  rgb(52 211 153 / .18);
+  --warning:       #fbbf24;
+  --warning-soft:  rgb(251 191 36 / .18);
+  --danger:        #fb7185;
+  --danger-soft:   rgb(251 113 133 / .18);
+  --info:          #6366f1;
+  --info-soft:     rgb(99 102 241 / .18);
 
-  --shadow-sm:  0 1px 2px rgb(15 23 34 / .06);
-  --shadow:     0 2px 10px rgb(15 23 34 / .07), 0 1px 2px rgb(15 23 34 / .05);
-  --shadow-md:  0 10px 30px rgb(15 23 34 / .10), 0 3px 8px rgb(15 23 34 / .06);
-  --shadow-lg:  0 30px 70px rgb(15 23 34 / .16), 0 10px 24px rgb(15 23 34 / .10);
-  --shadow-glow: 0 12px 44px rgb(13 148 136 / .16);
+  --shadow-sm:  0 1px 2px rgb(0 0 0 / .4);
+  --shadow:     0 2px 8px rgb(0 0 0 / .5), 0 1px 2px rgb(0 0 0 / .4);
+  --shadow-md:  0 8px 24px rgb(0 0 0 / .55), 0 2px 6px rgb(0 0 0 / .4);
+  --shadow-lg:  0 24px 60px rgb(0 0 0 / .65), 0 8px 20px rgb(0 0 0 / .5);
+  --shadow-glow: 0 10px 40px rgb(99 102 241 / .18);
 }
 
 html { scroll-behavior: smooth; }

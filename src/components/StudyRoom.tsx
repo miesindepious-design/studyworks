@@ -11,14 +11,67 @@ interface Props {
 
 type StudyPhase = 'idle' | 'creating' | 'ready' | 'error';
 
-export default function StudyRoom({ userName, tier, setCurrentView, addToast }: Props) {
+type TimerMode = 'focus' | 'break';
+const FOCUS_MINUTES = 25;
+const BREAK_MINUTES = 5;
+
+export default function StudyRoom({ userId, userName, tier, setCurrentView, addToast }: Props) {
   const [phase, setPhase] = useState<StudyPhase>('idle');
   const [roomName, setRoomName] = useState('');
   const [room, setRoom] = useState<{ id: string; name: string; url: string | null; provider: string; maxParticipants: number } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [goals, setGoals] = useState('');
+  const [sessionNotes, setSessionNotes] = useState('');
+  const [timerMode, setTimerMode] = useState<TimerMode>('focus');
+  const [timeLeft, setTimeLeft] = useState(FOCUS_MINUTES * 60);
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [tipsOpen, setTipsOpen] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [participants] = useState([
+    { id: userId, name: userName, status: 'ready' as const },
+    { id: 'p2', name: 'Alex', status: 'studying' as const },
+    { id: 'p3', name: 'Jordan', status: 'away' as const },
+  ]);
 
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
+
+  useEffect(() => {
+    if (!timerRunning) {
+      if (timerRef.current) clearInterval(timerRef.current);
+      return;
+    }
+    timerRef.current = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          if (timerMode === 'focus') {
+            setTimerMode('break');
+            return BREAK_MINUTES * 60;
+          } else {
+            setTimerMode('focus');
+            return FOCUS_MINUTES * 60;
+          }
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [timerRunning, timerMode]);
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const toggleTimer = useCallback(() => {
+    setTimerRunning(r => !r);
+  }, []);
+
+  const resetTimer = useCallback(() => {
+    setTimerRunning(false);
+    setTimerMode('focus');
+    setTimeLeft(FOCUS_MINUTES * 60);
+  }, []);
 
   const createRoom = useCallback(async () => {
     if (tier !== 'pro') {
@@ -55,6 +108,19 @@ export default function StudyRoom({ userName, tier, setCurrentView, addToast }: 
     setPhase('idle');
     setRoom(null);
     setRoomName('');
+    setGoals('');
+    setSessionNotes('');
+    setTimerRunning(false);
+    setTimerMode('focus');
+    setTimeLeft(FOCUS_MINUTES * 60);
+  };
+
+  const inviteFriends = async () => {
+    const text = goals
+      ? `Hey! Join my study session: "${roomName || 'Study Room'}". Goal: ${goals}. Link: ${room?.url}`
+      : `Hey! Join my study session: "${roomName || 'Study Room'}". Link: ${room?.url}`;
+    await navigator.clipboard.writeText(text).catch(() => {});
+    addToast('Invite message copied to clipboard!', 'success');
   };
 
   if (phase === 'ready' && room) {
@@ -68,12 +134,69 @@ export default function StudyRoom({ userName, tier, setCurrentView, addToast }: 
           <span className="tag" style={{ background: 'var(--accent-soft)', color: 'var(--accent-ink)' }}>Pro</span>
         </div>
 
-        <div className="card" style={{ padding: '1.25rem' }}>
+        {/* Room preview */}
+        <div className="card" style={{ padding: '1.25rem', marginBottom: '1rem' }}>
+          <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 700 }}>Participants</h3>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            {participants.map(p => (
+              <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.75rem', background: 'var(--surface-2)', borderRadius: 'var(--r)', border: '1px solid var(--border)' }}>
+                <div className="avatar avatar-sm">{p.name.charAt(0).toUpperCase()}</div>
+                <div>
+                  <p style={{ fontSize: '0.8125rem', fontWeight: 600 }}>{p.name}</p>
+                  <p className="text-xs text-muted" style={{ textTransform: 'capitalize' }}>{p.status}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Pomodoro timer */}
+        <div className="card" style={{ padding: '1.25rem', marginBottom: '1rem', textAlign: 'center' }}>
+          <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 700 }}>Pomodoro Timer</h3>
+          <div style={{ fontSize: '3rem', fontWeight: 800, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', color: timerMode === 'focus' ? 'var(--accent)' : 'var(--warning)' }}>
+            {formatTime(timeLeft)}
+          </div>
+          <p className="text-sm text-muted" style={{ marginBottom: '1rem', textTransform: 'capitalize' }}>
+            {timerMode === 'focus' ? '🍅 Focus time' : '☕ Break time'}
+          </p>
+          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+            <button className="btn btn-primary btn-sm" onClick={toggleTimer}>
+              {timerRunning ? 'Pause' : 'Start'}
+            </button>
+            <button className="btn btn-secondary btn-sm" onClick={resetTimer}>Reset</button>
+          </div>
+        </div>
+
+        {/* Session goals */}
+        {goals && (
+          <div className="card" style={{ padding: '1.25rem', marginBottom: '1rem' }}>
+            <h3 style={{ marginBottom: '0.5rem', fontSize: '1rem', fontWeight: 700 }}>Session Goals</h3>
+            <p className="text-sm" style={{ whiteSpace: 'pre-wrap' }}>{goals}</p>
+          </div>
+        )}
+
+        {/* Session notes */}
+        <div className="card" style={{ padding: '1.25rem', marginBottom: '1rem' }}>
+          <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 700 }}>Session Notes</h3>
+          <textarea
+            className="textarea"
+            placeholder="Jot down quick notes during the study session..."
+            value={sessionNotes}
+            onChange={e => setSessionNotes(e.target.value)}
+            rows={4}
+          />
+        </div>
+
+        {/* Room link + actions */}
+        <div className="card" style={{ padding: '1.25rem', marginBottom: '1rem' }}>
           <label className="text-muted text-xs">Room link</label>
           <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
             <input className="input" readOnly value={room.url ?? ''} onClick={e => (e.target as HTMLInputElement).select()} />
             <button className="btn btn-outline" onClick={copyLink}>{copied ? 'Copied' : 'Copy'}</button>
             <button className="btn btn-primary" onClick={joinIfReady}>Join call</button>
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+            <button className="btn btn-secondary btn-sm" onClick={inviteFriends}>📨 Invite friends</button>
           </div>
           <p className="text-xs text-muted" style={{ marginTop: '0.75rem' }}>
             Provider: <b>{room.provider === 'daily' ? 'Daily.co' : 'local preview'}</b> · Max participants: {room.maxParticipants}
@@ -85,13 +208,24 @@ export default function StudyRoom({ userName, tier, setCurrentView, addToast }: 
           )}
         </div>
 
-        <div className="card" style={{ padding: '1.25rem', marginTop: '1rem' }}>
-          <h3 style={{ marginBottom: '0.75rem' }}>Study room tips</h3>
-          <ul className="text-sm text-muted" style={{ paddingLeft: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <li>Use screen share to review notes or flashcards together.</li>
-            <li>Chat is available inside the call.</li>
-            <li>Leave the call anytime — the room closes after everyone disconnects.</li>
-          </ul>
+        {/* Tips accordion */}
+        <div className="accordion">
+          <button
+            className="accordion-trigger"
+            onClick={() => setTipsOpen(o => !o)}
+          >
+            <span>💡 Study room tips</span>
+            <span style={{ fontSize: '0.8rem' }}>{tipsOpen ? '▼' : '▶'}</span>
+          </button>
+          {tipsOpen && (
+            <div className="accordion-body">
+              <ul>
+                <li>Use screen share to review notes or flashcards together.</li>
+                <li>Chat is available inside the call.</li>
+                <li>Leave the call anytime — the room closes after everyone disconnects.</li>
+              </ul>
+            </div>
+          )}
         </div>
 
         <div style={{ marginTop: '1rem' }}>
@@ -120,6 +254,17 @@ export default function StudyRoom({ userName, tier, setCurrentView, addToast }: 
           onChange={e => setRoomName(e.target.value)}
           style={{ margin: '0.35rem 0 1rem' }}
         />
+
+        <label className="text-muted text-xs">Study session goals (optional)</label>
+        <textarea
+          className="textarea"
+          placeholder="What do you want to accomplish? e.g. Review chapter 3, finish 20 flashcards..."
+          value={goals}
+          onChange={e => setGoals(e.target.value)}
+          rows={2}
+          style={{ margin: '0.35rem 0 1rem' }}
+        />
+
         <button className="btn btn-primary" onClick={createRoom} disabled={phase === 'creating'}>
           {phase === 'creating' ? 'Creating…' : 'Create room'}
         </button>

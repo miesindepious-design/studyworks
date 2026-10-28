@@ -41,7 +41,7 @@ aiRouter.get('/settings', async c => {
   if (!settings) {
     return c.json({
       provider:              'gemini',
-      model:                 'gemini-1.5-flash',
+      model:                 'gemini-2.5-flash',
       enabled:               false,
       hasApiKey:             false,
       customSummaryPrompt:   null,

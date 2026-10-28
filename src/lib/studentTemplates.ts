@@ -114,6 +114,82 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
       files: [], highlights: [], personalNotes: [],
     }),
   },
+  {
+    id: 'exam-prep',
+    label: 'Exam prep',
+    icon: '📚',
+    type: 'project',
+    tags: ['exam', 'preparation'],
+    build: (folderId = 'default') => ({
+      id: uid(),
+      title: 'Exam prep — <Subject / Exam>',
+      content:
+        '## Exam details\n- Date: \n- Location: \n- Format: \n\n## Topics to cover\n- [ ] \n- [ ] \n- [ ] \n\n## Study schedule\n| Day | Topic | Method |\n|-----|-------|--------|\n|     |       |        |\n\n## Practice resources\n- Past papers: \n- Flashcards: \n- Study groups: \n\n## Final checklist\n- [ ] Review all notes\n- [ ] Complete at least 2 past papers\n- [ ] Test myself on weak areas\n- [ ] Sleep well night before',
+      tags: ['exam', 'preparation'],
+      type: 'project',
+      folderId,
+      createdAt: now(),
+      updatedAt: now(),
+      files: [], highlights: [], personalNotes: [],
+    }),
+  },
+  {
+    id: 'essay-outline',
+    label: 'Essay outline',
+    icon: '✍️',
+    type: 'note',
+    tags: ['essay', 'writing'],
+    build: (folderId = 'default') => ({
+      id: uid(),
+      title: 'Essay outline — <Topic>',
+      content:
+        '## Thesis statement\n\n## Introduction\n- Hook: \n- Context: \n- Thesis: \n\n## Body paragraphs\n### Paragraph 1 — <Point>\n- Evidence: \n- Analysis: \n\n### Paragraph 2 — <Point>\n- Evidence: \n- Analysis: \n\n### Paragraph 3 — <Point>\n- Evidence: \n- Analysis: \n\n## Counter-arguments\n- \n- Rebuttal: \n\n## Conclusion\n- Restate thesis: \n- Key takeaways: \n- Closing thought: \n\n## Sources\n- ',
+      tags: ['essay', 'writing'],
+      type: 'note',
+      folderId,
+      createdAt: now(),
+      updatedAt: now(),
+      files: [], highlights: [], personalNotes: [],
+    }),
+  },
+  {
+    id: 'research-paper',
+    label: 'Research paper',
+    icon: '🔬',
+    type: 'article',
+    tags: ['research', 'paper'],
+    build: (folderId = 'default') => ({
+      id: uid(),
+      title: 'Research paper — <Topic>',
+      content:
+        '## Title\n\n## Abstract\n\n## Introduction\n- Research question: \n- Motivation: \n- Hypothesis: \n\n## Literature review\n- \n- \n\n## Methodology\n- Approach: \n- Data sources: \n- Limitations: \n\n## Results\n- Finding 1: \n- Finding 2: \n- Finding 3: \n\n## Discussion\n- Interpretation: \n- Implications: \n- Future work: \n\n## References\n- ',
+      tags: ['research', 'paper'],
+      type: 'article',
+      folderId,
+      createdAt: now(),
+      updatedAt: now(),
+      files: [], highlights: [], personalNotes: [],
+    }),
+  },
+  {
+    id: 'meeting-notes',
+    label: 'Meeting notes',
+    icon: '👥',
+    type: 'note',
+    tags: ['meeting', 'notes'],
+    build: (folderId = 'default') => ({
+      id: uid(),
+      title: 'Meeting notes — <Date / Topic>',
+      content:
+        '## Attendees\n- \n- \n\n## Agenda\n1. \n2. \n3. \n\n## Discussion points\n### Topic 1\n- \n\n### Topic 2\n- \n\n## Decisions made\n- [ ] \n- [ ] \n\n## Action items\n| Owner | Task | Deadline |\n|-------|------|----------|\n|       |      |          |\n\n## Next meeting\n- Date: \n- Agenda preview: ',
+      tags: ['meeting', 'notes'],
+      type: 'note',
+      folderId,
+      createdAt: now(),
+      updatedAt: now(),
+      files: [], highlights: [], personalNotes: [],
+    }),
+  },
 ];
 
 export function buildStarterNotes(): Note[] {

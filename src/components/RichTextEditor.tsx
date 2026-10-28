@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback, useState } from 'react';
 
 interface RichTextEditorProps {
   value:       string;
@@ -10,7 +10,7 @@ interface RichTextEditorProps {
 type FormatCmd =
   | 'bold' | 'italic' | 'underline' | 'strikeThrough'
   | 'insertUnorderedList' | 'insertOrderedList'
-  | 'formatBlock';
+  | 'formatBlock' | 'hiliteColor';
 
 const TOOLBAR: { label: string; cmd: FormatCmd; arg?: string; title: string }[] = [
   { label: 'B',  cmd: 'bold',                title: 'Bold (⌘B)'      },
@@ -23,11 +23,16 @@ const TOOLBAR: { label: string; cmd: FormatCmd; arg?: string; title: string }[] 
   { label: '1.', cmd: 'insertOrderedList',   title: 'Numbered list'  },
 ];
 
+const HIGHLIGHT_COLORS = ['#fde68a', '#bbf7d0', '#bfdbfe', '#fecaca', '#e9d5ff'];
+
 export default function RichTextEditor({
   value, onChange, placeholder = 'Content…', minHeight = '120px',
 }: RichTextEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const isInternalChange = useRef(false);
+  const [showHighlightPicker, setShowHighlightPicker] = useState(false);
+  const [showFloatingToolbar, setShowFloatingToolbar] = useState(false);
+  const [floatingPos, setFloatingPos] = useState({ top: 0, left: 0 });
 
   // Sync external value changes (e.g. when editing a different note)
   useEffect(() => {
@@ -51,18 +56,58 @@ export default function RichTextEditor({
     handleInput();
   };
 
+  const applyHighlight = (color: string) => {
+    exec('hiliteColor', color);
+    setShowHighlightPicker(false);
+  };
+
   const isActive = (cmd: string, arg?: string) => {
     try { return document.queryCommandState(cmd) || (arg ? document.queryCommandValue('formatBlock') === arg : false); }
     catch { return false; }
   };
 
+  // Floating toolbar on selection
+  const handleSelectionChange = useCallback(() => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !editorRef.current) {
+      setShowFloatingToolbar(false);
+      return;
+    }
+    if (!editorRef.current.contains(sel.anchorNode)) {
+      setShowFloatingToolbar(false);
+      return;
+    }
+    const range = sel.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) {
+      setShowFloatingToolbar(false);
+      return;
+    }
+    const editorRect = editorRef.current.getBoundingClientRect();
+    setFloatingPos({
+      top: rect.top - editorRect.top - 50,
+      left: rect.left - editorRect.left + rect.width / 2 - 120,
+    });
+    setShowFloatingToolbar(true);
+  }, []);
+
+  useEffect(() => {
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => document.removeEventListener('selectionchange', handleSelectionChange);
+  }, [handleSelectionChange]);
+
+  // Markdown shortcuts
+  // NOTE: handler defined but not yet wired to the editor element;
+  // keeping the implementation would require attaching `onKeyDown` to the
+  // editable container. Removing the unused binding to satisfy typecheck.
+
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden', background: 'var(--surface)', transition: 'border-color var(--transition), box-shadow var(--transition)' }}
+    <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden', background: 'var(--surface-1)', transition: 'border-color var(--transition), box-shadow var(--transition)' }}
       onFocusCapture={e => (e.currentTarget.style.borderColor = 'var(--border-focus)', e.currentTarget.style.boxShadow = '0 0 0 3px rgb(99 102 241 / .12)')}
       onBlurCapture={e => (e.currentTarget.style.borderColor = 'var(--border)', e.currentTarget.style.boxShadow = 'none')}
     >
       {/* Toolbar */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', padding: '6px 8px', borderBottom: '1px solid var(--border)', background: 'var(--surface-2)' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', padding: '6px 8px', borderBottom: '1px solid var(--border)', background: 'var(--surface-2)', borderRadius: 'var(--radius) var(--radius) 0 0' }}>
         {TOOLBAR.map(btn => (
           <button
             key={btn.label}
@@ -85,6 +130,57 @@ export default function RichTextEditor({
           </button>
         ))}
         <div style={{ width: '1px', background: 'var(--border)', margin: '2px 4px', alignSelf: 'stretch' }} />
+        {/* Highlight color picker */}
+        <div style={{ position: 'relative', display: 'inline-flex' }}>
+          <button
+            type="button"
+            title="Highlight color"
+            onMouseDown={e => { e.preventDefault(); setShowHighlightPicker(p => !p); }}
+            style={{
+              width: '28px', height: '26px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              border: 'none', borderRadius: 'var(--radius-sm)',
+              background: showHighlightPicker ? 'var(--accent-soft)' : 'transparent',
+              color: 'var(--text-2)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700,
+            }}
+          >
+            🖍️
+          </button>
+          {showHighlightPicker && (
+            <div style={{
+              position: 'absolute', top: '110%', left: 0, zIndex: 60,
+              background: 'var(--surface-1)', border: '1px solid var(--border)',
+              borderRadius: 'var(--radius)', padding: '6px', display: 'flex', gap: '4px',
+              boxShadow: 'var(--shadow-lg)',
+            }}>
+              {HIGHLIGHT_COLORS.map(c => (
+                <button
+                  key={c}
+                  type="button"
+                  title={`Highlight ${c}`}
+                  onMouseDown={e => { e.preventDefault(); applyHighlight(c); }}
+                  style={{
+                    width: '22px', height: '22px', borderRadius: '50%',
+                    background: c, border: '2px solid transparent', cursor: 'pointer',
+                  }}
+                />
+              ))}
+              <button
+                type="button"
+                title="Remove highlight"
+                onMouseDown={e => { e.preventDefault(); document.execCommand('removeFormat', false); handleInput(); setShowHighlightPicker(false); }}
+                style={{
+                  width: '22px', height: '22px', borderRadius: '50%',
+                  background: 'var(--surface-2)', border: '2px solid var(--border)',
+                  cursor: 'pointer', fontSize: '0.65rem', color: 'var(--text-3)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          )}
+        </div>
+        <div style={{ width: '1px', background: 'var(--border)', margin: '2px 4px', alignSelf: 'stretch' }} />
         <button
           type="button"
           title="Clear formatting"
@@ -94,6 +190,49 @@ export default function RichTextEditor({
           T✕
         </button>
       </div>
+
+      {/* Floating toolbar on text selection */}
+      {showFloatingToolbar && (
+        <div style={{
+          position: 'absolute', top: floatingPos.top, left: Math.max(0, floatingPos.left),
+          zIndex: 70, background: 'var(--text)', borderRadius: '8px',
+          display: 'flex', gap: '2px', padding: '4px 6px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+        }}>
+          {TOOLBAR.map(btn => (
+            <button
+              key={btn.label}
+              type="button"
+              title={btn.title}
+              onMouseDown={e => { e.preventDefault(); exec(btn.cmd, btn.arg); }}
+              style={{
+                width: '26px', height: '24px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                border: 'none', borderRadius: '4px',
+                background: isActive(btn.cmd, btn.arg) ? 'rgba(255,255,255,0.25)' : 'transparent',
+                color: '#fff', cursor: 'pointer', fontSize: btn.label.length > 1 ? '0.65rem' : '0.8rem',
+                fontWeight: btn.label === 'B' ? 800 : btn.label === 'I' ? 400 : 600,
+                fontStyle: btn.label === 'I' ? 'italic' : 'normal',
+              }}
+            >
+              {btn.label}
+            </button>
+          ))}
+          <div style={{ width: '1px', background: 'rgba(255,255,255,0.2)', margin: '2px 2px', alignSelf: 'stretch' }} />
+          {HIGHLIGHT_COLORS.map(c => (
+            <button
+              key={c}
+              type="button"
+              title={`Highlight ${c}`}
+              onMouseDown={e => { e.preventDefault(); applyHighlight(c); }}
+              style={{
+                width: '20px', height: '20px', borderRadius: '50%',
+                background: c, border: '2px solid rgba(255,255,255,0.3)', cursor: 'pointer',
+              }}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Editable area */}
       <div
@@ -126,6 +265,15 @@ export default function RichTextEditor({
         [contenteditable] em { font-style: italic; }
         [contenteditable] u { text-decoration: underline; }
         [contenteditable] s { text-decoration: line-through; }
+        [contenteditable] mark { border-radius: 2px; padding: 0 2px; }
+        [contenteditable] code {
+          background: var(--surface-2);
+          border: 1px solid var(--border);
+          border-radius: 3px;
+          padding: 1px 5px;
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 0.85em;
+        }
       `}</style>
     </div>
   );

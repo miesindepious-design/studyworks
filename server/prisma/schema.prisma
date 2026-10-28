@@ -108,7 +108,7 @@ model AISettings {
   id                   String  @id @default(cuid())
   userId               String  @unique
   provider             String  @default("gemini")
-  model                String  @default("gemini-1.5-flash")
+  model                String  @default("gemini-2.5-flash")
   enabled              Boolean @default(false)
   encryptedApiKey      String? // stored encrypted server-side
   customSummaryPrompt  String?

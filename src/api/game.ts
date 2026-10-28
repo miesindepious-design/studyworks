@@ -1,5 +1,7 @@
 import { apiGet, apiPost } from './client';
 
+export type PowerUpType = '50/50' | 'extra-time' | 'double-points';
+
 export interface GamePlayerInfo { userId: string; name: string; xp: number; }
 export interface GameRoomSummary {
   code: string;

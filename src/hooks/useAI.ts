@@ -99,7 +99,7 @@ export function useAI(): UseAIResult {
   // Prefer server. Fall back to local if the server has nothing.
   const effective: AIConfig = server?.hasApiKey
     ? serverToLocal(server)
-    : (local ?? { provider: 'gemini', model: 'gemini-1.5-flash', enabled: false, apiKey: '' });
+    : (local ?? { provider: 'gemini', model: 'gemini-2.5-flash', enabled: false, apiKey: '' });
 
   const source: 'server' | 'client' | 'none' =
     server?.hasApiKey ? 'server' :

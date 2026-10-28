@@ -157,7 +157,7 @@ export default function PricingView({ currentTier, onDowngrade, onCheckoutResult
                 fontSize: '0.875rem',
                 cursor: 'pointer',
                 transition: 'all var(--transition)',
-                background: billing === b ? 'var(--surface)' : 'transparent',
+                background: billing === b ? 'var(--surface-1)' : 'transparent',
                 color: billing === b ? 'var(--text)' : 'var(--text-3)',
                 boxShadow: billing === b ? 'var(--shadow-sm)' : 'none',
               }}

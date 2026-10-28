@@ -84,7 +84,7 @@ describe('Tier enforcement — AI routes', () => {
     login({ id: 'u1', email: 'a@b.com', name: 'A', tier: 'FREE' });
     const res = await request('/api/ai/settings', {
       method: 'PUT',
-      body: JSON.stringify({ provider: 'gemini', model: 'gemini-1.5-flash', enabled: true, apiKey: 'k' }),
+      body: JSON.stringify({ provider: 'gemini', model: 'gemini-2.5-flash', enabled: true, apiKey: 'k' }),
     });
     expect(res.status).toBe(403);
   });

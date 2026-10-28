@@ -7,6 +7,7 @@ import ContactsView from './components/ContactsView';
 import FlashcardsView from './components/FlashcardsView';
 import PricingView from './components/PricingView';
 import Toast from './components/Toast';
+import StudyTimer from './components/StudyTimer';
 import Onboarding from './components/Onboarding';
 import ShortcutsModal from './components/ShortcutsModal';
 import LoadingScreen from './components/LoadingScreen';
@@ -29,8 +30,10 @@ import CommandPalette, { type Command } from './components/CommandPalette';
 import { pullSync, pushSync } from './api/sync';
 import { syncStreak } from './db/streaks';
 import { mergeByLWW, mergeTier } from './utils/merge';
+import Achievements from './components/Achievements';
+import GoalTracker from './components/GoalTracker';
 
-type View  = 'dashboard' | 'notes' | 'contacts' | 'flashcards' | 'pricing' | 'settings' | 'multiplayer' | 'studyRoom' | 'tutor';
+type View  = 'dashboard' | 'notes' | 'contacts' | 'flashcards' | 'pricing' | 'settings' | 'multiplayer' | 'studyRoom' | 'tutor' | 'timer';
 type Theme = 'light' | 'dark' | 'system';
 type Tier  = 'free' | 'pro';
 
@@ -56,6 +59,7 @@ const NAV_ITEMS: { view: View; icon: string; label: string }[] = [
   { view: 'tutor',      icon: '🎓', label: 'AI Tutor'    },
   { view: 'studyRoom',  icon: '📹', label: 'Study Room'  },
   { view: 'multiplayer',icon: '🎮', label: 'Quiz Battle' },
+  { view: 'timer',      icon: '⏱️', label: 'Timer'       },
   { view: 'settings',   icon: '⚙️', label: 'Settings'    },
 ];
 
@@ -68,6 +72,7 @@ const PAGE_TITLES: Record<View, string> = {
   tutor:      'AI Tutor',
   multiplayer:'Quiz Battle',
   studyRoom:  'Study Room',
+  timer:      'Study Timer',
   settings:   'Settings',
 };
 
@@ -410,7 +415,7 @@ export default function App() {
         {/* ── Sidebar ── */}
         <aside className="sidebar">
           <div className="sidebar-logo">
-            <div className="logo-mark">📚</div>
+            <img className="logo-mark" src="/logo.svg" alt="StudyWorks" />
             <h1>{productProfile.name}</h1>
           </div>
 
@@ -516,6 +521,7 @@ export default function App() {
               <button className="icon-btn" onClick={() => { notesUR.redo(); contactsUR.redo(); flashcardsUR.redo(); addToast('Redone', 'info'); }} disabled={!notesUR.canRedo && !contactsUR.canRedo && !flashcardsUR.canRedo} title="Redo (⌘⇧Z)" style={{ fontSize: '1rem' }}>↪</button>
               {tier === 'pro'  && <span className="tag primary" style={{ fontSize: '0.75rem' }}>⭐ Pro</span>}
               {tier === 'free' && <button className="btn btn-primary btn-sm" onClick={() => setCurrentView('pricing')}>Upgrade</button>}
+              <Achievements />
             </div>
           </div>
 
@@ -529,17 +535,20 @@ export default function App() {
               }} />
             )}
             {currentView === 'dashboard' && (
-              <Dashboard
-                notes={notesUR.state} contacts={contactsUR.state} flashcards={flashcardsUR.state}
-                tier={tier} totalItems={totalItems}
-                aiSummariesThisMonth={db.aiSummariesThisMonth} qaQueriesThisMonth={db.qaQueriesThisMonth}
-                folders={db.folders} practiceQuestions={db.practiceQuestions}
-                setCurrentView={navigateTo}
-                aiReady={ai.isReady} aiProvider={ai.config.provider}
-                onGenerateInsights={handleGenerateInsights}
-                weeklyInsights={weeklyInsights}
-                insightsLoading={insightsLoading}
-              />
+              <>
+                <GoalTracker />
+                <Dashboard
+                  notes={notesUR.state} contacts={contactsUR.state} flashcards={flashcardsUR.state}
+                  tier={tier} totalItems={totalItems}
+                  aiSummariesThisMonth={db.aiSummariesThisMonth} qaQueriesThisMonth={db.qaQueriesThisMonth}
+                  folders={db.folders} practiceQuestions={db.practiceQuestions}
+                  setCurrentView={navigateTo}
+                  aiReady={ai.isReady} aiProvider={ai.config.provider}
+                  onGenerateInsights={handleGenerateInsights}
+                  weeklyInsights={weeklyInsights}
+                  insightsLoading={insightsLoading}
+                />
+              </>
             )}
             {currentView === 'notes' && (
               <NotesView
@@ -593,6 +602,21 @@ export default function App() {
                 tier={tier}
                 setCurrentView={navigateTo}
                 addToast={addToast}
+                notes={notesUR.state}
+                onSaveNote={(note) => {
+                  notesUR.set([{
+                    id: crypto.randomUUID(),
+                    title: note.title,
+                    content: note.content,
+                    tags: note.tags || [],
+                    type: 'note',
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                    files: [],
+                    highlights: [],
+                    personalNotes: [],
+                  }, ...notesUR.state]);
+                }}
               />
             )}
             {currentView === 'settings' && (
@@ -607,6 +631,9 @@ export default function App() {
                 setCurrentView={navigateTo}
                 addToast={addToast}
               />
+            )}
+            {currentView === 'timer' && (
+              <StudyTimer />
             )}
           </div>
         </div>

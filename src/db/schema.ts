@@ -1,12 +1,17 @@
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
-import type { Note, Contact, Flashcard, Folder, PracticeQuestion, SavedSearch } from '../types';
+import type {
+  Note, Contact, Flashcard, Folder, PracticeQuestion, SavedSearch,
+  Achievement, StudyGoal, StudyTimerSession, NoteVersion, StudyGroup, SessionStat,
+} from '../types';
 
 // ── DB version history ────────────────────────────────────────────────────────
 // v1 — initial: all stores created
 // v2 — added `streaks` store (current streak, longest streak, daily counts)
+// v3 — added `note_versions` store for version history snapshots
+// v4 — added `flashcard_sessions` store for persisted review session stats
 
 const DB_NAME    = 'studyworks-db';
-const DB_VERSION = 2;
+const DB_VERSION = 4;
 
 // Streak data is a singleton with a fixed id.
 export interface StreakData {
@@ -58,6 +63,33 @@ export interface StudyWorksDB extends DBSchema {
     key: 'singleton';
     value: StreakData;
   };
+  note_versions: {
+    key: string;          // composite: `${noteId}::${Date.now()}`
+    value: NoteVersion;
+    indexes: { by_note: string };
+  };
+  achievements: {
+    key: string;
+    value: Achievement;
+  };
+  study_goals: {
+    key: string;
+    value: StudyGoal;
+  };
+  study_sessions: {
+    key: string;
+    value: StudyTimerSession;
+    indexes: { by_date: string };
+  };
+  study_groups: {
+    key: string;
+    value: StudyGroup;
+  };
+  flashcard_sessions: {
+    key: string;
+    value: SessionStat;
+    indexes: { by_date: string };
+  };
 }
 
 // ── Singleton DB promise ───────────────────────────────────────────────────────
@@ -102,6 +134,20 @@ export async function getDB(): Promise<IDBPDatabase<StudyWorksDB>> {
       // v1 → v2: add streaks store
       if (oldVersion < 2) {
         db.createObjectStore('streaks', { keyPath: 'id' });
+      }
+      // v2 → v3: add note_versions, achievements, goals, sessions, study_groups
+      if (oldVersion < 3) {
+        const nvStore = db.createObjectStore('note_versions', { keyPath: 'id' });
+        nvStore.createIndex('by_note', 'noteId', { unique: false });
+        db.createObjectStore('achievements', { keyPath: 'id' });
+        db.createObjectStore('study_goals', { keyPath: 'id' });
+        db.createObjectStore('study_sessions', { keyPath: 'id' });
+        db.createObjectStore('study_groups', { keyPath: 'id' });
+      }
+      // v3 → v4: add flashcard_sessions store
+      if (oldVersion < 4) {
+        const fsStore = db.createObjectStore('flashcard_sessions', { keyPath: 'id' });
+        fsStore.createIndex('by_date', 'date', { unique: false });
       }
     },
   });
