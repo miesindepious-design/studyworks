@@ -7,6 +7,7 @@ import type { AIConfig, AIProvider } from '../db/aiSettings';
 import { chatComplete } from '../ai/client';
 import * as serverAI from '../api/ai';
 import Phase2Tools from './Phase2Tools';
+import { useDB } from '../hooks/useDB';
 
 interface SettingsViewProps {
   notif: UseNotificationsResult;
@@ -22,6 +23,8 @@ export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts,
   const [showPrompts, setShowPrompts] = useState(false);
   const [storageUsed, setStorageUsed] = useState<string | null>(null);
   const [storageDetail, setStorageDetail] = useState<{ used: number; quota: number } | null>(null);
+
+  const { theme, setTheme } = useDB();
 
   // Study timer settings
   const [timerSettings, setTimerSettings] = useState(() => {
@@ -52,10 +55,21 @@ export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts,
   const [savingAI, setSavingAI]   = useState(false);
   const [testingAI, setTestingAI] = useState(false);
   const [serverManaged, setServerManaged] = useState(false);
+  const [serverHasApiKey, setServerHasApiKey] = useState(false);
 
   useEffect(() => {
     getAIConfig().then(setAiConfigState);
-    serverAI.fetchAISettings().then(s => { if (s) setServerManaged(s.serverManaged); }).catch(() => {});
+    serverAI.fetchAISettings().then(s => {
+      if (s) {
+        setServerManaged(s.serverManaged);
+        setServerHasApiKey(s.hasApiKey);
+        // If the server has a key, reflect that in the local config
+        // so the Settings UI shows the correct saved-on-server state.
+        if (s.hasApiKey) {
+          setAiConfigState(prev => prev ? { ...prev, apiKey: '(saved on server)' } : prev);
+        }
+      }
+    }).catch(() => {});
 
     // Estimate storage usage
     if ('storage' in navigator && 'estimate' in navigator.storage) {
@@ -401,12 +415,44 @@ export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts,
         </div>
       </div>
 
+      {/* ── Appearance ── */}
+      <div className="card" style={{ marginBottom: '1.5rem' }}>
+        <div className="card-header">
+          <span className="card-title">🎨 Appearance</span>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+          <div>
+            <p style={{ fontWeight: 600, fontSize: '0.875rem', marginBottom: '0.5rem' }}>Theme</p>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              {(['system', 'light', 'dark'] as const).map(t => (
+                <button
+                  key={t}
+                  onClick={() => setTheme(t)}
+                  style={{
+                    padding: '0.5rem 0.875rem',
+                    borderRadius: 'var(--r)',
+                    border: `1px solid ${theme === t ? 'var(--accent)' : 'var(--border)'}`,
+                    background: theme === t ? 'var(--accent-soft)' : 'var(--surface-1)',
+                    color: theme === t ? 'var(--accent)' : 'var(--text)',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '0.875rem',
+                  }}
+                >
+                  {t === 'system' ? '💻 System' : t === 'light' ? '☀️ Light' : '🌙 Dark'}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* ── AI Configuration ── */}
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div className="card-header">
           <span className="card-title">🤖 AI Features</span>
-          <span className={`tag ${aiConfig.enabled && (aiConfig.apiKey || serverManaged) ? 'success' : ''}`}>
-            {serverManaged ? '🖥️ Backend managed' : aiConfig.enabled && aiConfig.apiKey ? '✅ Active' : '⏸️ Not configured'}
+          <span className={`tag ${aiConfig.enabled && (aiConfig.apiKey || serverHasApiKey) ? 'success' : ''}`}>
+            {serverManaged ? '🖥️ Backend managed' : serverHasApiKey ? '🔒 Saved on server' : aiConfig.enabled && aiConfig.apiKey ? '✅ Active' : '⏸️ Not configured'}
           </span>
         </div>
 
