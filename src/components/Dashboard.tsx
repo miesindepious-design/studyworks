@@ -682,7 +682,7 @@ function StreakWidget({ streak, dueFlashcards, setCurrentView }: { streak: Strea
   };
 
   const tier = streak.currentStreak >= 30 ? 'gold' : streak.currentStreak >= 7 ? 'silver' : streak.currentStreak >= 1 ? 'bronze' : 'none';
-  const tierColor = tier === 'gold' ? '#f59e0b' : tier === 'silver' ? '#94a3b8' : tier === 'bronze' ? '#ea580c' : 'var(--muted)';
+  const tierColor = tier === 'gold' ? '#f59e0b' : tier === 'silver' ? '#8A7D65' : tier === 'bronze' ? '#ea580c' : 'var(--muted)';
   const tierEmoji = tier === 'gold' ? '🏆' : tier === 'silver' ? '⚡' : tier === 'bronze' ? '🔥' : '💤';
 
   return (

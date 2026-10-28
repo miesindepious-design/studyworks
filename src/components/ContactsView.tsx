@@ -189,7 +189,7 @@ export default function ContactsView({ contacts, setContacts, addToast, tier, se
 
   const createGroup = () => {
     if (!groupName.trim()) return;
-    const g: StudyGroup = { id: Date.now().toString(), name: groupName.trim(), memberIds: [], createdBy: '', createdAt: new Date(), color: '#6366f1' };
+    const g: StudyGroup = { id: Date.now().toString(), name: groupName.trim(), memberIds: [], createdBy: '', createdAt: new Date(), color: '#FF5136' };
     setGroups([...groups, g]);
     setGroupName('');
     addToast('Study group created!', 'success');

@@ -9,7 +9,7 @@ interface ToastProps {
 const CONFIG = {
   success: { icon: '✅', bg: 'linear-gradient(135deg,#10b981,#059669)' },
   error:   { icon: '❌', bg: 'linear-gradient(135deg,#ef4444,#dc2626)' },
-  info:    { icon: 'ℹ️',  bg: 'linear-gradient(135deg,#6366f1,#8b5cf6)' },
+  info:    { icon: 'ℹ️',  bg: 'linear-gradient(135deg,#4F8CFF,#FFC531)' },
 };
 
 export default function Toast({ message, type, onClose }: ToastProps) {

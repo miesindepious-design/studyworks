@@ -34,12 +34,12 @@ function sm2(card: Flashcard, quality: 0 | 1 | 2 | 3): Partial<Flashcard> {
   };
 }
 
-const DIFF_COLOR: Record<string, string> = { easy: '#bbf7d0', medium: '#fde68a', hard: '#fecaca' };
+const DIFF_COLOR: Record<string, string> = { easy: '#DDF3E6', medium: '#FFF3CC', hard: '#FFD9CC' };
 const RATE_BTNS = [
-  { label: 'Again', emoji: '😰', quality: 0 as const, color: '#ef4444' },
+  { label: 'Again', emoji: '😰', quality: 0 as const, color: 'var(--danger)' },
   { label: 'Hard',  emoji: '😓', quality: 1 as const, color: '#f97316' },
-  { label: 'Good',  emoji: '🙂', quality: 2 as const, color: '#3b82f6' },
-  { label: 'Easy',  emoji: '😄', quality: 3 as const, color: '#22c55e' },
+  { label: 'Good',  emoji: '🙂', quality: 2 as const, color: 'var(--info)' },
+  { label: 'Easy',  emoji: '😄', quality: 3 as const, color: 'var(--success)' },
 ];
 
 export default function FlashcardsView({

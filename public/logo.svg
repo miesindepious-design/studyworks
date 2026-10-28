@@ -2,12 +2,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
   <defs>
     <linearGradient id="sparkGrad" x1="0%" y1="100%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#6366f1"/>
-      <stop offset="100%" stop-color="#8b5cf6"/>
+      <stop offset="0%" stop-color="#FF5136"/>
+      <stop offset="100%" stop-color="#FFC531"/>
     </linearGradient>
   </defs>
   <g fill="none" fill-rule="evenodd">
     <path d="M128 24c0 0-56 40-56 88s28 72 56 104c28-32 56-60 56-104s-56-88-56-88z" fill="url(#sparkGrad)"/>
-    <path d="M128 48c0 0-32 24-32 56s16 48 32 72c16-24 32-44 32-72s-32-56-32-56z" fill="#ffffff" fill-opacity="0.35"/>
+    <path d="M128 48c0 0-32 24-32 56s16 48 32 72c16-24 32-44 32-72s-32-56-32-56z" fill="#211D16" fill-opacity="0.18"/>
   </g>
 </svg>

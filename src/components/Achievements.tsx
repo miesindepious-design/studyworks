@@ -167,7 +167,7 @@ export default function Achievements() {
                       className="confetti-piece"
                       style={{
                         left: `${Math.random() * 100}%`,
-                        background: ['#2dd4bf', '#38bdf8', '#a855f7', '#fbbf24', '#fb7185'][Math.floor(Math.random() * 5)],
+                        background: ['#FF5136', '#FFC531', '#1FA97A', '#4F8CFF', '#FFD9CC'][Math.floor(Math.random() * 5)],
                         animationDelay: `${Math.random() * 0.5}s`,
                         animationDuration: `${1.5 + Math.random() * 1.5}s`,
                       }}

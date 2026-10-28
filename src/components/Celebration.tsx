@@ -13,7 +13,7 @@ interface Props {
   onClose: () => void;
 }
 
-const COLORS = ['#2dd4bf', '#38bdf8', '#818cf8', '#fbbf24', '#fb7185', '#34d399'];
+const COLORS = ['#FF5136', '#FFC531', '#1FA97A', '#4F8CFF', '#FFD9CC', '#8B5CF6'];
 
 export default function Celebration({ emoji, title, subtitle, onClose }: Props) {
   const [pieces, setPieces] = useState<{ left: number; color: string; delay: number; dur: number }[]>([]);
