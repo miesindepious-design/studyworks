@@ -54,9 +54,11 @@ export interface UseAIResult {
     customSummaryPrompt?:  string;
     customFlashcardPrompt?: string;
     customQAPrompt?:        string;
+    serverManaged?:        boolean;
   };
   // Source-of-truth badge for Settings: where is the key actually being used?
   source:       'server' | 'client' | 'none';
+  serverManaged: boolean;
 
   generateSummary:           (title: string, content: string) => Promise<string>;
   generateFlashcards:        (title: string, content: string, count?: number, hard?: boolean) => Promise<GeneratedFlashcard[]>;
@@ -235,10 +237,12 @@ export function useAI(): UseAIResult {
       customSummaryPrompt:   effective.customSummaryPrompt,
       customFlashcardPrompt: effective.customFlashcardPrompt,
       customQAPrompt:        effective.customQAPrompt,
+      serverManaged:         server?.serverManaged ?? false,
     },
     isReady,
     reloadConfig,
     source,
+    serverManaged: server?.serverManaged ?? false,
     generateSummary,
     generateFlashcards,
     generatePracticeQuestions,

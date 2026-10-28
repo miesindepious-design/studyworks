@@ -38,12 +38,16 @@ const AISettingsBody = z.object({
 aiRouter.get('/settings', async c => {
   const user     = c.get('user');
   const settings = await prisma.aISettings.findUnique({ where: { userId: user.id } });
+  const fallback = getServerAIFallback();
+
   if (!settings) {
+    const serverManaged = !!fallback;
     return c.json({
-      provider:              'gemini',
-      model:                 'gemini-2.5-flash',
-      enabled:               false,
-      hasApiKey:             false,
+      provider:              fallback?.provider ?? 'gemini',
+      model:                 fallback?.model ?? 'gemini-2.5-flash',
+      enabled:               serverManaged,
+      hasApiKey:             serverManaged,
+      serverManaged,
       customSummaryPrompt:   null,
       customFlashcardPrompt: null,
       customQAPrompt:        null,
@@ -51,11 +55,13 @@ aiRouter.get('/settings', async c => {
   }
 
   // Never return the actual key — only indicate whether one is set
+  const serverManaged = !settings.encryptedApiKey && !!fallback;
   return c.json({
     provider:              settings.provider,
     model:                 settings.model,
-    enabled:               settings.enabled,
-    hasApiKey:             !!settings.encryptedApiKey,
+    enabled:               settings.enabled || serverManaged,
+    hasApiKey:             !!settings.encryptedApiKey || !!fallback,
+    serverManaged,
     customSummaryPrompt:   settings.customSummaryPrompt,
     customFlashcardPrompt: settings.customFlashcardPrompt,
     customQAPrompt:        settings.customQAPrompt,
@@ -68,9 +74,11 @@ aiRouter.put('/settings', requirePro, zValidator('json', AISettingsBody), async 
 
   const current = await prisma.aISettings.findUnique({ where: { userId: user.id } });
 
-  // Encrypt new key if provided; keep existing if not
+  // Encrypt new key if provided; keep existing if not; clear if explicitly empty string.
   let encryptedApiKey = current?.encryptedApiKey ?? null;
-  if (body.apiKey && body.apiKey.trim().length > 0) {
+  if (body.apiKey === '') {
+    encryptedApiKey = null;
+  } else if (body.apiKey && body.apiKey.trim().length > 0) {
     encryptedApiKey = encryptApiKey(body.apiKey.trim());
   }
 
@@ -97,25 +105,44 @@ aiRouter.put('/settings', requirePro, zValidator('json', AISettingsBody), async 
     },
   });
 
+  const fallback = getServerAIFallback();
+  const serverManaged = !settings.encryptedApiKey && !!fallback;
+
   return c.json({
     provider:              settings.provider,
     model:                 settings.model,
-    enabled:               settings.enabled,
-    hasApiKey:             !!settings.encryptedApiKey,
+    enabled:               settings.enabled || serverManaged,
+    hasApiKey:             !!settings.encryptedApiKey || !!fallback,
+    serverManaged,
     customSummaryPrompt:   settings.customSummaryPrompt,
     customFlashcardPrompt: settings.customFlashcardPrompt,
     customQAPrompt:        settings.customQAPrompt,
   });
 });
 
+// ── Helper: server-managed fallback AI config ────────────────────────────────
+function getServerAIFallback() {
+  const apiKey = process.env.AI_API_KEY?.trim();
+  if (!apiKey) return null;
+  const provider = (process.env.AI_PROVIDER || 'gemini') as 'gemini' | 'openai';
+  const model = process.env.AI_MODEL?.trim() || 'gemini-2.5-flash';
+  return { provider, model, apiKey, serverManaged: true as const };
+}
+
 // ── Helper: load and decrypt user AI config ───────────────────────────────────
 async function loadAIConfig(userId: string) {
   const settings = await prisma.aISettings.findUnique({ where: { userId } });
-  if (!settings || !settings.enabled || !settings.encryptedApiKey) {
+  if (settings && settings.enabled && settings.encryptedApiKey) {
+    const apiKey = decryptApiKey(settings.encryptedApiKey);
+    return { ...settings, apiKey, serverManaged: false as const };
+  }
+
+  const fallback = getServerAIFallback();
+  if (!fallback) {
     throw new Error('AI not configured or not enabled');
   }
-  const apiKey = decryptApiKey(settings.encryptedApiKey);
-  return { ...settings, apiKey };
+
+  return fallback;
 }
 
 // ── Generic provider proxy ────────────────────────────────────────────────────

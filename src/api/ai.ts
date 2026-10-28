@@ -21,6 +21,7 @@ export interface ServerAIConfig {
   model:                string;
   enabled:              boolean;
   hasApiKey:            boolean;
+  serverManaged:        boolean;
   customSummaryPrompt:  string | null;
   customFlashcardPrompt: string | null;
   customQAPrompt:       string | null;

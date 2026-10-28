@@ -51,9 +51,11 @@ export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts,
   const [showKey, setShowKey]     = useState(false);
   const [savingAI, setSavingAI]   = useState(false);
   const [testingAI, setTestingAI] = useState(false);
+  const [serverManaged, setServerManaged] = useState(false);
 
   useEffect(() => {
     getAIConfig().then(setAiConfigState);
+    serverAI.fetchAISettings().then(s => { if (s) setServerManaged(s.serverManaged); }).catch(() => {});
 
     // Estimate storage usage
     if ('storage' in navigator && 'estimate' in navigator.storage) {
@@ -183,8 +185,8 @@ export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts,
       // follow the user across devices.
       if (tier === 'pro') {
         try {
-          const apiKey = aiConfig.apiKey && aiConfig.apiKey !== '(saved on server)' ? aiConfig.apiKey : undefined;
-          await serverAI.saveAISettings({
+          const apiKey = aiConfig.apiKey && aiConfig.apiKey !== '(saved on server)' ? aiConfig.apiKey : ''
+          const result = await serverAI.saveAISettings({
             provider:             aiConfig.provider,
             model:                aiConfig.model,
             enabled:              aiConfig.enabled,
@@ -193,7 +195,8 @@ export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts,
             customFlashcardPrompt: aiConfig.customFlashcardPrompt,
             customQAPrompt:        aiConfig.customQAPrompt,
           });
-          onAddToast(apiKey ? '🔒 AI key saved (encrypted on server).' : '✅ AI settings saved.', 'success');
+          setServerManaged(result.serverManaged);
+          onAddToast(result.serverManaged ? '🖥️ Using backend-managed AI key.' : apiKey ? '🔒 AI key saved (encrypted on server).' : '✅ AI settings saved.', 'success');
         } catch (serverErr: any) {
           onAddToast(`Saved locally; server save failed: ${serverErr.message}`, 'error');
         }
@@ -402,16 +405,18 @@ export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts,
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div className="card-header">
           <span className="card-title">🤖 AI Features</span>
-          <span className={`tag ${aiConfig.enabled && aiConfig.apiKey ? 'success' : ''}`}>
-            {aiConfig.enabled && aiConfig.apiKey ? '✅ Active' : '⏸️ Not configured'}
+          <span className={`tag ${aiConfig.enabled && (aiConfig.apiKey || serverManaged) ? 'success' : ''}`}>
+            {serverManaged ? '🖥️ Backend managed' : aiConfig.enabled && aiConfig.apiKey ? '✅ Active' : '⏸️ Not configured'}
           </span>
         </div>
 
         <p className="text-sm text-muted" style={{ marginBottom: '1.25rem', lineHeight: 1.7 }}>
           Connect an AI provider to unlock real AI summaries, flashcard generation,
-          practice questions, and Smart Q&A. {tier === 'pro'
-            ? 'Pro users: your key is stored encrypted on the server so it follows you across devices.'
-            : 'Your key is stored locally in your browser and used only to call the provider directly.'}
+          practice questions, and Smart Q&A. {serverManaged
+            ? 'This instance uses a backend-managed key, so you don’t need to enter one.'
+            : tier === 'pro'
+              ? 'Pro users: your key is stored encrypted on the server so it follows you across devices.'
+              : 'Your key is stored locally in your browser and used only to call the provider directly.'}
         </p>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem', marginBottom: '1.25rem' }}>
@@ -480,7 +485,10 @@ export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts,
           <div>
             <label className="form-label" style={{ display: 'block', marginBottom: '0.375rem' }}>
               API Key
-              {aiConfig.apiKey === '(saved on server)' && (
+              {serverManaged && (
+                <span className="tag success" style={{ marginLeft: '0.5rem', fontSize: '0.65rem', padding: '0.1rem 0.4rem' }}>🖥️ Backend managed</span>
+              )}
+              {!serverManaged && aiConfig.apiKey === '(saved on server)' && (
                 <span className="tag success" style={{ marginLeft: '0.5rem', fontSize: '0.65rem', padding: '0.1rem 0.4rem' }}>🔒 Saved on server</span>
               )}
               <a
@@ -488,24 +496,32 @@ export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts,
                 target="_blank" rel="noopener noreferrer"
                 style={{ marginLeft: '0.5rem', color: 'var(--accent)', fontSize: '0.75rem' }}
               >
-                Get free key →
+                {serverManaged ? 'Use my own key instead →' : 'Get free key →'}
               </a>
             </label>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <input
                 type={showKey ? 'text' : 'password'}
                 className="input"
-                placeholder={aiConfig.apiKey === '(saved on server)'
-                  ? '••••••••• (enter a new key to replace)'
-                  : (aiConfig.provider === 'gemini' ? 'AIza...' : 'sk-...')}
-                value={aiConfig.apiKey === '(saved on server)' ? '' : aiConfig.apiKey}
+                placeholder={serverManaged
+                  ? 'Backend is providing the key automatically'
+                  : aiConfig.apiKey === '(saved on server)'
+                    ? '••••••••• (enter a new key to replace)'
+                    : (aiConfig.provider === 'gemini' ? 'AIza...' : 'sk-...')}
+                value={serverManaged ? '' : aiConfig.apiKey === '(saved on server)' ? '' : aiConfig.apiKey}
                 onChange={e => setAiConfigState(p => ({ ...p, apiKey: e.target.value }))}
                 style={{ flex: 1, fontFamily: aiConfig.apiKey && !showKey ? 'monospace' : undefined }}
+                disabled={serverManaged}
               />
-              <button className="btn btn-secondary btn-sm" onClick={() => setShowKey(s => !s)}>
+              <button className="btn btn-secondary btn-sm" onClick={() => setShowKey(s => !s)} disabled={serverManaged}>
                 {showKey ? '🙈 Hide' : '👁️ Show'}
               </button>
             </div>
+            {serverManaged && (
+              <p className="text-xs text-muted" style={{ marginTop: '0.375rem' }}>
+                AI is already active using the backend key. To use your own key instead, enter it in the field above and save.
+              </p>
+            )}
           </div>
 
           {/* Model picker */}
