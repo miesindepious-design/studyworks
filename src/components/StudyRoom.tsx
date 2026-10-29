@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createStudyRoom } from '../api/studyRoom';
 import VoiceChat from './VoiceChat';
 
@@ -35,6 +35,11 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
     { id: 'p3', name: 'Jordan', status: 'away' as const },
   ]);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+
+  // Stable peer id list. Recomputing this inline every render would create a
+  // new array identity and re-trigger VoiceChat's peer effect, tearing down
+  // and rebuilding live peer connections on unrelated state changes.
+  const peerIds = useMemo(() => participants.map(p => p.id), [participants]);
 
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
 
@@ -164,14 +169,14 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
         </div>
 
         {/* Voice chat */}
-        {voiceEnabled && room.url && (
+        {voiceEnabled && signalingUrl && (
           <div className="card" style={{ padding: '1rem 1.25rem', marginBottom: '1rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
               <VoiceChat
-                signalingUrl={signalingUrl || room.url || ''}
+                signalingUrl={signalingUrl}
                 roomId={room.id}
                 myPlayerId={userId}
-                peerIds={participants.map(p => p.id)}
+                peerIds={peerIds}
                 isVoiceActive={voiceEnabled}
               />
               <span className="text-xs text-muted">Mute / Deafen controls</span>

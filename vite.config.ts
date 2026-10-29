@@ -18,6 +18,14 @@ export default defineConfig({
         ws: true,
         changeOrigin: true,
       },
+      // Voice chat signaling — the standalone voice server mounts Socket.IO
+      // at /socket.io/voice. Proxied so local dev works against the same
+      // origin without extra configuration.
+      '/socket.io/voice': {
+        target: 'http://localhost:3002',
+        ws: true,
+        changeOrigin: true,
+      },
     },
   },
 });

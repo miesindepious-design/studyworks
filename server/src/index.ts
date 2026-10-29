@@ -15,5 +15,10 @@ const server = serve({ fetch: app.fetch, port }, () => {
 attachGameWebSocket();
 
 // Attach voice chat signaling on the same host/port when available.
-// On Vercel serverless this will no-op because there's no persistent server.
-attachVoiceSignaling(server);
+// On Vercel serverless there is no persistent server, so this must never
+// be able to crash startup — wrap it defensively.
+try {
+  attachVoiceSignaling(server);
+} catch (err) {
+  console.warn('[StudyWorks] Voice signaling not attached:', err);
+}

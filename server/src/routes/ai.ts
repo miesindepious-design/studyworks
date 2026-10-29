@@ -134,7 +134,14 @@ async function loadAIConfig(userId: string) {
   const settings = await prisma.aISettings.findUnique({ where: { userId } });
   if (settings && settings.enabled && settings.encryptedApiKey) {
     const apiKey = decryptApiKey(settings.encryptedApiKey);
-    return { ...settings, apiKey, serverManaged: false as const };
+    return {
+      ...settings,
+      apiKey,
+      serverManaged: false as const,
+      customSummaryPrompt:   settings.customSummaryPrompt   ?? null,
+      customFlashcardPrompt: settings.customFlashcardPrompt ?? null,
+      customQAPrompt:        settings.customQAPrompt        ?? null,
+    };
   }
 
   const fallback = getServerAIFallback();
@@ -142,7 +149,14 @@ async function loadAIConfig(userId: string) {
     throw new Error('AI not configured or not enabled');
   }
 
-  return fallback;
+  // Server-managed fallback — reuse the user's custom prompts when they
+  // exist so the prompts stay consistent across key sources.
+  return {
+    ...fallback,
+    customSummaryPrompt:   settings?.customSummaryPrompt   ?? null,
+    customFlashcardPrompt: settings?.customFlashcardPrompt ?? null,
+    customQAPrompt:        settings?.customQAPrompt        ?? null,
+  };
 }
 
 // ── Generic provider proxy ────────────────────────────────────────────────────

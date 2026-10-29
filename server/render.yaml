@@ -3,8 +3,8 @@ services:
     name: studyworks-voice
     runtime: node
     plan: free
-    buildCommand: npm install && npm run voice:build
-    startCommand: npm run voice:start
+    buildCommand: npm install && npm run build
+    startCommand: node dist/voiceServer.js
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV

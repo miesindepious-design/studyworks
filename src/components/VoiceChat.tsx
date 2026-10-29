@@ -199,7 +199,11 @@ export default function VoiceChat({
         const mod = await import('socket.io-client');
         const ioClient = mod.io || mod.default || mod;
         socket = ioClient(signalingUrl, {
-          transports: ['websocket'],
+          // Must match the server's Socket.IO mount path. The default
+          // ('/socket.io/') is intercepted by the HTTP handler and never
+          // reaches the signaling server.
+          path: '/socket.io/voice',
+          transports: ['websocket', 'polling'],
           reconnection: true,
           reconnectionAttempts: 10,
           reconnectionDelay: 1000,
