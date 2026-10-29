@@ -595,6 +595,7 @@ export default function App() {
                 tier={tier}
                 setCurrentView={navigateTo}
                 addToast={addToast}
+                signalingUrl={typeof import.meta.env.VITE_VOICE_SIGNALING_URL === 'string' ? import.meta.env.VITE_VOICE_SIGNALING_URL : ''}
               />
             )}
             {currentView === 'tutor' && (

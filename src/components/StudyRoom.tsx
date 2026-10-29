@@ -8,6 +8,7 @@ interface Props {
   tier: string;
   setCurrentView: (v: string) => void;
   addToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
+  signalingUrl?: string;
 }
 
 type StudyPhase = 'idle' | 'creating' | 'ready' | 'error';
@@ -16,7 +17,7 @@ type TimerMode = 'focus' | 'break';
 const FOCUS_MINUTES = 25;
 const BREAK_MINUTES = 5;
 
-export default function StudyRoom({ userId, userName, tier, setCurrentView, addToast }: Props) {
+export default function StudyRoom({ userId, userName, tier, setCurrentView, addToast, signalingUrl }: Props) {
   const [phase, setPhase] = useState<StudyPhase>('idle');
   const [roomName, setRoomName] = useState('');
   const [room, setRoom] = useState<{ id: string; name: string; url: string | null; provider: string; maxParticipants: number } | null>(null);
@@ -167,7 +168,7 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
           <div className="card" style={{ padding: '1rem 1.25rem', marginBottom: '1rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
               <VoiceChat
-                signalingUrl={room.url}
+                signalingUrl={signalingUrl || room.url || ''}
                 roomId={room.id}
                 myPlayerId={userId}
                 peerIds={participants.map(p => p.id)}

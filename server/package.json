@@ -9,9 +9,12 @@
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:migrate": "prisma migrate dev",
-    "db:generate": "prisma generate",
-    "db:studio": "prisma studio"
+    "db:migrate": "npm run db:migrate --prefix server",
+    "db:generate": "npm run db:generate --prefix server",
+    "db:studio": "npm run db:studio --prefix server",
+    "voice": "tsx src/voiceServer.ts",
+    "voice:build": "tsc",
+    "voice:start": "node dist/voiceServer.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1086.0",

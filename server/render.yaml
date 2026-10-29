@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: studyworks-voice
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run voice:build
+    startCommand: npm run voice:start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
