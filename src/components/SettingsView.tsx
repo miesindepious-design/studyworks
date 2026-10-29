@@ -7,7 +7,6 @@ import type { AIConfig, AIProvider } from '../db/aiSettings';
 import { chatComplete } from '../ai/client';
 import * as serverAI from '../api/ai';
 import Phase2Tools from './Phase2Tools';
-import { useDB } from '../hooks/useDB';
 
 interface SettingsViewProps {
   notif: UseNotificationsResult;
@@ -16,15 +15,15 @@ interface SettingsViewProps {
   onShowShortcuts: () => void;
   onAISaved?: () => void;
   folders: Folder[];
+  theme: string;
+  onThemeChange: (v: string) => void;
 }
 
-export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts, onAISaved, folders }: SettingsViewProps) {
+export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts, onAISaved, folders, theme, onThemeChange }: SettingsViewProps) {
   const [testing, setTesting] = useState(false);
   const [showPrompts, setShowPrompts] = useState(false);
   const [storageUsed, setStorageUsed] = useState<string | null>(null);
   const [storageDetail, setStorageDetail] = useState<{ used: number; quota: number } | null>(null);
-
-  const { theme, setTheme } = useDB();
 
   // Study timer settings
   const [timerSettings, setTimerSettings] = useState(() => {
@@ -427,7 +426,7 @@ export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts,
               {(['system', 'light', 'dark'] as const).map(t => (
                 <button
                   key={t}
-                  onClick={() => setTheme(t)}
+                  onClick={() => onThemeChange(t)}
                   style={{
                     padding: '0.5rem 0.875rem',
                     borderRadius: 'var(--r)',

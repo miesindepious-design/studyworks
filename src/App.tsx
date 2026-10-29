@@ -620,7 +620,7 @@ export default function App() {
               />
             )}
             {currentView === 'settings' && (
-              <SettingsView notif={notif} tier={tier} onAddToast={addToast} onShowShortcuts={() => setShowShortcuts(true)} onAISaved={ai.reloadConfig} folders={db.folders} />
+              <SettingsView notif={notif} tier={tier} onAddToast={addToast} onShowShortcuts={() => setShowShortcuts(true)} onAISaved={ai.reloadConfig} folders={db.folders} theme={theme} onThemeChange={db.setTheme} />
             )}
             {currentView === 'multiplayer' && (
               <MultiplayerQuiz
