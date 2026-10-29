@@ -8,6 +8,7 @@ import { toPlainText, wordCount, readingTime } from '../utils/text';
 import { extractTextFromFile } from '../utils/extractText';
 import { NOTE_TEMPLATES } from '../lib/studentTemplates';
 import { uploadFile, deleteRemoteAttachment } from '../api/attachments';
+import { deleteNote as deleteNoteAPI, bulkDeleteNotes } from '../api/notes';
 import { unfurlUrl } from '../api/phase2';
 import { findRelated, findBacklinks } from '../utils/backlinks';
 import { useDebounce } from '../hooks/useDebounce';
@@ -274,18 +275,28 @@ export default function NotesView({
     if (bulkSelected.size === 0) return;
     setPendingDelete({ type: 'bulk' });
   };
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!pendingDelete) return;
-    if (pendingDelete.type === 'note' && pendingDelete.id) {
-      setNotes(notes.filter(n => n.id !== pendingDelete.id));
-      if (expandedNoteId === pendingDelete.id) setExpandedNoteId(null);
-      addToast('Note deleted.', 'success');
-    } else if (pendingDelete.type === 'bulk') {
-      setNotes(notes.filter(n => !bulkSelected.has(n.id)));
-      setBulkSelected(new Set()); setBulkMode(false);
-      addToast(`Deleted ${bulkSelected.size} note${bulkSelected.size > 1 ? 's' : ''}.`, 'success');
+    try {
+      if (pendingDelete.type === 'note' && pendingDelete.id) {
+        await deleteNoteAPI(pendingDelete.id);
+      } else if (pendingDelete.type === 'bulk') {
+        await bulkDeleteNotes(Array.from(bulkSelected));
+      }
+    } catch (e) {
+      console.warn('[StudyWorks] Server delete failed, keeping local removal:', e);
+    } finally {
+      if (pendingDelete.type === 'note' && pendingDelete.id) {
+        setNotes(notes.filter(n => n.id !== pendingDelete.id));
+        if (expandedNoteId === pendingDelete.id) setExpandedNoteId(null);
+        addToast('Note deleted.', 'success');
+      } else if (pendingDelete.type === 'bulk') {
+        setNotes(notes.filter(n => !bulkSelected.has(n.id)));
+        setBulkSelected(new Set()); setBulkMode(false);
+        addToast(`Deleted ${bulkSelected.size} note${bulkSelected.size > 1 ? 's' : ''}.`, 'success');
+      }
+      setPendingDelete(null);
     }
-    setPendingDelete(null);
   };
   const toggleBulkSelect = (id: string) => setBulkSelected(prev => {
     const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;

@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { Flashcard, Folder, PracticeQuestion } from '../types';
 import { matchesSmartFilter } from '../utils/smartFolders';
 import { recordReview } from '../db/streaks';
+import { deleteFlashcard as deleteFlashcardAPI, bulkDeleteFlashcards } from '../api/flashcards';
 import Celebration from './Celebration';
 
 type Tier = 'free' | 'pro';
@@ -324,12 +325,18 @@ export default function FlashcardsView({
   const startEdit = (c: Flashcard) => { setEditingCard(c); setQuestion(c.question); setAnswer(c.answer); setTags(c.tags.join(', ')); setSelectedFolder(c.folderId || 'default'); setFormOpen(true); };
   const cancelEdit = () => { setEditingCard(null); setQuestion(''); setAnswer(''); setTags(''); setFormOpen(false); };
 
-  const deleteFlashcard = (id: string) => {
+  const deleteFlashcard = async (id: string) => {
     if (!confirm('Delete this flashcard?')) return;
-    const updated = flashcards.filter(c => c.id !== id);
-    setFlashcards(updated);
-    if (currentCard >= updated.length && updated.length > 0) setCurrentCard(updated.length - 1);
-    addToast('Flashcard deleted.', 'success');
+    try {
+      await deleteFlashcardAPI(id);
+    } catch (e) {
+      console.warn('[StudyWorks] Server flashcard delete failed, keeping local removal:', e);
+    } finally {
+      const updated = flashcards.filter(c => c.id !== id);
+      setFlashcards(updated);
+      if (currentCard >= updated.length && updated.length > 0) setCurrentCard(updated.length - 1);
+      addToast('Flashcard deleted.', 'success');
+    }
   };
 
   const addFolder = () => {
@@ -342,12 +349,18 @@ export default function FlashcardsView({
 
   const toggleSelect = (id: string) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
-  const bulkDelete = () => {
+  const bulkDelete = async () => {
     if (!selected.size) return;
     if (!confirm(`Delete ${selected.size} flashcard${selected.size > 1 ? 's' : ''}?`)) return;
-    setFlashcards(flashcards.filter(c => !selected.has(c.id)));
-    setSelected(new Set()); setBulkMode(false); setCurrentCard(0);
-    addToast(`Deleted ${selected.size} flashcard${selected.size > 1 ? 's' : ''}.`, 'success');
+    try {
+      await bulkDeleteFlashcards(Array.from(selected));
+    } catch (e) {
+      console.warn('[StudyWorks] Server bulk flashcard delete failed, keeping local removal:', e);
+    } finally {
+      setFlashcards(flashcards.filter(c => !selected.has(c.id)));
+      setSelected(new Set()); setBulkMode(false); setCurrentCard(0);
+      addToast(`Deleted ${selected.size} flashcard${selected.size > 1 ? 's' : ''}.`, 'success');
+    }
   };
 
   const deletePQ = (id: string) => {
