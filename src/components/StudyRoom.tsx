@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createStudyRoom } from '../api/studyRoom';
+import VoiceChat from './VoiceChat';
 
 interface Props {
   userId: string;
@@ -32,6 +33,7 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
     { id: 'p2', name: 'Alex', status: 'studying' as const },
     { id: 'p3', name: 'Jordan', status: 'away' as const },
   ]);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
 
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
 
@@ -136,7 +138,17 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
 
         {/* Room preview */}
         <div className="card" style={{ padding: '1.25rem', marginBottom: '1rem' }}>
-          <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 700 }}>Participants</h3>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>Participants</h3>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-2)', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={voiceEnabled}
+                onChange={(e) => setVoiceEnabled(e.target.checked)}
+              />
+              Voice chat
+            </label>
+          </div>
           <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
             {participants.map(p => (
               <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.75rem', background: 'var(--surface-2)', borderRadius: 'var(--r)', border: '1px solid var(--border)' }}>
@@ -149,6 +161,22 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
             ))}
           </div>
         </div>
+
+        {/* Voice chat */}
+        {voiceEnabled && room.url && (
+          <div className="card" style={{ padding: '1rem 1.25rem', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <VoiceChat
+                signalingUrl={room.url}
+                roomId={room.id}
+                myPlayerId={userId}
+                peerIds={participants.map(p => p.id)}
+                isVoiceActive={voiceEnabled}
+              />
+              <span className="text-xs text-muted">Mute / Deafen controls</span>
+            </div>
+          </div>
+        )}
 
         {/* Pomodoro timer */}
         <div className="card" style={{ padding: '1.25rem', marginBottom: '1rem', textAlign: 'center' }}>
