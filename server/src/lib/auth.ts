@@ -7,11 +7,22 @@ import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { prisma } from './prisma.js';
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Lazy Resend client — only created when an email is actually sent.
+// Prevents missing RESEND_API_KEY from crashing the app at startup.
+function getResend(): Resend {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) throw new Error('RESEND_API_KEY is not set — cannot send email');
+  return new Resend(key);
+}
+
+const BETTER_AUTH_SECRET = process.env.BETTER_AUTH_SECRET;
+if (!BETTER_AUTH_SECRET) {
+  throw new Error('BETTER_AUTH_SECRET env var is required but not set');
+}
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: 'postgresql' }),
-  secret: process.env.BETTER_AUTH_SECRET!,
+  secret: BETTER_AUTH_SECRET,
   baseURL: process.env.BETTER_AUTH_URL || 'http://localhost:3001',
   // The auth router is mounted at /auth (see routes/auth.ts), so Better
   // Auth's internal router must use the same basePath. Its default is
@@ -31,21 +42,20 @@ export const auth = betterAuth({
     enabled: true,
     requireEmailVerification: false, // flip to true in prod after Resend is configured
     sendResetPassword: async ({ user, url }) => {
-      await resend.emails.send({
-        from:    process.env.EMAIL_FROM || 'StudyWorks <noreply@studyworks.app>',
-        to:      user.email,
-        subject: 'Reset your StudyWorks password',
-        text:    `Click the link to reset your password:\n\n${url}\n\nThis link expires in 1 hour.`,
-      });
+      try {
+        await getResend().emails.send({
+          from:    process.env.EMAIL_FROM || 'StudyWorks <noreply@studyworks.app>',
+          to:      user.email,
+          subject: 'Reset your StudyWorks password',
+          text:    `Click the link to reset your password:\n\n${url}\n\nThis link expires in 1 hour.`,
+        });
+      } catch (err) {
+        console.error('[Auth] Password reset email failed:', err);
+      }
     },
   },
 
   // ── Social sign-in ──────────────────────────────────────────────────────────
-  // Google OAuth. Only enabled when both env vars are present so a missing
-  // config degrades to email/password rather than crashing at boot.
-  // Redirect URI to register in Google Cloud Console:
-  //   {BETTER_AUTH_URL}/auth/callback/google
-  //   (dev: http://localhost:3001/auth/callback/google)
   ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
     ? {
         socialProviders: {
@@ -59,12 +69,16 @@ export const auth = betterAuth({
 
   emailVerification: {
     sendVerificationEmail: async ({ user, url }) => {
-      await resend.emails.send({
-        from:    process.env.EMAIL_FROM || 'StudyWorks <noreply@studyworks.app>',
-        to:      user.email,
-        subject: 'Verify your StudyWorks account',
-        text:    `Welcome to StudyWorks! Verify your email:\n\n${url}`,
-      });
+      try {
+        await getResend().emails.send({
+          from:    process.env.EMAIL_FROM || 'StudyWorks <noreply@studyworks.app>',
+          to:      user.email,
+          subject: 'Verify your StudyWorks account',
+          text:    `Welcome to StudyWorks! Verify your email:\n\n${url}`,
+        });
+      } catch (err) {
+        console.error('[Auth] Verification email failed:', err);
+      }
     },
   },
 });
