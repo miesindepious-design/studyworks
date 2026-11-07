@@ -14,8 +14,27 @@ import Stripe from 'stripe';
 import { requireAuth } from '../lib/session.js';
 import { prisma } from '../lib/prisma.js';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+
+/**
+ * Lazy Stripe client — only initialised on the first call that needs it.
+ * This prevents a missing / invalid STRIPE_SECRET_KEY from crashing the
+ * entire Hono app at import time and breaking every unrelated route (auth,
+ * notes, sync, etc.) with a 500.
+ */
+let _stripe: Stripe | null = null;
+function getStripe(): Stripe {
+  if (_stripe) return _stripe;
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) throw new Error('STRIPE_SECRET_KEY is not set');
+  _stripe = new Stripe(key);
+  return _stripe;
+}
+
+/** Returns true when Stripe is configured — used by routes to short-circuit gracefully. */
+function isStripeConfigured(): boolean {
+  return Boolean(process.env.STRIPE_SECRET_KEY);
+}
 
 export const stripeRouter = new Hono();
 
@@ -35,6 +54,10 @@ stripeRouter.get('/prices', async c => {
 stripeRouter.post('/checkout', requireAuth, zValidator('json', z.object({
   priceId: z.string().min(1),
 })), async c => {
+  if (!isStripeConfigured()) {
+    return c.json({ error: 'Stripe is not configured on this server.' }, 503);
+  }
+  const stripe = getStripe();
   const user = c.get('user');
   const { priceId } = c.req.valid('json');
 
@@ -76,6 +99,10 @@ stripeRouter.post('/checkout', requireAuth, zValidator('json', z.object({
 
 // ── Customer portal ────────────────────────────────────────────────────────────
 stripeRouter.post('/portal', requireAuth, async c => {
+  if (!isStripeConfigured()) {
+    return c.json({ error: 'Stripe is not configured on this server.' }, 503);
+  }
+  const stripe = getStripe();
   const user  = c.get('user');
   const dbUser = await prisma.user.findUnique({
     where:  { id: user.id },
@@ -97,6 +124,10 @@ stripeRouter.post('/portal', requireAuth, async c => {
 // ── Webhook ────────────────────────────────────────────────────────────────────
 // NOTE: This route reads the raw body — must be before any body-parsing middleware.
 stripeRouter.post('/webhook', async c => {
+  if (!isStripeConfigured()) {
+    return c.json({ error: 'Stripe is not configured on this server.' }, 503);
+  }
+  const stripe = getStripe();
   const signature = c.req.header('stripe-signature');
   if (!signature) return c.json({ error: 'Missing stripe-signature' }, 400);
 

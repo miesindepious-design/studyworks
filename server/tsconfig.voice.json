@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist-voice",
+    "rootDir": "src"
+  },
+  "include": [
+    "src/voiceServer.ts",
+    "src/keepalive.ts",
+    "src/routes/voiceSignaling.ts",
+    "src/lib/keepalive.ts"
+  ],
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/test/**"
+  ]
+}

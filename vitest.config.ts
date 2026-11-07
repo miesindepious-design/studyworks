@@ -13,5 +13,9 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     include: ['src/**/*.test.ts'],
+    // The default `forks` pool cannot start workers on this Windows host
+    // ("Timeout waiting for worker to respond"). The `threads` pool runs
+    // the same tests successfully here and is portable to Linux CI.
+    pool: 'threads',
   },
 });

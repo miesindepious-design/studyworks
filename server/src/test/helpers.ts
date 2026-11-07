@@ -10,6 +10,7 @@
  */
 import { vi } from 'vitest';
 import { Hono } from 'hono';
+import { prismaMock } from './setup.js';
 
 // We import lazily so mocks from setup.ts are applied first
 export async function buildTestApp() {
@@ -39,6 +40,18 @@ export async function buildTestApp() {
       userId: user.id,
       expiresAt: new Date(Date.now() + 86400_000),
     };
+    // `requireAuth` resolves the tier authoritatively from the database, not
+    // from the session payload, so the mock Prisma user row has to agree with
+    // the tier passed to `login()`. Without this the route sees tier FREE
+    // regardless of what the test asked for, and every Pro-gated assertion
+    // fails with a 403 instead of reaching the route handler.
+    prismaMock.user.findUnique.mockResolvedValue({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      tier: user.tier,
+      educationLevel: null,
+    } as any);
   };
 
   const logout = () => {

@@ -3,8 +3,8 @@
  *
  * Deployed separately from the main API (Vercel serverless can't host
  * persistent WebSocket connections). Run with:
- *   dev:  npx tsx src/voiceServer.ts
- *   prod: node dist/voiceServer.js
+ *   dev:  npx tsx src/voiceServer.ts   (via `npm run voice`)
+ *   prod: node dist-voice/voiceServer.js  (via `npm run voice:start`)
  *
  * IMPORTANT: the Socket.IO server is mounted at `/socket.io/voice`. The
  * client (src/components/VoiceChat.tsx) must use the same path — the

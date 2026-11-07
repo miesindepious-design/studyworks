@@ -3,11 +3,20 @@ services:
     name: studyworks-voice
     runtime: node
     plan: free
-    buildCommand: npm install && npm run build
-    startCommand: node dist/voiceServer.js
+    rootDir: server
+    # Lean build: only compiles the voice server, no Prisma/database needed.
+    buildCommand: npm ci && npm run voice:build
+    startCommand: node dist-voice/voiceServer.js
     healthCheckPath: /health
+    autoDeployTrigger: commit
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 10000
+      # Shared secret — set manually in the Render dashboard.
+      - key: VOICE_TOKEN_SECRET
+        sync: false
+      # Comma-separated origins allowed to open a Socket.IO connection.
+      - key: VOICE_ALLOWED_ORIGINS
+        value: https://studyworks.vercel.app,https://studyworks-miesindepious-designs-projects.vercel.app,https://studyworks-eight.vercel.app,http://localhost:5173

@@ -970,7 +970,7 @@ export default function NotesView({
                       <input
                         type="text"
                         className="input"
-                        placeholder='Filter e.g. "tag:exam" or "type:article,tag:research"'
+                        placeholder='Filter e.g. "tag:exam", "-tag:done", "tag:exam|tag:midterm"'
                         value={newFolderFilter}
                         onChange={e => setNewFolderFilter(e.target.value)}
                       />

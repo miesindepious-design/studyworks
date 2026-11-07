@@ -9,11 +9,18 @@ import { Server as SocketServer, Socket } from 'socket.io';
 
 const socketPlayerMap = new Map<string, { playerId: string; roomId: string }>();
 
+function getAllowedOrigins(): string | string[] {
+  const raw = process.env.VOICE_ALLOWED_ORIGINS;
+  if (!raw) return '*';
+  const origins = raw.split(',').map(o => o.trim()).filter(Boolean);
+  return origins.length === 1 ? origins[0] : origins;
+}
+
 export function attachVoiceSignaling(server: unknown): void {
   const io = new SocketServer(server as any, {
     path: '/socket.io/voice',
     cors: {
-      origin: '*',
+      origin: getAllowedOrigins(),
       methods: ['GET', 'POST'],
     },
   });
@@ -60,6 +67,11 @@ export function attachVoiceSignaling(server: unknown): void {
     });
 
     socket.on('disconnect', () => {
+      const playerInfo = socketPlayerMap.get(socket.id);
+      if (playerInfo) {
+        // Notify remaining peers in the same room that this player left
+        io.to(playerInfo.roomId).emit('voice:peer_left', { playerId: playerInfo.playerId });
+      }
       socketPlayerMap.delete(socket.id);
     });
   });

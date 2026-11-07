@@ -11,7 +11,6 @@ import { buildTestApp, prismaMock } from './helpers.js';
 describe('Sync POST — free-tier item enforcement', () => {
   it('blocks free user from pushing > 50 items', async () => {
     const { request, login } = await buildTestApp();
-    prismaMock.user.findUnique.mockResolvedValueOnce({ tier: 'FREE' } as any);
     prismaMock.note.count.mockResolvedValueOnce(40);
     prismaMock.contact.count.mockResolvedValueOnce(15);
     prismaMock.flashcard.count.mockResolvedValueOnce(0); // 55 total > 50

@@ -32,8 +32,9 @@ import { syncStreak } from './db/streaks';
 import { mergeByLWW, mergeTier } from './utils/merge';
 import Achievements from './components/Achievements';
 import GoalTracker from './components/GoalTracker';
+import AdminDashboard from './components/AdminDashboard';
 
-type View  = 'dashboard' | 'notes' | 'contacts' | 'flashcards' | 'pricing' | 'settings' | 'multiplayer' | 'studyRoom' | 'tutor' | 'timer';
+type View  = 'dashboard' | 'notes' | 'contacts' | 'flashcards' | 'pricing' | 'settings' | 'multiplayer' | 'studyRoom' | 'tutor' | 'timer' | 'admin';
 type Theme = 'light' | 'dark' | 'system';
 type Tier  = 'free' | 'pro';
 
@@ -74,6 +75,7 @@ const PAGE_TITLES: Record<View, string> = {
   studyRoom:  'Study Room',
   timer:      'Study Timer',
   settings:   'Settings',
+  admin:      'Admin Dashboard',
 };
 
 // ── Notification permission banner ────────────────────────────────────────────
@@ -438,6 +440,18 @@ export default function App() {
                 )}
               </button>
             ))}
+            {/* Admin nav — only visible when signed in as the ADMIN_EMAIL account */}
+            {session.user && import.meta.env.VITE_ADMIN_EMAIL &&
+              session.user.email.toLowerCase() === (import.meta.env.VITE_ADMIN_EMAIL as string).toLowerCase() && (
+              <button
+                className={`nav-item${currentView === 'admin' ? ' active' : ''}`}
+                onClick={() => setCurrentView('admin')}
+                style={{ color: currentView === 'admin' ? undefined : 'var(--accent)' }}
+              >
+                <span className="nav-item-icon">🛡️</span>
+                Admin
+              </button>
+            )}
           </div>
 
           <div className="sidebar-footer">
@@ -635,6 +649,12 @@ export default function App() {
             )}
             {currentView === 'timer' && (
               <StudyTimer />
+            )}
+            {currentView === 'admin' && (
+              <AdminDashboard
+                adminEmail={session.user!.email}
+                addToast={addToast}
+              />
             )}
           </div>
         </div>

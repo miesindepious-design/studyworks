@@ -1,11 +1,42 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-const ICE_SERVERS = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  { urls: 'stun:stun2.l.google.com:19302' },
-  { urls: 'stun:stun.cloudflare.com:3478' },
-];
+/**
+ * Build the ICE server list at runtime so TURN credentials can be injected
+ * via env vars without being hardcoded in the bundle.
+ *
+ * Required Vercel env vars (set in project → Settings → Environment Variables):
+ *   VITE_TURN_USERNAME   — Metered username  (from dashboard.metered.ca)
+ *   VITE_TURN_CREDENTIAL — Metered credential (from dashboard.metered.ca)
+ *
+ * Without these the app still works for users on home/mobile networks (STUN
+ * only). TURN is only needed for symmetric-NAT environments (corporate Wi-Fi,
+ * some mobile carriers).
+ */
+function buildIceServers(): RTCIceServer[] {
+  const base: RTCIceServer[] = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    // Metered Open Relay free STUN — no credentials needed
+    { urls: 'stun:standard.relay.metered.ca:80' },
+  ];
+
+  const username = import.meta.env.VITE_TURN_USERNAME as string | undefined;
+  const credential = import.meta.env.VITE_TURN_CREDENTIAL as string | undefined;
+
+  if (username && credential) {
+    // Metered Open Relay TURN servers (free tier: 20 GB/month)
+    // https://www.metered.ca/tools/openrelay/
+    base.push(
+      { urls: 'turn:standard.relay.metered.ca:80',  username, credential },
+      { urls: 'turn:standard.relay.metered.ca:80?transport=tcp', username, credential },
+      { urls: 'turn:standard.relay.metered.ca:443', username, credential },
+      { urls: 'turns:standard.relay.metered.ca:443?transport=tcp', username, credential },
+    );
+  }
+
+  return base;
+}
 
 export interface VoiceChatProps {
   signalingUrl: string;
@@ -60,7 +91,7 @@ export default function VoiceChat({
         return peerConnections.current[targetPlayerId];
       }
 
-      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      const pc = new RTCPeerConnection({ iceServers: buildIceServers() });
 
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((track) => {
@@ -213,6 +244,8 @@ export default function VoiceChat({
         (socket as any).on('connect', () => {
           (socket as any).emit('voice:join', { playerId: myPlayerId, roomId });
           startVoiceSession().catch(() => {});
+          // Notify StudyRoom that the local user has joined so it can show them
+          window.dispatchEvent(new CustomEvent('voice:peer_joined', { detail: { playerId: myPlayerId } }));
         });
 
         (socket as any).on('voice:signal', async ({ senderPlayerId, signal }: any) => {
@@ -221,6 +254,8 @@ export default function VoiceChat({
             let pc = peerConnections.current[senderPlayerId];
             if (!pc) {
               pc = createPeerConnection(senderPlayerId);
+              // New remote peer appeared — tell StudyRoom
+              window.dispatchEvent(new CustomEvent('voice:peer_joined', { detail: { playerId: senderPlayerId } }));
             }
 
             if (signal.sdp) {
@@ -264,6 +299,18 @@ export default function VoiceChat({
         (socket as any).on('connect_error', () => {
           if (!cancelled) setMicError('Voice signaling unreachable.');
         });
+
+        // Relay peer mute/deafen state changes to StudyRoom
+        (socket as any).on('voice:state_change', ({ playerId, isMuted, isDeafened }: any) => {
+          if (cancelled) return;
+          window.dispatchEvent(new CustomEvent('voice:peer_state', { detail: { playerId, isMuted, isDeafened } }));
+        });
+
+        // Relay peer disconnection to StudyRoom
+        (socket as any).on('voice:peer_left', ({ playerId }: any) => {
+          if (cancelled) return;
+          window.dispatchEvent(new CustomEvent('voice:peer_left', { detail: { playerId } }));
+        });
       } catch (e) {
         if (!cancelled) setMicError('Voice chat unavailable in this environment.');
       }
@@ -277,6 +324,8 @@ export default function VoiceChat({
 
     return () => {
       cancelled = true;
+      // Tell StudyRoom this client is leaving
+      window.dispatchEvent(new CustomEvent('voice:peer_left', { detail: { playerId: myPlayerId } }));
       cleanupVoice();
       if (socket) {
         try {

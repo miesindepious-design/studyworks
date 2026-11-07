@@ -1,0 +1,69 @@
+# StudyWorks — Render Blueprint
+#
+# Deploy with: Render Dashboard → New → Blueprint → point at this repo.
+#
+# Only the voice signaling server lives here. The main API + frontend stay on
+# Vercel (serverless) because Render is where we can hold a persistent
+# WebSocket connection for WebRTC signaling.
+#
+# TWO SERVICES:
+#   studyworks-voice          — the Socket.IO signaling server (free plan)
+#   studyworks-voice-keepalive— cron that pings /health every 10 minutes so
+#                               the free service never spins down
+#
+# REQUIRED SETUP (Render Dashboard → Blueprint → Environment):
+#   VOICE_TOKEN_SECRET  → must be IDENTICAL to the value on Vercel, otherwise
+#                          the signaling server rejects every connection.
+#                          Generate with: openssl rand -base64 32
+
+services:
+  # ── Voice signaling server ──────────────────────────────────────────────────
+  - type: web
+    name: studyworks-voice
+    runtime: node
+    plan: free
+    rootDir: server
+    # Lean build: only the voice server + its dependencies are compiled, so no
+    # Prisma generate step and no database env var are needed at build time.
+    buildCommand: npm ci && npm run voice:build
+    startCommand: node dist-voice/voiceServer.js
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      # Shared secret with the Vercel API host. Set this in the dashboard.
+      - key: VOICE_TOKEN_SECRET
+        sync: false
+      # Comma-separated list of browser origins allowed to open a socket.
+      - key: VOICE_ALLOWED_ORIGINS
+        value: https://studyworks.vercel.app,https://studyworks-miesindepious-designs-projects.vercel.app,https://studyworks-eight.vercel.app,http://localhost:5173
+
+  # ── Keep-alive (free alternative) ──────────────────────────────────────────
+  # Instead of a paid Render cron ($1/month), use the free UptimeRobot service
+  # to ping the voice server every 5 minutes and prevent Render free-tier
+  # spin-down (which happens after 15 minutes of inactivity).
+  #
+  # Setup (takes 2 minutes, completely free):
+  #   1. Sign up at https://uptimerobot.com (free tier: 50 monitors, 5-min interval)
+  #   2. Add Monitor → HTTP(S) → URL: https://<your-render-voice-url>/health
+  #   3. Set interval to 5 minutes
+  #   4. Done — no code or deployment changes needed
+  #
+  # If you prefer the paid Render cron approach, uncomment the block below.
+  # - type: cron
+  #   name: studyworks-voice-keepalive
+  #   runtime: node
+  #   plan: starter          # $1/month minimum
+  #   rootDir: server
+  #   schedule: '*/10 * * * *'
+  #   buildCommand: npm ci && npm run voice:build
+  #   startCommand: node dist-voice/keepalive.js
+  #   envVars:
+  #     - key: VOICE_HEALTH_URL
+  #       fromService:
+  #         name: studyworks-voice
+  #         type: web
+  #         envVarKey: RENDER_EXTERNAL_URL

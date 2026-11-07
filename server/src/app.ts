@@ -21,6 +21,7 @@ import { supportRouter } from './routes/support.js';
 import { emailSaveRouter, inboundEmailRouter } from './routes/emailSave.js';
 import { gameRouter } from './routes/game.js';
 import { studyRoomRouter } from './routes/studyRoom.js';
+import { adminRouter } from './routes/admin.js';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
@@ -35,6 +36,7 @@ app.use('*', cors({
     'https://studyworksfirst-git-master-miesindepious-designs-projects.vercel.app',
     'https://studyworks.vercel.app',
     'https://studyworks-miesindepious-designs-projects.vercel.app',
+    'https://studyworks-eight.vercel.app',
   ],
   credentials: true,
   allowHeaders:  ['Content-Type', 'Authorization'],
@@ -68,6 +70,9 @@ app.route('/api/inbound-email', inboundEmailRouter);
 // Phase 3: multiplayer quiz
 app.route('/api/game',    gameRouter);
 app.route('/api/study-room', studyRoomRouter);
+
+// Admin
+app.route('/api/admin', adminRouter);
 
 // ── 404 ────────────────────────────────────────────────────────────────────────
 app.notFound(c => c.json({ error: 'Not found' }, 404));

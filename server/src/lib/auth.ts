@@ -22,6 +22,7 @@ export const auth = betterAuth({
     'https://studyworksfirst-git-master-miesindepious-designs-projects.vercel.app',
     'https://studyworks.vercel.app',
     'https://studyworks-miesindepious-designs-projects.vercel.app',
+    'https://studyworks-eight.vercel.app',
     'http://localhost:5173',
     'http://localhost:3000',
   ],
