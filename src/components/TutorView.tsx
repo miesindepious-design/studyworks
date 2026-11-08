@@ -93,8 +93,17 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
   const [suggestedTopics, setSuggestedTopics] = useState<string[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const typingRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  // Exit fullscreen on Escape
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fullscreen]);
 
   const scrollToBottom = useCallback(() => {
     if (panelRef.current) panelRef.current.scrollTop = panelRef.current.scrollHeight;
@@ -353,8 +362,43 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
       {/* Chat history panel */}
       <div
         ref={panelRef}
-        style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '520px', overflow: 'auto', paddingRight: '0.25rem' }}
+        style={fullscreen
+          ? {
+              position: 'fixed',
+              inset: 0,
+              zIndex: 1200,
+              background: 'var(--surface-0)',
+              padding: '1.5rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem',
+              overflow: 'auto',
+            }
+          : { marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '520px', overflow: 'auto', paddingRight: '0.25rem' }}
       >
+        {/* Fullscreen toolbar */}
+        <div
+          style={{
+            position: fullscreen ? 'sticky' : 'static',
+            top: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            gap: '0.5rem',
+            background: fullscreen ? 'var(--surface-0)' : 'transparent',
+            paddingBottom: fullscreen ? '0.5rem' : 0,
+            zIndex: 1,
+          }}
+        >
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setFullscreen(f => !f)}
+            title={fullscreen ? 'Exit full screen (Esc)' : 'View in full screen'}
+          >
+            {fullscreen ? '⛶ Exit full screen' : '⛶ Full screen'}
+          </button>
+        </div>
         {(() => {
           const displayedHistory = activeTopic
             ? history.filter(h => h.topic === activeTopic)
