@@ -633,39 +633,39 @@
 
 /* ── Responsive ───────────────────────────────────────────────────────────── */
 @media (max-width: 900px) {
-  .sidebar { display: none; }
+  /* Sidebar becomes a slide-in drawer on the left */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 1600;
+    width: min(300px, 85vw);
+    min-width: 0;
+    height: 100dvh;
+    transform: translateX(-105%);
+    transition: transform 0.25s ease;
+    box-shadow: none;
+  }
+  .sidebar.open {
+    transform: translateX(0);
+    box-shadow: var(--shadow-lg);
+  }
+  .sidebar-close { display: inline-flex !important; margin-left: auto; }
+  .sidebar-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 1500;
+    background: rgb(0 0 0 / .5);
+    animation: fadeIn var(--t-fast) var(--ease) both;
+  }
   .app-shell { flex-direction: column; }
-  .mobile-nav {
-    display: flex;
-    overflow-x: auto;
-    gap: 0.25rem;
-    padding: 0.5rem 1rem;
-    background: var(--surface-0);
-    border-bottom: 1px solid var(--border-soft);
-  }
-  .mobile-nav-btn {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.2rem;
-    padding: 0.4rem 0.75rem;
-    border-radius: var(--r);
-    border: none;
-    background: transparent;
-    color: var(--text-3);
-    font-size: 0.7rem;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: all var(--t-fast) var(--ease);
-  }
-  .mobile-nav-btn .icon { font-size: 1.1rem; }
-  .mobile-nav-btn.active { color: var(--accent); background: var(--accent-soft); }
+  .hamburger { display: inline-flex !important; }
   .page-content { padding: 1.25rem; }
   .topbar { padding: 0 1rem; }
 }
 @media (min-width: 901px) {
-  .mobile-nav { display: none; }
+  .hamburger, .sidebar-close, .sidebar-scrim { display: none !important; }
 }
 
 /* ── Dashboard hero ──────────────────────────────────────────────────────── */

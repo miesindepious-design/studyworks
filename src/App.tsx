@@ -201,6 +201,16 @@ export default function App() {
     []
   );
   const [currentView, setCurrentView] = useState<View>('dashboard');
+  // Mobile nav drawer (sidebar slides in from the left; hidden by default)
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // Close the drawer on Escape
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [menuOpen]);
 
   // ── Theme (apply immediately from IDB value once loaded) ──────────────────
   const theme = (db.theme as Theme) || 'system';
@@ -414,11 +424,23 @@ export default function App() {
     <div className="app">
       <div className="app-shell">
 
-        {/* ── Sidebar ── */}
-        <aside className="sidebar">
+        {/* Mobile scrim — tap outside the drawer to close it */}
+        {menuOpen && (
+          <div className="sidebar-scrim" onClick={() => setMenuOpen(false)} aria-hidden="true" />
+        )}
+
+        {/* ── Sidebar (desktop) / slide-in drawer (mobile) ── */}
+        <aside className={`sidebar${menuOpen ? ' open' : ''}`}>
           <div className="sidebar-logo">
             <img className="logo-mark" src="/logo.svg" alt="StudyWorks" />
             <h1>{productProfile.name}</h1>
+            <button
+              type="button"
+              className="icon-btn sidebar-close"
+              onClick={() => setMenuOpen(false)}
+              aria-label="Close menu"
+              title="Close menu"
+            >✕</button>
           </div>
 
 
@@ -428,7 +450,7 @@ export default function App() {
               <button
                 key={item.view}
                 className={`nav-item${currentView === item.view ? ' active' : ''}`}
-                onClick={() => setCurrentView(item.view)}
+                onClick={() => { setCurrentView(item.view); setMenuOpen(false); }}
               >
                 <span className="nav-item-icon">{item.icon}</span>
                 {item.label}
@@ -445,7 +467,7 @@ export default function App() {
               session.user.email.toLowerCase() === (import.meta.env.VITE_ADMIN_EMAIL as string).toLowerCase() && (
               <button
                 className={`nav-item${currentView === 'admin' ? ' active' : ''}`}
-                onClick={() => setCurrentView('admin')}
+                onClick={() => { setCurrentView('admin'); setMenuOpen(false); }}
                 style={{ color: currentView === 'admin' ? undefined : 'var(--accent)' }}
               >
                 <span className="nav-item-icon">🛡️</span>
@@ -511,20 +533,15 @@ export default function App() {
 
         {/* ── Main ── */}
         <div className="main-content">
-          {/* Mobile nav */}
-          <nav className="mobile-nav">
-            {NAV_ITEMS.map(item => (
-              <button key={item.view} className={`mobile-nav-btn${currentView === item.view ? ' active' : ''}`} onClick={() => setCurrentView(item.view)}>
-                <span className="icon">{item.icon}</span>{item.label}
-              </button>
-            ))}
-            <button className="mobile-nav-btn" onClick={cycleTheme}>
-              <span className="icon">{THEME_ICON[theme]}</span>{THEME_LABEL[theme]}
-            </button>
-          </nav>
-
           {/* Top bar */}
           <div className="topbar">
+            <button
+              type="button"
+              className="icon-btn hamburger"
+              onClick={() => setMenuOpen(true)}
+              aria-label="Open menu"
+              title="Open menu"
+            >☰</button>
             <span className="topbar-title">{PAGE_TITLES[currentView]}</span>
             <div className="topbar-actions">
               <button className="icon-btn" onClick={() => setCmdkOpen(true)} title="Command palette (⌘K)" style={{ fontSize: '1rem', position: 'relative' }}>
