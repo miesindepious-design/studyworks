@@ -94,8 +94,123 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
   const [isTyping, setIsTyping] = useState(false);
   const [saving, setSaving] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  // Voice mode: mic in (speech recognition) + spoken answers (speech synthesis)
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const recognitionRef = useRef<any>(null);
+  const voiceModeRef = useRef(false);
+  // Refs let speakText → startListening → send call each other regardless of
+  // declaration order (send is defined below).
+  const sendRef = useRef<(mode: TutorMode, payloadTopic?: string) => Promise<void>>(async () => {});
+  const startListeningRef = useRef<() => void>(() => {});
   const panelRef = useRef<HTMLDivElement | null>(null);
   const typingRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(() => { voiceModeRef.current = voiceMode; }, [voiceMode]);
+
+  // Strip markdown so the TTS doesn't read out symbols like "##" or "**"
+  const cleanForSpeech = useCallback((text: string): string => {
+    return text
+      .replace(/```[\s\S]*?```/g, ' ')                // code blocks
+      .replace(/`([^`]*)`/g, '$1')                     // inline code
+      .replace(/^#{1,6}\s+/gm, '')                     // headings
+      .replace(/\*\*([^*]+)\*\*/g, '$1')               // bold
+      .replace(/\*([^*]+)\*/g, '$1')                   // italic
+      .replace(/__([^_]+)__/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')         // links
+      .replace(/^\s*[-•]\s+/gm, '')                    // bullets
+      .replace(/^\s*\d+\.\s+/gm, '')                   // numbered lists
+      .replace(/[#>*|_~\-]{2,}/g, ' ')                 // leftover symbol runs
+      .replace(/\s+/g, ' ')
+      .trim();
+  }, []);
+
+  const speakText = useCallback((text: string) => {
+    if (!('speechSynthesis' in window)) return;
+    const clean = cleanForSpeech(text);
+    if (!clean) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(clean);
+    const englishVoice = window.speechSynthesis.getVoices().find(v => v.lang.startsWith('en'));
+    if (englishVoice) utterance.voice = englishVoice;
+    utterance.rate = 1.0;
+    utterance.onstart = () => setSpeaking(true);
+    utterance.onend = () => {
+      setSpeaking(false);
+      // Hands-free loop: listen again after the tutor finishes speaking
+      if (voiceModeRef.current) startListeningRef.current();
+    };
+    utterance.onerror = () => setSpeaking(false);
+    window.speechSynthesis.speak(utterance);
+  }, [cleanForSpeech]);
+
+  const startListening = useCallback(() => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      addToast('Voice input is not supported in this browser (try Chrome or Edge).', 'error');
+      return;
+    }
+    if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch {} }
+    const recognition = new SR();
+    recognitionRef.current = recognition;
+    recognition.lang = 'en-US';
+    recognition.interimResults = true;
+    recognition.continuous = false;
+
+    recognition.onresult = (event: any) => {
+      let interim = '';
+      let finalText = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) finalText += transcript;
+        else interim += transcript;
+      }
+      if (finalText.trim()) {
+        setTopic(finalText.trim());
+        sendRef.current('lesson', finalText.trim());
+      } else if (interim.trim()) {
+        setTopic(interim.trim());
+      }
+    };
+    recognition.onerror = (event: any) => {
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        addToast('Microphone access denied. Allow the microphone in your browser settings.', 'error');
+      } else if (event.error !== 'aborted') {
+        addToast(`Voice input error: ${event.error}`, 'error');
+      }
+      setListening(false);
+    };
+    recognition.onend = () => setListening(false);
+
+    setListening(true);
+    recognition.start();
+  }, [send, addToast]);
+
+  const toggleVoiceMode = useCallback(() => {
+    if (!('speechSynthesis' in window)) {
+      addToast('Speech output is not supported in this browser.', 'error');
+      return;
+    }
+    setVoiceMode(prev => {
+      const next = !prev;
+      if (!next) {
+        try { recognitionRef.current?.stop(); } catch {}
+        window.speechSynthesis.cancel();
+        setSpeaking(false);
+        setListening(false);
+      } else {
+        addToast('Voice mode on — tap the microphone, then speak.', 'info');
+      }
+      return next;
+    });
+  }, [addToast]);
+
+  // Stop speech/recognition on unmount
+  useEffect(() => () => {
+    try { recognitionRef.current?.stop(); } catch {}
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+  }, []);
 
   // Exit fullscreen on Escape
   useEffect(() => {
@@ -178,6 +293,8 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
       setAnswer('');
       setTopic(effectiveTopic);
       setActiveTopic(effectiveTopic);
+      // Voice mode: read the answer aloud
+      if (voiceModeRef.current) speakText(res.response);
     } catch (err: any) {
       const msg = err.message || 'Tutor request failed.';
       setError(msg);
@@ -185,7 +302,11 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
     } finally {
       setLoading(false);
     }
-  }, [topic, tier, level, history, answer, addToast, setCurrentView]);
+  }, [topic, tier, level, history, answer, addToast, setCurrentView, speakText]);
+
+  // Keep the refs pointing at the latest callbacks
+  sendRef.current = send;
+  startListeningRef.current = startListening;
 
   const saveLevel = useCallback(async (next: string | null) => {
     setSavingLevel(true);
@@ -287,15 +408,40 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
             <input
               className="input"
-              placeholder="Type a topic to learn…"
+              placeholder={listening ? '🎙️ Listening…' : 'Type a topic to learn…'}
               value={topic}
               onChange={e => setTopic(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && send('lesson')}
               style={{ flex: 1, minWidth: '220px' }}
             />
+            <button
+              type="button"
+              className={`btn ${listening ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={startListening}
+              disabled={loading}
+              title={listening ? 'Listening for your voice…' : 'Speak your topic'}
+              style={listening ? { animation: 'pulse 1.2s infinite ease-in-out' } : undefined}
+            >
+              {listening ? '🔴' : '🎙️'}
+            </button>
             <button className="btn btn-primary" onClick={() => send('lesson')} disabled={loading}>
               {loading ? 'Teaching…' : 'Teach me'}
             </button>
+          </div>
+
+          {/* Voice mode toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.75rem' }}>
+            <button
+              type="button"
+              className={`btn btn-sm ${voiceMode ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={toggleVoiceMode}
+              title={voiceMode ? 'Turn voice mode off' : 'Turn voice mode on — speak your questions and hear answers aloud'}
+              aria-pressed={voiceMode}
+            >
+              {voiceMode ? '🔊 Voice on' : '🔈 Voice off'}
+            </button>
+            {speaking && <span className="text-xs text-muted">🗣️ Tutor is speaking…</span>}
+            {listening && <span className="text-xs text-muted">🎙️ Listening — say what you don't understand…</span>}
           </div>
 
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.75rem' }}>
