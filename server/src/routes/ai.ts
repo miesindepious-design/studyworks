@@ -526,9 +526,9 @@ aiRouter.post('/tutor', requirePro, zValidator('json', TutorRequestBody), async 
   const audience = levelLabel[effectiveLevel] ?? 'college level';
 
   const modeInstructions: Record<TutorMode, string> = {
-    lesson: `Teach the requested topic from scratch as a structured lesson for a ${audience} student. Start with a brief motivation paragraph, then clear section headings, definitions, worked examples, and common pitfalls. End with a short recap. Keep the tone encouraging and precise.`,
+    lesson: `Teach the requested topic from scratch as exam-ready study notes for a ${audience} student. Write comprehensive, well-explained notes the student can use to revise for exams: motivation, clear section headings, formal definitions, key formulas with explanations, worked examples, comparison tables where useful, common misconceptions and exam traps, and end with a "likely exam questions" section including model answers. Do not keep explanations brief — cover the topic's important sub-topics, prerequisites, and applications at a depth matching the student's level (foundational but precise for beginners; thorough and rigorous for university/graduate levels).`,
     simpler: `The student found the previous explanation too hard. Re-explain the same topic at a simpler level for ${audience}. Use more everyday analogies, shorter sentences, and explicit step-by-step reasoning. Avoid jargon where possible, or define every term you use.`,
-    deeper: `The student wants to go beyond the standard curriculum. Extend the lesson into a more advanced, research-oriented treatment suitable for ${audience}. Include stronger formalism, edge cases, modern interpretations, and references to deeper ideas.`,
+    deeper: `The student wants to go beyond the standard curriculum. Extend the lesson into a more advanced, research-oriented treatment suitable for ${audience}. Include stronger formalism, edge cases, modern interpretations, and references to deeper ideas. Frame it as exam-grade advanced notes: likely exam topics, derivations, comparison tables, and common pitfalls.`,
     quiz: `Generate a short mastery quiz for the topic so far. Mix recall, conceptual, and application questions. After each question, give brief feedback. Finish with a short assessment of whether the student seems ready to move on.`,
   };
 
@@ -545,7 +545,7 @@ aiRouter.post('/tutor', requirePro, zValidator('json', TutorRequestBody), async 
       apiKey: cfg.apiKey,
       messages,
       temperature: mode === 'quiz' ? 0.4 : 0.7,
-      maxTokens: mode === 'quiz' ? 1200 : 2200,
+      maxTokens: mode === 'quiz' ? 1200 : 4000,
     });
 
     return c.json({
