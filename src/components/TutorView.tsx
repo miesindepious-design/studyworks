@@ -185,7 +185,7 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
 
     setListening(true);
     recognition.start();
-  }, [send, addToast]);
+  }, [addToast]);
 
   const toggleVoiceMode = useCallback(() => {
     if (!('speechSynthesis' in window)) {
