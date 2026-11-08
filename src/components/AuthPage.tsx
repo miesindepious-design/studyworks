@@ -339,6 +339,25 @@ export default function AuthPage({ onAuth }: AuthPageProps) {
             </button>
           </form>
 
+          {/* Sign-in ⇄ Sign-up toggle */}
+          {!isForgot && (
+            <p className="text-sm" style={{ textAlign: 'center', marginTop: '1.25rem', color: 'var(--text-2)' }}>
+              {isSignin ? (
+                <>Don't have an account?{' '}
+                  <button type="button" className="btn btn-ghost btn-xs" onClick={() => switchMode('signup')} style={{ color: 'var(--accent)', padding: 0, fontWeight: 700 }}>
+                    Create one
+                  </button>
+                </>
+              ) : (
+                <>Already have an account?{' '}
+                  <button type="button" className="btn btn-ghost btn-xs" onClick={() => switchMode('signin')} style={{ color: 'var(--accent)', padding: 0, fontWeight: 700 }}>
+                    Sign in
+                  </button>
+                </>
+              )}
+            </p>
+          )}
+
           {/* Forgot → back to sign in */}
           {isForgot && (
             <button className="btn btn-ghost btn-sm" onClick={() => switchMode('signin')} style={{ width: '100%', marginTop: '1rem', color: 'var(--text-2)' }}>
