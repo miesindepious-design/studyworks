@@ -15,7 +15,7 @@
  */
 
 import type { GameQuestion, GamePlayer } from '@prisma/client';
-import { prisma } from './prisma';
+import { prisma } from './prisma.js';
 
 export type Role = 'host' | 'player';
 

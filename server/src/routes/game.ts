@@ -13,10 +13,10 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import { prisma } from '../lib/prisma';
-import { requireAuth } from '../lib/session';
-import { requirePro } from '../lib/tier';
-import { gameManager } from '../lib/gameManager';
+import { prisma } from '../lib/prisma.js';
+import { requireAuth } from '../lib/session.js';
+import { requirePro } from '../lib/tier.js';
+import { gameManager } from '../lib/gameManager.js';
 
 export const gameRouter = new Hono();
 
