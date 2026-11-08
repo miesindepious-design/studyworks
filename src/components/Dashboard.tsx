@@ -204,6 +204,16 @@ export default function Dashboard({ notes, contacts, flashcards, tier, totalItem
   const [achievements, setAchievements] = useState<Achievement[]>(() =>
     evaluateAchievements(notes, contacts, flashcards, streak, aiSummariesThisMonth, folders, practiceQuestions)
   );
+  const [achievementsCollapsed, setAchievementsCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem('studyworks-achievements-collapsed') === '1'; } catch { return false; }
+  });
+  const toggleAchievementsCollapsed = useCallback(() => {
+    setAchievementsCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem('studyworks-achievements-collapsed', next ? '1' : '0'); } catch {}
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     setAchievements(evaluateAchievements(notes, contacts, flashcards, streak, aiSummariesThisMonth, folders, practiceQuestions));
@@ -469,8 +479,21 @@ export default function Dashboard({ notes, contacts, flashcards, tier, totalItem
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div className="card-header">
           <span className="card-title">🏅 Achievements</span>
-          <span className="text-xs text-muted">{unlockedCount} / {achievements.length}</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span className="text-xs text-muted">{unlockedCount} / {achievements.length}</span>
+            <button
+              type="button"
+              className="btn btn-ghost btn-xs"
+              onClick={toggleAchievementsCollapsed}
+              aria-label={achievementsCollapsed ? 'Show achievements' : 'Hide achievements'}
+              title={achievementsCollapsed ? 'Show achievements' : 'Hide achievements'}
+              style={{ lineHeight: 1 }}
+            >
+              {achievementsCollapsed ? '▸' : '▾'}
+            </button>
+          </span>
         </div>
+        {!achievementsCollapsed && (
         <div className="achievements-grid">
           {achievements.slice(0, 8).map(a => (
             <div key={a.id} className={`achievement-item ${a.unlocked ? 'unlocked' : 'locked'}`}>
@@ -482,6 +505,7 @@ export default function Dashboard({ notes, contacts, flashcards, tier, totalItem
             </div>
           ))}
         </div>
+        )}
       </div>
 
       {/* Stats grid — with trend arrows and click-to-filter */}
