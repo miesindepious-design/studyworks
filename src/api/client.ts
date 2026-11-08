@@ -32,7 +32,19 @@ export async function apiFetch<T = unknown>(
     let message = res.statusText;
     try {
       const body = await res.json();
-      message = body?.error || body?.message || message;
+      const errVal = body?.error ?? body?.message;
+      if (typeof errVal === 'string') {
+        message = errVal;
+      } else if (errVal && typeof errVal === 'object') {
+        // Zod validation errors come back as { issues: [{ message, ... }] } —
+        // surface the human-readable issues instead of "[object Object]".
+        const issues = (errVal as any).issues;
+        if (Array.isArray(issues) && issues.length) {
+          message = issues.map((i: any) => i.message ?? JSON.stringify(i)).join('; ');
+        } else if (typeof (errVal as any).message === 'string') {
+          message = (errVal as any).message;
+        }
+      }
     } catch {}
     throw new APIError(res.status, message);
   }

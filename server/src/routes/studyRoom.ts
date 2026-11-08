@@ -4,7 +4,10 @@ import { zValidator } from '@hono/zod-validator';
 import { requireAuth } from '../lib/session.js';
 
 const CreateBody = z.object({
-  name: z.string().min(1).max(64),
+  // Name is optional: the frontend sends `undefined` when the input is empty,
+  // and the handler falls back to a default. A required name here makes an
+  // empty form field fail validation with an opaque Zod error object.
+  name: z.string().min(1).max(64).optional(),
   maxParticipants: z.number().int().min(2).max(12).default(6),
 });
 
