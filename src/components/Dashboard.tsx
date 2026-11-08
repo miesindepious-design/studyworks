@@ -494,7 +494,7 @@ export default function Dashboard({ notes, contacts, flashcards, tier, totalItem
           </span>
         </div>
         {!achievementsCollapsed && (
-        <div className="achievements-grid">
+        <div className="achievements-grid" style={{ maxHeight: '340px', overflowY: 'auto', paddingRight: '0.25rem' }}>
           {achievements.slice(0, 8).map(a => (
             <div key={a.id} className={`achievement-item ${a.unlocked ? 'unlocked' : 'locked'}`}>
               <div className="achievement-icon">{a.unlocked ? a.icon : '🔒'}</div>
