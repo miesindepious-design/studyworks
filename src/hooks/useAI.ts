@@ -116,7 +116,7 @@ export function useAI(): UseAIResult {
     return aiSummary(title, toPlainText(content), effective);
   }, [source, effective, isReady]);
 
-  const generateFlashcards = useCallback(async (title: string, content: string, count = 5, hard = false) => {
+  const generateFlashcards = useCallback(async (title: string, content: string, count = 15, hard = false) => {
     if (!isReady) throw new Error('AI not configured');
     if (source === 'server') {
       const cards = await serverAI.serverFlashcards(title, toPlainText(content), count, hard);

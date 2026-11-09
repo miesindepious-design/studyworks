@@ -17,6 +17,8 @@ import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../lib/session.js';
 import { requirePro } from '../lib/tier.js';
 import { gameManager } from '../lib/gameManager.js';
+import { SYSTEM_BASE, loadAIConfig, callProvider } from '../lib/aiProvider.js';
+import { studentProfileBits, studentPromptContext } from '../lib/studentProfile.js';
 
 export const gameRouter = new Hono();
 
@@ -52,7 +54,7 @@ gameRouter.post('/rooms', requireAuth, requirePro, zValidator('json', z.object({
     const where = body.flashcardIds?.length
       ? { id: { in: body.flashcardIds }, userId: user.id }
       : { userId: user.id };
-    const cards = await prisma.flashcard.findMany({ where, take: 30 });
+    const cards = await prisma.flashcard.findMany({ where, take: 60 });
     if (cards.length < 3) return c.json({ error: 'Need at least 3 flashcards to host a game' }, 400);
     // Pool of plausible wrong answers = other cards' answers.
     const answerPool = cards.map(c => c.answer).filter((v, i, a) => a.indexOf(v) === i);
@@ -68,9 +70,54 @@ gameRouter.post('/rooms', requireAuth, requirePro, zValidator('json', z.object({
       return { prompt: card.question, options: opts, answerIdx: opts.indexOf(card.answer) };
     });
   } else {
-    // Topic source requires AI; for now return an actionable error pointing
-    // at AI setup. (AI question generation can be layered on later.)
-    return c.json({ error: 'Topic-based games need an AI key configured. Use your flashcards for now.' }, 400);
+    // Topic source: generate level-aware multiple-choice questions with AI.
+    if (!body.topic || !String(body.topic).trim()) {
+      return c.json({ error: 'A topic is required for AI questions.' }, 400);
+    }
+    const topic = String(body.topic).trim();
+    try {
+      const cfg = await loadAIConfig(user.id);
+      const profileBits = studentProfileBits(user);
+      const audience = profileBits.length > 0 ? profileBits.join(', ') : 'a general student';
+      const studentCtx = studentPromptContext(profileBits);
+      // As many questions as one generation can reasonably produce.
+      const questionCount = 20;
+      const raw = await callProvider({
+        provider: cfg.provider, model: cfg.model, apiKey: cfg.apiKey,
+        messages: [
+          { role: 'system', content: `${SYSTEM_BASE}${studentCtx}` },
+          {
+            role: 'user',
+            content: `Generate ${questionCount} multiple-choice quiz questions on the topic "${topic}" for ${audience}.
+Rules:
+- Each question has exactly 4 options and exactly one correct answer.
+- Cover the full breadth of the topic: definitions, application, reasoning and exam-style traps.
+- Difficulty should match what is actually taught at the student's level.
+- Distractors must be plausible but clearly wrong on careful reading.
+Return JSON: { "questions": [ { "prompt": "...", "options": ["...","...","...","..."], "answerIdx": 0 } ] } where answerIdx is the 0-based index of the correct option.`,
+          },
+        ],
+        temperature: 0.6, maxTokens: 8192, jsonMode: true,
+      });
+      const parsed = JSON.parse(raw);
+      const rawQs: any[] = parsed.questions ?? [];
+      questions = rawQs
+        .filter((q: any) =>
+          typeof q?.prompt === 'string' && q.prompt.trim() &&
+          Array.isArray(q.options) && q.options.length >= 2 &&
+          Number.isInteger(q.answerIdx) && q.answerIdx >= 0 && q.answerIdx < q.options.length)
+        .slice(0, questionCount)
+        .map((q: any) => ({
+          prompt:    String(q.prompt).trim(),
+          options:   q.options.map((o: any) => String(o)),
+          answerIdx: q.answerIdx,
+        }));
+      if (questions.length < 3) {
+        return c.json({ error: 'The AI generated too few valid questions — try again or host from your flashcards.' }, 502);
+      }
+    } catch (e) {
+      return c.json({ error: `AI question generation failed: ${(e as Error).message}` }, 502);
+    }
   }
 
   const room = await prisma.gameRoom.create({

@@ -15,6 +15,8 @@ import { requirePro } from '../lib/tier.js';
 import { rateLimitMiddleware } from '../lib/rateLimit.js';
 import { prisma } from '../lib/prisma.js';
 import { encryptApiKey, decryptApiKey } from '../lib/encryption.js';
+import { SYSTEM_BASE, loadAIConfig, callProvider, getServerAIFallback } from '../lib/aiProvider.js';
+import { studentProfileBits, studentPromptContext } from '../lib/studentProfile.js';
 
 export const aiRouter = new Hono();
 aiRouter.use('/*', requireAuth);
@@ -121,110 +123,8 @@ aiRouter.put('/settings', requirePro, zValidator('json', AISettingsBody), async 
 });
 
 // ── Helper: server-managed fallback AI config ────────────────────────────────
-function getServerAIFallback() {
-  const apiKey = process.env.AI_API_KEY?.trim();
-  if (!apiKey) return null;
-  const provider = (process.env.AI_PROVIDER || 'gemini') as 'gemini' | 'openai';
-  const model = process.env.AI_MODEL?.trim() || 'gemini-2.5-flash';
-  return { provider, model, apiKey, serverManaged: true as const };
-}
-
-// ── Helper: load and decrypt user AI config ───────────────────────────────────
-async function loadAIConfig(userId: string) {
-  const settings = await prisma.aISettings.findUnique({ where: { userId } });
-  if (settings && settings.enabled && settings.encryptedApiKey) {
-    const apiKey = decryptApiKey(settings.encryptedApiKey);
-    return {
-      ...settings,
-      apiKey,
-      serverManaged: false as const,
-      customSummaryPrompt:   settings.customSummaryPrompt   ?? null,
-      customFlashcardPrompt: settings.customFlashcardPrompt ?? null,
-      customQAPrompt:        settings.customQAPrompt        ?? null,
-    };
-  }
-
-  const fallback = getServerAIFallback();
-  if (!fallback) {
-    throw new Error('AI not configured or not enabled');
-  }
-
-  // Server-managed fallback — reuse the user's custom prompts when they
-  // exist so the prompts stay consistent across key sources.
-  return {
-    ...fallback,
-    customSummaryPrompt:   settings?.customSummaryPrompt   ?? null,
-    customFlashcardPrompt: settings?.customFlashcardPrompt ?? null,
-    customQAPrompt:        settings?.customQAPrompt        ?? null,
-  };
-}
-
-// ── Generic provider proxy ────────────────────────────────────────────────────
-async function callProvider(opts: {
-  provider:    string;
-  model:       string;
-  apiKey:      string;
-  messages:    { role: string; content: string }[];
-  temperature?: number;
-  maxTokens?:   number;
-  jsonMode?:    boolean;
-}): Promise<string> {
-  if (opts.provider === 'gemini') {
-    const systemMsg = opts.messages.find(m => m.role === 'system');
-    const userMsgs  = opts.messages.filter(m => m.role !== 'system');
-    const contents  = userMsgs.map(m => ({
-      role:  m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }],
-    }));
-    if (systemMsg && contents.length > 0 && contents[0].role === 'user') {
-      contents[0].parts[0].text = `${systemMsg.content}\n\n${contents[0].parts[0].text}`;
-    }
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${opts.model}:generateContent?key=${opts.apiKey}`;
-    const res = await fetch(url, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents,
-        generationConfig: {
-          temperature:     opts.temperature ?? 0.4,
-          maxOutputTokens: opts.maxTokens   ?? 1024,
-          ...(opts.jsonMode ? { responseMimeType: 'application/json' } : {}),
-        },
-      }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(`Gemini ${res.status}: ${(err as any)?.error?.message ?? res.statusText}`);
-    }
-    const data = await res.json();
-    return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-  }
-
-  if (opts.provider === 'openai') {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${opts.apiKey}` },
-      body: JSON.stringify({
-        model:       opts.model,
-        messages:    opts.messages,
-        temperature: opts.temperature ?? 0.4,
-        max_tokens:  opts.maxTokens   ?? 1024,
-        ...(opts.jsonMode ? { response_format: { type: 'json_object' } } : {}),
-      }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(`OpenAI ${res.status}: ${(err as any)?.error?.message ?? res.statusText}`);
-    }
-    const data = await res.json();
-    return data?.choices?.[0]?.message?.content ?? '';
-  }
-
-  throw new Error(`Unknown provider: ${opts.provider}`);
-}
-
-const SYSTEM_BASE = `You are an expert study assistant embedded in StudyWorks, a learning app.
-Be concise, accurate, and focused. Never add disclaimers or meta-commentary.`;
+// AI provider helpers (loadAIConfig / callProvider / SYSTEM_BASE) live in
+// ../lib/aiProvider.ts so other features (quiz battles) can reuse them.
 
 // ── POST /api/ai/summary ──────────────────────────────────────────────────────
 aiRouter.post('/summary', requirePro, zValidator('json', z.object({
@@ -260,7 +160,7 @@ aiRouter.post('/summary', requirePro, zValidator('json', z.object({
 aiRouter.post('/flashcards', requirePro, zValidator('json', z.object({
   title:   z.string(),
   content: z.string(),
-  count:   z.number().int().min(1).max(60).default(10),
+  count:   z.number().int().min(1).max(60).default(20),
   hard:    z.boolean().default(false),
 })), async c => {
   const user = c.get('user');
@@ -276,14 +176,17 @@ aiRouter.post('/flashcards', requirePro, zValidator('json', z.object({
   const basePrompt = cfg.customFlashcardPrompt || defaultPrompt;
   const prompt = basePrompt.replace('{{count}}', String(count));
 
+  // Education-level awareness — cards match the student's exact class/year.
+  const studentCtx = studentPromptContext(studentProfileBits(user));
+
   try {
     const raw = await callProvider({
       provider: cfg.provider, model: cfg.model, apiKey: cfg.apiKey,
       messages: [
-        { role: 'system', content: SYSTEM_BASE },
+        { role: 'system', content: `${SYSTEM_BASE}${studentCtx}` },
         { role: 'user',   content: `${prompt}\n\nTitle: ${title}\n\nContent:\n${content}` },
       ],
-      temperature: 0.5, maxTokens: 4096, jsonMode: true,
+      temperature: 0.5, maxTokens: 8192, jsonMode: true,
     });
     const parsed = JSON.parse(raw);
     const cards = (parsed.flashcards ?? parsed.cards ?? []).slice(0, count).map((c: any) => ({
@@ -528,20 +431,11 @@ aiRouter.post('/tutor', requirePro, zValidator('json', TutorRequestBody), async 
   // The exact student profile captured at signup (school stage + exact class
   // or university year) takes precedence over the generic level dropdown —
   // it is more specific, so the tutor tailors depth and curriculum to it.
-  const profileBits: string[] = [];
-  if (user.schoolStage === 'primary' && user.schoolClass) {
-    profileBits.push(`a primary school pupil in ${user.schoolClass}`);
-  } else if (user.schoolStage === 'secondary' && user.schoolClass) {
-    profileBits.push(`a secondary school student in ${user.schoolClass}`);
-  } else if (user.schoolStage === 'university' && user.universityYear) {
-    profileBits.push(`a university student in ${user.universityYear}`);
-  }
+  const profileBits = studentProfileBits(user);
   if (profileBits.length > 0) {
     audience = profileBits.join(', ');
   }
-  const studentContext = profileBits.length > 0
-    ? ` The student you are teaching is ${audience}. Tailor examples, vocabulary, curriculum coverage and exam style to that exact class/year (e.g. align with what is taught at that stage, not above it).`
-    : '';
+  const studentContext = studentPromptContext(profileBits);
 
   const modeInstructions: Record<TutorMode, string> = {
     lesson: `Teach the requested topic from scratch as exam-ready study notes for a ${audience} student. Write comprehensive, well-explained notes the student can use to revise for exams: motivation, clear section headings, formal definitions, key formulas with explanations, worked examples, comparison tables where useful, common misconceptions and exam traps, and end with a "likely exam questions" section including model answers. Do not keep explanations brief — cover the topic's important sub-topics, prerequisites, and applications at a depth matching the student's level (foundational but precise for beginners; thorough and rigorous for university/graduate levels).`,

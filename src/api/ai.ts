@@ -61,7 +61,7 @@ export async function serverSummary(title: string, content: string): Promise<str
   return res.summary;
 }
 
-export async function serverFlashcards(title: string, content: string, count = 5, hard = false) {
+export async function serverFlashcards(title: string, content: string, count = 15, hard = false) {
   const res = await apiPost<{ flashcards: { question: string; answer: string; difficulty?: string; type?: string }[]; error?: string }>(
     '/api/ai/flashcards', { title, content, count, hard }
   );
