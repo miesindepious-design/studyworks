@@ -37,6 +37,7 @@ export interface UseDBResult {
 
   // Settings
   theme:    string;
+  accent:   string;
   tier:     string;
   xp:       number;
   onboardingDone: boolean;
@@ -52,6 +53,7 @@ export interface UseDBResult {
   setSavedSearches:     (next: SavedSearch[])      => void;
 
   setTheme:             (v: string) => void;
+  setAccent:            (v: string) => void;
   setTier:              (v: string) => void;
   setXp:                (v: number | ((prev: number) => number)) => void;
   setOnboardingDone:    ()          => void;
@@ -119,6 +121,7 @@ export function useDB(): UseDBResult {
   const [savedSearches,     setSavedSearchesState]     = useState<SavedSearch[]>([]);
 
   const [theme,    setThemeState]    = useState('system');
+  const [accent,   setAccentState]   = useState('sunset');
   const [tier,     setTierState]     = useState('free');
   const [xp,       setXpState]       = useState(0);
   const [onboardingDone, setOnboardingDoneState] = useState(false);
@@ -151,9 +154,10 @@ export function useDB(): UseDBResult {
         ]);
 
         const [
-          themeVal, tierVal, xpVal, onboardedVal, aiRaw, qaRaw,
+          themeVal, accentVal, tierVal, xpVal, onboardedVal, aiRaw, qaRaw,
         ] = await Promise.all([
           settingsDB.get('theme'),
+          settingsDB.get('accent'),
           settingsDB.get('tier'),
           settingsDB.get('xp'),
           settingsDB.get('onboarding-done'),
@@ -178,6 +182,7 @@ export function useDB(): UseDBResult {
         savedSearchesRef.current     = ss;
 
         if (themeVal)    setThemeState(themeVal);
+        if (accentVal)   setAccentState(accentVal);
         if (tierVal)     setTierState(tierVal);
         if (xpVal != null) setXpState(Number(xpVal) || 0);
         if (onboardedVal === '1') setOnboardingDoneState(true);
@@ -259,6 +264,11 @@ export function useDB(): UseDBResult {
     settingsDB.set('theme', v);
   }, []);
 
+  const setAccent = useCallback((v: string) => {
+    setAccentState(v);
+    settingsDB.set('accent', v);
+  }, []);
+
   const setTier = useCallback((v: string) => {
     setTierState(v);
     settingsDB.set('tier', v);
@@ -290,10 +300,10 @@ export function useDB(): UseDBResult {
   return {
     status,
     notes, contacts, flashcards, folders, practiceQuestions, savedSearches,
-    theme, tier, xp, onboardingDone,
+    theme, accent, tier, xp, onboardingDone,
     aiSummariesThisMonth, qaQueriesThisMonth,
     setNotes, setContacts, setFlashcards, setFolders, setPracticeQuestions, setSavedSearches,
-    setTheme, setTier, setXp, setOnboardingDone,
+    setTheme, setAccent, setTier, setXp, setOnboardingDone,
     setAiSummariesThisMonth, setQaQueriesThisMonth,
     loadStarterPack,
   };

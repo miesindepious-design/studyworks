@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import type { UseNotificationsResult } from '../hooks/useNotifications';
 import type { Folder } from '../types';
 import type { TimerSettings } from './StudyTimer';
+import { ACCENT_THEMES } from '../config/accents';
 import { getAIConfig, saveAIConfig, PROVIDERS, MODELS_BY_PROVIDER, DEFAULT_PROMPTS } from '../db/aiSettings';
 import type { AIConfig, AIProvider } from '../db/aiSettings';
 import { chatComplete } from '../ai/client';
@@ -17,9 +18,11 @@ interface SettingsViewProps {
   folders: Folder[];
   theme: string;
   onThemeChange: (v: string) => void;
+  accent?: string;
+  onAccentChange?: (v: string) => void;
 }
 
-export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts, onAISaved, folders, theme, onThemeChange }: SettingsViewProps) {
+export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts, onAISaved, folders, theme, onThemeChange, accent, onAccentChange }: SettingsViewProps) {
   const [testing, setTesting] = useState(false);
   const [showPrompts, setShowPrompts] = useState(false);
   const [storageUsed, setStorageUsed] = useState<string | null>(null);
@@ -443,6 +446,53 @@ export default function SettingsView({ notif, tier, onAddToast, onShowShortcuts,
               ))}
             </div>
           </div>
+
+          {/* Accent colour — works independently of light/dark mode */}
+          {accent !== undefined && onAccentChange && (
+            <div>
+              <p style={{ fontWeight: 600, fontSize: '0.875rem', marginBottom: '0.25rem' }}>Accent colour</p>
+              <p className="text-xs text-muted" style={{ marginBottom: '0.625rem' }}>
+                Changes buttons, highlights and glows — combines with Light/Dark mode for {ACCENT_THEMES.length * 2} total looks.
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: '0.5rem' }}>
+                {ACCENT_THEMES.map(t => {
+                  const active = accent === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => onAccentChange(t.id)}
+                      title={t.label}
+                      aria-pressed={active}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.45rem',
+                        padding: '0.45rem 0.6rem',
+                        borderRadius: 'var(--r)',
+                        border: `1.5px solid ${active ? t.a : 'var(--border)'}`,
+                        background: active ? `color-mix(in srgb, ${t.a} 12%, var(--surface-1))` : 'var(--surface-1)',
+                        cursor: 'pointer',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        color: 'var(--text)',
+                      }}
+                    >
+                      {/* Dual-colour swatch: primary + gradient partner */}
+                      <span style={{
+                        width: '1.05rem',
+                        height: '1.05rem',
+                        borderRadius: '50%',
+                        flexShrink: 0,
+                        background: `linear-gradient(135deg, ${t.a} 55%, ${t.b} 55%)`,
+                        boxShadow: active ? `0 0 8px color-mix(in srgb, ${t.a} 55%, transparent)` : 'none',
+                      }} />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

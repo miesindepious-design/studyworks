@@ -30,6 +30,7 @@ import CommandPalette, { type Command } from './components/CommandPalette';
 import { pullSync, pushSync } from './api/sync';
 import { syncStreak } from './db/streaks';
 import { mergeByLWW, mergeTier } from './utils/merge';
+import { getAccent, accentCssVars, accentGlow } from './config/accents';
 import Achievements from './components/Achievements';
 import GoalTracker from './components/GoalTracker';
 import AdminDashboard from './components/AdminDashboard';
@@ -235,6 +236,22 @@ export default function App() {
     const next = THEME_CYCLE[(THEME_CYCLE.indexOf(theme) + 1) % THEME_CYCLE.length];
     db.setTheme(next);
   };
+
+  // ── Accent colour theme (independent of light/dark mode) ──────────────────
+  // Applies CSS-variable overrides on <html> for the chosen accent pair,
+  // recomputed per resolved surface mode so accent × light/dark = 2× combos.
+  const accentId = (db.accent as string) || 'sunset';
+  useEffect(() => {
+    const resolved = resolveTheme(theme);
+    const accent = getAccent(accentId);
+    const root = document.documentElement;
+    root.setAttribute('data-accent', accent.id);
+    const vars = accentCssVars(accent, resolved);
+    for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
+    const glow = accentGlow(accent, resolved);
+    root.style.setProperty('--accent-glow', glow);
+    root.style.setProperty('--shadow-glow', `0 12px 44px ${glow}`);
+  }, [accentId, theme]);
 
   // ── Undo / Redo (wraps IDB setters) ──────────────────────────────────────
   const notesUR      = useUndoRedo(db.notes);
@@ -616,7 +633,7 @@ export default function App() {
             )}
             {currentView === 'dashboard' && (
               <>
-                <GoalTracker />
+                {/* Greeting hero first, then the daily-goals tracker below */}
                 <Dashboard
                   userName={userName}
                   trialDaysLeft={trialDaysLeft}
@@ -630,6 +647,7 @@ export default function App() {
                   weeklyInsights={weeklyInsights}
                   insightsLoading={insightsLoading}
                 />
+                <GoalTracker />
               </>
             )}
             {currentView === 'notes' && (
@@ -703,7 +721,7 @@ export default function App() {
               />
             )}
             {currentView === 'settings' && (
-              <SettingsView notif={notif} tier={tier} onAddToast={addToast} onShowShortcuts={() => setShowShortcuts(true)} onAISaved={ai.reloadConfig} folders={db.folders} theme={theme} onThemeChange={db.setTheme} />
+              <SettingsView notif={notif} tier={tier} onAddToast={addToast} onShowShortcuts={() => setShowShortcuts(true)} onAISaved={ai.reloadConfig} folders={db.folders} theme={theme} onThemeChange={db.setTheme} accent={db.accent} onAccentChange={db.setAccent} />
             )}
             {currentView === 'multiplayer' && (
               <MultiplayerQuiz
