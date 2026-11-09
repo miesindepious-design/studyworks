@@ -37,6 +37,7 @@ app.use('*', cors({
     'https://studyworks.vercel.app',
     'https://studyworks-miesindepious-designs-projects.vercel.app',
     'https://studyworks-eight.vercel.app',
+    'https://studyworks-seven.vercel.app',
   ],
   credentials: true,
   allowHeaders:  ['Content-Type', 'Authorization'],
