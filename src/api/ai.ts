@@ -180,15 +180,16 @@ export interface StudentProfile {
   schoolStage:    'primary' | 'secondary' | 'university' | null;
   schoolClass:    string | null;
   universityYear: string | null;
+  department?:    string | null;
 }
 
 /**
  * Persist the student credentials captured at signup (exact class in
- * primary/secondary school, exact year at university). The AI tutor reads
- * these server-side to tailor lessons to the student's exact level.
+ * primary/secondary school, exact year + department at university). The AI
+ * tutor reads these server-side to tailor lessons to the student's exact level.
  */
 export async function saveStudentProfile(profile: StudentProfile) {
-  return apiPut<{ user: { id: string; email: string; educationLevel: string | null; schoolStage: string | null; schoolClass: string | null; universityYear: string | null } }>(
+  return apiPut<{ user: { id: string; email: string; educationLevel: string | null; schoolStage: string | null; schoolClass: string | null; universityYear: string | null; department: string | null } }>(
     '/api/ai/profile',
     profile,
   );

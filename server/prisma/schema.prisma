@@ -30,6 +30,7 @@ model User {
   schoolStage    String? // "primary" | "secondary" | "university"
   schoolClass    String? // exact class, e.g. "Primary 5", "JSS 2", "SS 3", "Grade 7"
   universityYear String? // exact year, e.g. "Year 1" .. "Year 5", "Postgraduate"
+  department     String? // university department, e.g. "Computer Science", "Medicine & Surgery"
 
   // AI Tutor: education level for adaptive lesson complexity
   educationLevel String? // "high-school" | "college-freshman" | "college-sophomore" | "college-junior" | "college-senior" | "university" | "graduate" | "phd"

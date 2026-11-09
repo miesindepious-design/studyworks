@@ -63,7 +63,7 @@ syncRouter.get('/', async c => {
   // Pro features without a second round-trip.
   const dbUser = await prisma.user.findUnique({
     where: { id: user.id },
-    select: { tier: true, trialStartsAt: true, trialEndsAt: true, schoolStage: true, schoolClass: true, universityYear: true },
+    select: { tier: true, trialStartsAt: true, trialEndsAt: true, schoolStage: true, schoolClass: true, universityYear: true, department: true },
   });
   const effective = computeEffectiveTier({
     tier: dbUser?.tier ?? 'FREE',
@@ -80,6 +80,7 @@ syncRouter.get('/', async c => {
       schoolStage:    dbUser?.schoolStage ?? null,
       schoolClass:    dbUser?.schoolClass ?? null,
       universityYear: dbUser?.universityYear ?? null,
+      department:     dbUser?.department ?? null,
     },
     notes,
     contacts,

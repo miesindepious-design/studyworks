@@ -21,6 +21,7 @@ export interface AuthUser {
   schoolStage?:    'primary' | 'secondary' | 'university' | null;
   schoolClass?:    string | null;
   universityYear?: string | null;
+  department?:     string | null;
   educationLevel?: string | null;
 }
 

@@ -476,6 +476,7 @@ const ProfileBody = z.object({
   schoolStage:    z.enum(['primary', 'secondary', 'university']).optional().nullable(),
   schoolClass:    z.string().max(60).optional().nullable(),
   universityYear: z.string().max(60).optional().nullable(),
+  department:     z.string().max(80).optional().nullable(),
 });
 
 aiRouter.put('/profile', zValidator('json', ProfileBody), async c => {
@@ -500,6 +501,7 @@ aiRouter.put('/profile', zValidator('json', ProfileBody), async c => {
       ...(body.schoolStage    !== undefined ? { schoolStage:    body.schoolStage }    : {}),
       ...(body.schoolClass    !== undefined ? { schoolClass:    body.schoolClass }    : {}),
       ...(body.universityYear !== undefined ? { universityYear: body.universityYear } : {}),
+      ...(body.department     !== undefined ? { department:     body.department }     : {}),
     },
     select: {
       id: true,
@@ -508,6 +510,7 @@ aiRouter.put('/profile', zValidator('json', ProfileBody), async c => {
       schoolStage: true,
       schoolClass: true,
       universityYear: true,
+      department: true,
     },
   });
 

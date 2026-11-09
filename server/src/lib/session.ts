@@ -25,6 +25,7 @@ export type HonoUser = {
   schoolStage?: string | null;
   schoolClass?: string | null;
   universityYear?: string | null;
+  department?: string | null;
 };
 
 declare module 'hono' {
@@ -53,6 +54,7 @@ export async function requireAuth(c: Context, next: Next) {
       schoolStage: true,
       schoolClass: true,
       universityYear: true,
+      department: true,
       trialStartsAt: true,
       trialEndsAt: true,
     },
@@ -83,6 +85,7 @@ export async function requireAuth(c: Context, next: Next) {
     schoolStage:    dbUser.schoolStage ?? null,
     schoolClass:    dbUser.schoolClass ?? null,
     universityYear: dbUser.universityYear ?? null,
+    department:     dbUser.department ?? null,
   });
   c.set('session', session.session as any);
 

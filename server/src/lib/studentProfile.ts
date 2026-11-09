@@ -10,6 +10,7 @@ export interface StudentProfileUser {
   schoolStage?:    string | null;
   schoolClass?:    string | null;
   universityYear?: string | null;
+  department?:     string | null;
   educationLevel?: string | null;
 }
 
@@ -21,7 +22,9 @@ export function studentProfileBits(user: StudentProfileUser): string[] {
   } else if (user.schoolStage === 'secondary' && user.schoolClass) {
     bits.push(`a secondary school student in ${user.schoolClass}`);
   } else if (user.schoolStage === 'university' && user.universityYear) {
-    bits.push(`a university student in ${user.universityYear}`);
+    bits.push(`a university student in ${user.universityYear}${user.department ? ` studying ${user.department}` : ''}`);
+  } else if (user.department) {
+    bits.push(`a student in the ${user.department} department`);
   } else if (user.educationLevel) {
     bits.push(`a ${user.educationLevel}-level student`);
   }

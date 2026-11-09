@@ -15,6 +15,16 @@ type SchoolStage = 'primary' | 'secondary' | 'university';
 const PRIMARY_CLASSES  = ['Primary 1', 'Primary 2', 'Primary 3', 'Primary 4', 'Primary 5', 'Primary 6'];
 const SECONDARY_CLASSES = ['JSS 1', 'JSS 2', 'JSS 3', 'SS 1', 'SS 2', 'SS 3'];
 const UNIVERSITY_YEARS = ['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5', 'Postgraduate'];
+const UNIVERSITY_DEPARTMENTS = [
+  'Accounting', 'Agriculture', 'Anatomy', 'Architecture', 'Banking & Finance',
+  'Biochemistry', 'Biology', 'Business Administration', 'Chemistry',
+  'Computer Science', 'Dentistry', 'Economics', 'Education', 'Engineering',
+  'English & Literary Studies', 'Estate Management', 'History',
+  'International Relations', 'Law', 'Linguistics', 'Mass Communication',
+  'Mathematics', 'Medicine & Surgery', 'Microbiology', 'Nursing Science',
+  'Pharmacy', 'Physics', 'Physiology', 'Political Science', 'Psychology',
+  'Sociology', 'Statistics', 'Other',
+];
 
 function passwordStrength(pw: string): { score: number; label: string; color: string } {
   if (!pw) return { score: 0, label: '', color: 'transparent' };
@@ -47,6 +57,8 @@ export default function AuthPage({ onAuth }: AuthPageProps) {
   const [schoolStage, setSchoolStage] = useState<SchoolStage | ''>('');
   const [schoolClass, setSchoolClass] = useState('');
   const [universityYear, setUniversityYear] = useState('');
+  const [department, setDepartment] = useState('');
+  const [departmentOther, setDepartmentOther] = useState('');
   const [rememberMe, setRememberMe] = useState(() => {
     try { return localStorage.getItem('studyworks:rememberMe') === '1'; } catch { return false; }
   });
@@ -112,15 +124,29 @@ export default function AuthPage({ onAuth }: AuthPageProps) {
           setError(`Password is too ${strength.label.toLowerCase()}. Use at least 8 characters with a mix of uppercase, lowercase, and numbers.`);
           setLoading(false); return;
         }
+        if (schoolStage === 'university') {
+          if (!universityYear) {
+            setError('Please select your university year so the AI can teach at your level.');
+            setLoading(false); return;
+          }
+          if (!department || (department === 'Other' && !departmentOther.trim())) {
+            setError('Please select your department (or choose "Other" and type it) so the AI can personalise your study materials.');
+            setLoading(false); return;
+          }
+        }
         const session = await signUp(email, pass, name);
         // Persist the student credentials (best-effort — the account exists
         // either way, and the AI Tutor lets them change the level later).
         if (schoolStage) {
+          const finalDepartment = schoolStage === 'university'
+            ? (department === 'Other' ? departmentOther.trim() : department) || null
+            : null;
           try {
             await saveStudentProfile({
               schoolStage,
               schoolClass: schoolStage === 'university' ? null : schoolClass || null,
               universityYear: schoolStage === 'university' ? (universityYear || null) : null,
+              department: finalDepartment,
             });
           } catch (profileErr) {
             console.warn('[Auth] Student profile save failed (non-blocking):', profileErr);
@@ -288,7 +314,7 @@ export default function AuthPage({ onAuth }: AuthPageProps) {
                       <button
                         key={stage}
                         type="button"
-                        onClick={() => { setSchoolStage(stage); setSchoolClass(''); setUniversityYear(''); }}
+                        onClick={() => { setSchoolStage(stage); setSchoolClass(''); setUniversityYear(''); setDepartment(''); setDepartmentOther(''); }}
                         className="btn btn-sm"
                         style={{
                           flex: 1,
@@ -322,19 +348,49 @@ export default function AuthPage({ onAuth }: AuthPageProps) {
                 )}
 
                 {schoolStage === 'university' && (
-                  <div className="form-group">
-                    <label className="form-label">Which year?</label>
-                    <select
-                      className="select"
-                      value={universityYear}
-                      onChange={e => setUniversityYear(e.target.value)}
-                    >
-                      <option value="">Select your year…</option>
-                      {UNIVERSITY_YEARS.map(y => (
-                        <option key={y} value={y}>{y}</option>
-                      ))}
-                    </select>
-                  </div>
+                  <>
+                    <div className="form-group">
+                      <label className="form-label">Which year?</label>
+                      <select
+                        className="select"
+                        value={universityYear}
+                        onChange={e => setUniversityYear(e.target.value)}
+                      >
+                        <option value="">Select your year…</option>
+                        {UNIVERSITY_YEARS.map(y => (
+                          <option key={y} value={y}>{y}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Your department</label>
+                      <select
+                        className="select"
+                        value={department}
+                        onChange={e => { setDepartment(e.target.value); if (e.target.value !== 'Other') setDepartmentOther(''); }}
+                      >
+                        <option value="">Select your department…</option>
+                        {UNIVERSITY_DEPARTMENTS.map(d => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {department === 'Other' && (
+                      <div className="form-group">
+                        <label className="form-label">Type your department</label>
+                        <input
+                          className="input"
+                          type="text"
+                          value={departmentOther}
+                          onChange={e => setDepartmentOther(e.target.value)}
+                          placeholder="e.g. Agricultural Engineering"
+                          maxLength={80}
+                        />
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             )}

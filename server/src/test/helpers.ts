@@ -70,6 +70,7 @@ export async function buildTestApp() {
       schoolStage: null,
       schoolClass: null,
       universityYear: null,
+      department: null,
       trialStartsAt,
       trialEndsAt,
     } as any);
