@@ -4,11 +4,24 @@
  *   - Background reminder checks via periodic sync (where supported)
  *   - Push notification display
  *   - Notification click routing back to the app
- *   - Basic offline caching of the app shell
+ *   - Offline caching of the app shell
+ *
+ * Caching strategy (fixes the "white screen after deploy" bug):
+ *   - Navigation requests (HTML): NETWORK-FIRST with cache fallback for
+ *     offline. The old cache-first approach served stale index.html after
+ *     every deploy, which pointed at deleted hashed JS bundles → blank page
+ *     until a hard refresh.
+ *   - Immutable hashed assets (/assets/*, icons, logo): cache-first — their
+ *     filenames change on every build, so a cached copy is always valid.
+ *   - API requests and everything else: network only, never cached (stale
+ *     API responses previously poisoned local-first data merges).
+ *
+ * Bump CACHE_NAME on every deploy-affecting SW change so old caches are
+ * purged in activate().
  */
 
-const CACHE_NAME    = 'studyworks-v1';
-const APP_SHELL     = ['/', '/index.html'];
+const CACHE_NAME = 'studyworks-v2';
+const APP_SHELL  = ['/', '/index.html'];
 
 // ── Install: cache app shell ─────────────────────────────────────────────────
 self.addEventListener('install', event => {
@@ -28,15 +41,57 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-// ── Fetch: serve from cache, fall back to network ────────────────────────────
-self.addEventListener('fetch', event => {
-  // Only handle GET requests for same-origin navigation
-  if (event.request.method !== 'GET') return;
-  if (!event.request.url.startsWith(self.location.origin)) return;
+// Allow the page to force-activate a waiting SW (belt-and-braces with
+// skipWaiting — sw-register sends this when it detects an update).
+self.addEventListener('message', event => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+});
 
-  event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request))
-  );
+// ── Fetch: strategy per request type ─────────────────────────────────────────
+self.addEventListener('fetch', event => {
+  if (event.request.method !== 'GET') return;
+
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;
+
+  // 1. Page navigations: network-first, cache fallback (offline).
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then(res => {
+          // Keep the freshest HTML for the offline fallback.
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then(c => c.put('/index.html', copy));
+          return res;
+        })
+        .catch(() => caches.match('/index.html'))
+    );
+    return;
+  }
+
+  // 2. Immutable hashed assets: cache-first (filename changes per build).
+  const isImmutable =
+    url.pathname.startsWith('/assets/') ||
+    url.pathname.startsWith('/icon-') ||
+    url.pathname === '/logo.svg' ||
+    url.pathname === '/manifest.json';
+
+  if (isImmutable) {
+    event.respondWith(
+      caches.match(event.request).then(cached =>
+        cached ||
+        fetch(event.request).then(res => {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then(c => c.put(event.request, copy));
+          return res;
+        })
+      )
+    );
+    return;
+  }
+
+  // 3. Everything else (API calls, sw.js, dynamic content): network only.
+  //    No respondWith → default browser behaviour, never served from cache.
 });
 
 // ── Push notifications ────────────────────────────────────────────────────────
