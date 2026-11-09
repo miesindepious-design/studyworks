@@ -35,3 +35,8 @@ server/dev.db
 .bolt/
 .cache/
 coverage/
+
+# WorkBuddy workspace + scratch
+.workbuddy-ai/
+_t*.mjs
+_audit_tmp/

@@ -125,6 +125,21 @@ describe('Attachments — presign', () => {
     expect(res.status).toBe(403);
   });
 
+  it('grants Pro features to a user inside the 7-day trial', async () => {
+    const { request, login } = await buildTestApp();
+    // FREE billing tier, but the trial started 2 days ago → 5 days left.
+    login({ id: 'u2', email: 'trial@b.com', name: 'T', tier: 'FREE', trialDaysLeft: 5 });
+    const res = await request('/api/attachments/presign', {
+      method: 'POST',
+      body: JSON.stringify({ filename: 'a.pdf', contentType: 'application/pdf', size: 1024 }),
+    });
+    // R2 env vars are unset in tests → passes the tier gate and reaches the
+    // storage-disabled 503 (NOT the 403 paywall).
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.storageEnabled).toBe(false);
+  });
+
   it('rejects a > 100 MB file with 400', async () => {
     const { request, login } = await buildTestApp();
     login({ id: 'u1', email: 'a@b.com', name: 'A', tier: 'PRO' });

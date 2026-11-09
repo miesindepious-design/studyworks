@@ -71,6 +71,11 @@
   --border-strong: var(--border);
   --border-focus:  var(--primary);
 
+  /* Glow used by nav active state, primary buttons and pro accents.
+     (App.css references --accent-glow; it was previously undefined, which
+     silently disabled every glow effect in the UI.) */
+  --accent-glow: rgba(255, 81, 54, .32);
+
   /* ── Depth ── */
   --shadow-sm:  0 1px 2px rgba(33, 29, 22, .06);
   --shadow:     0 2px 10px rgba(33, 29, 22, .07), 0 1px 2px rgba(33, 29, 22, .05);
@@ -217,14 +222,6 @@ body {
   0%   { background-position: -480px 0; }
   100% { background-position: 480px 0; }
 }
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(14px); }
-  to { opacity: 1; transform: none; }
-}
 
 .animate-in  { animation: fadeIn var(--t) var(--ease) both; }
 .animate-up  { animation: slideUp var(--t-slow) var(--ease) both; }
@@ -281,22 +278,6 @@ body {
 ::selection {
   background: rgba(255, 81, 54, 0.25);
   color: var(--primary-foreground);
-}
-
-/* Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: #1a1612;
-}
-::-webkit-scrollbar-thumb {
-  background: #3d3529;
-  border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #5c4f3d;
 }
 
 @media (prefers-reduced-motion: reduce) {

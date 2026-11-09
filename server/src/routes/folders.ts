@@ -39,8 +39,8 @@ foldersRouter.post('/', zValidator('json', FolderBody), async c => {
   const user = c.get('user');
   const body = c.req.valid('json');
 
-  // Enforce Pro-only smart folders — tier check
-  if (body.isSmart && c.get('user').tier !== 'PRO') {
+  // Enforce Pro-only smart folders — tier check (trial-aware)
+  if (body.isSmart && c.get('user').effectiveTier !== 'PRO') {
     return c.json({ error: 'Smart folders require Pro' }, 403);
   }
 

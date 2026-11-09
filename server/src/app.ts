@@ -45,7 +45,25 @@ app.use('*', cors({
 }));
 
 // ── Health check ──────────────────────────────────────────────────────────────
-app.get('/health', c => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
+// TEMPORARY (remove after migration): reports ONLY non-secret parts of the
+// DATABASE_URL — hostname and, for Supabase pooler URLs, the project ref
+// embedded in the username (`postgres.<ref>`). Never exposes the password or
+// full URL, so the owner can confirm which hosted Postgres the deployment
+// is connected to. Registered at both /health (direct hosting) and
+// /api/health (Vercel, whose rewrites only forward /api/* and /auth/* here).
+function dbIdentity() {
+  try {
+    const url = new URL(process.env.DATABASE_URL || '');
+    if (!url.hostname) return { dbHost: null, dbProjectRef: null };
+    // Supabase pooler: username is "postgres.<project-ref>"
+    const m = /^postgres\.(.+)$/.exec(url.username);
+    return { dbHost: url.hostname, dbProjectRef: m ? m[1] : null };
+  } catch {
+    return { dbHost: null, dbProjectRef: null };
+  }
+}
+app.get('/health', c => c.json({ status: 'ok', timestamp: new Date().toISOString(), ...dbIdentity() }));
+app.get('/api/health', c => c.json({ status: 'ok', timestamp: new Date().toISOString(), ...dbIdentity() }));
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.route('/auth',      authRouter);

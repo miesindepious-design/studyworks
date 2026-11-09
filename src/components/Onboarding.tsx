@@ -60,11 +60,11 @@ export default function Onboarding({ onComplete, product, onLoadStarterPack }: O
     {
       icon: '🚀', emoji: '🚀',
       title: `You're all set!`,
-      body: 'Start on the free plan — 50 items, 20 AI summaries/month. Upgrade to Pro anytime for unlimited everything, file uploads, and smart Q&A.',
+      body: `Your 7-day free Pro trial starts now — unlimited notes, AI Tutor, cloud sync and file uploads. No credit card needed. After the trial you keep the free plan: 50 items and 20 AI summaries/month.`,
       features: [
-        { emoji: '🆓', label: 'Free: 50 items' },
+        { emoji: '🎁', label: '7-day Pro trial' },
         { emoji: '⭐', label: 'Pro: Unlimited' },
-        { emoji: '☁️', label: 'Cloud sync (Pro)' },
+        { emoji: '🆓', label: 'Free: 50 items' },
       ],
       cta: `Let's go ->`,
     },

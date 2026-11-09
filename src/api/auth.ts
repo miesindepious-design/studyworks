@@ -14,6 +14,14 @@ export interface AuthUser {
   tier:          'FREE' | 'PRO';
   image?:        string | null;
   createdAt:     string;
+  /** 7-day trial window (server starts it on first login). */
+  trialStartsAt?: string | null;
+  trialEndsAt?:   string | null;
+  /** Student profile captured at signup — drives the AI tutor. */
+  schoolStage?:    'primary' | 'secondary' | 'university' | null;
+  schoolClass?:    string | null;
+  universityYear?: string | null;
+  educationLevel?: string | null;
 }
 
 export interface AuthSession {

@@ -1855,3 +1855,272 @@ select:focus-visible {
   max-width: 1200px;
   width: 100%;
 }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   Polish layer — Nov 2026 refinement pass
+   Focus rings, hover micro-interactions, topbar glass, form consistency.
+   Appended last so it wins the cascade over earlier rules.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Accessibility: visible focus rings everywhere ─────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+.btn:focus-visible,
+.nav-item:focus-visible,
+.icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none; /* handled by the focused border below */
+}
+
+/* ── Buttons: consistent lift + shadow (glow now actually renders) ─────── */
+.btn {
+  transition: transform var(--t-fast) var(--ease-out),
+              box-shadow var(--t) var(--ease-out),
+              background-color var(--t-fast) var(--ease-out),
+              border-color var(--t-fast) var(--ease-out),
+              color var(--t-fast) var(--ease-out);
+}
+.btn-primary {
+  box-shadow: 0 4px 14px var(--accent-glow);
+}
+.btn-primary:hover:not(:disabled) {
+  box-shadow: 0 8px 24px var(--accent-glow);
+}
+
+/* ── Cards: gentle lift on hover (skip inside lists where it's noisy) ──── */
+.card {
+  transition: box-shadow var(--t) var(--ease-out),
+              transform var(--t) var(--ease-out),
+              border-color var(--t) var(--ease-out);
+}
+
+/* ── Topbar: subtle glass blur so page scroll reads clearly ────────────── */
+.topbar {
+  backdrop-filter: blur(10px) saturate(130%);
+  -webkit-backdrop-filter: blur(10px) saturate(130%);
+}
+
+/* ── Sidebar: active nav gets a soft accent wash ───────────────────────── */
+.nav-item.active {
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface-1));
+}
+
+/* ── Tier badge: trial state reads as gold, not plain pro red ───────────── */
+.tier-badge.pro {
+  background: linear-gradient(135deg, rgba(255, 197, 49, .18), rgba(255, 81, 54, .12));
+  border: 1px solid rgba(232, 155, 0, .4);
+  color: var(--gold);
+}
+
+/* ── Inputs: darker, theme-aware select arrow ───────────────────────────── */
+.select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a89a82' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+}
+[data-theme='dark'] .select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23f0e6d6' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+}
+
+/* ── Inputs: keep autofill readable in dark theme ───────────────────────── */
+input:-webkit-autofill,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 60px var(--input) inset;
+  -webkit-text-fill-color: var(--text);
+  caret-color: var(--text);
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+/* ── Dashboard hero: name greeting sits on a slightly richer wash ──────── */
+.dash-hero {
+  background:
+    radial-gradient(600px 240px at 88% -40%, rgba(255, 81, 54, .22), transparent 70%),
+    radial-gradient(500px 240px at 4% 140%, rgb(139 124 255 / .12), transparent 70%),
+    linear-gradient(135deg, var(--surface-1), var(--surface-0));
+}
+
+/* ── Dashboard hero title: keep gradient text but preserve descenders ───── */
+.dash-hero-title {
+  padding-bottom: 0.1em;
+}
+
+/* ── Stat cards: number pop + icon lift ─────────────────────────────────── */
+.stat-card:hover .stat-icon { transform: translateY(-2px) scale(1.06); }
+.stat-icon { transition: transform var(--t) var(--ease-out); }
+
+/* ── Empty states: breathe a little more ────────────────────────────────── */
+.empty-state { padding: 2.75rem 2rem; }
+
+/* ── Toasts: slightly stronger presence ─────────────────────────────────── */
+.toast-stack { z-index: 2000; }
+
+/* ── Voice chat status pill ─────────────────────────────────────────────── */
+.voice-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: var(--r-full);
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: var(--surface-2);
+  color: var(--text-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn, .card, .stat-icon, .nav-item, .icon-btn { transition: none !important; }
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   Auth page — split-panel layout (brand panel + form column)
+   ════════════════════════════════════════════════════════════════════════════ */
+.auth-shell {
+  min-height: 100vh;
+  display: flex;
+  background: var(--background);
+}
+
+/* ── Brand panel ── */
+.auth-brand {
+  flex: 0 0 44%;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 2.5rem 3rem;
+  color: #f6efe3;
+  background:
+    radial-gradient(620px 420px at 110% -10%, rgba(255, 81, 54, .38), transparent 65%),
+    radial-gradient(520px 380px at -20% 115%, rgba(255, 197, 49, .16), transparent 65%),
+    linear-gradient(160deg, #1c2620, #21312A 55%, #18211c);
+  position: relative;
+  overflow: hidden;
+}
+.auth-brand::after {
+  content: "";
+  position: absolute; inset: 0;
+  background-image: radial-gradient(rgba(255,255,255,.045) 1px, transparent 1px);
+  background-size: 22px 22px;
+  pointer-events: none;
+}
+.auth-brand > * { position: relative; z-index: 1; }
+
+.auth-brand-top {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+.auth-brand-mark { width: 34px; height: 34px; }
+.auth-brand-name {
+  font-weight: 800;
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+
+.auth-brand-body { margin: 2.5rem 0; }
+.auth-brand-headline {
+  font-size: 2.4rem;
+  font-weight: 900;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  color: #fff;
+  margin-bottom: 0.9rem;
+}
+.auth-brand-sub {
+  font-size: 0.98rem;
+  line-height: 1.65;
+  color: rgba(246, 239, 227, .78);
+  max-width: 42ch;
+  margin-bottom: 2rem;
+}
+.auth-brand-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin-bottom: 2.25rem;
+}
+.auth-brand-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: rgba(246, 239, 227, .92);
+}
+.auth-brand-bullet {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--r);
+  background: rgba(255, 255, 255, .08);
+  border: 1px solid rgba(255, 255, 255, .12);
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.auth-brand-trial {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 1rem 1.15rem;
+  border-radius: var(--r-lg);
+  background: linear-gradient(135deg, rgba(255, 81, 54, .22), rgba(255, 197, 49, .12));
+  border: 1px solid rgba(255, 197, 49, .35);
+  box-shadow: 0 8px 30px rgba(255, 81, 54, .18);
+}
+.auth-brand-trial-emoji { font-size: 1.5rem; }
+.auth-brand-trial-title {
+  font-weight: 800;
+  font-size: 0.92rem;
+  color: #FFC531;
+}
+.auth-brand-trial-sub {
+  font-size: 0.78rem;
+  color: rgba(246, 239, 227, .75);
+  margin-top: 0.1rem;
+}
+.auth-brand-foot {
+  font-size: 0.75rem;
+  color: rgba(246, 239, 227, .45);
+}
+
+/* ── Form column ── */
+.auth-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem 1.5rem;
+}
+.auth-form-col {
+  width: 100%;
+  max-width: 440px;
+  animation: slideUp var(--t-slow) var(--ease) both;
+}
+
+/* Compact mobile logo — hidden on desktop where the brand panel shows */
+.auth-mobile-logo { text-align: center; margin-bottom: 1.75rem; }
+.auth-mobile-logo h1 {
+  font-size: 1.5rem; font-weight: 900;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+@media (min-width: 901px) {
+  .auth-mobile-logo { display: none; }
+}
+@media (max-width: 900px) {
+  .auth-brand { display: none; }
+  .auth-main { padding: 1.5rem 1.25rem; align-items: flex-start; padding-top: 3rem; }
+}

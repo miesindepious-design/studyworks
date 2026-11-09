@@ -17,6 +17,7 @@ import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { requireAuth } from '../lib/session.js';
 import { prisma } from '../lib/prisma.js';
+import { computeEffectiveTier } from '../lib/tier.js';
 
 export const syncRouter = new Hono();
 syncRouter.use('/*', requireAuth);
@@ -57,11 +58,29 @@ syncRouter.get('/', async c => {
       prisma.aISettings.findUnique({ where: { userId: user.id } }),
     ]);
 
-  // Return user tier alongside data
-  const dbUser = await prisma.user.findUnique({ where: { id: user.id }, select: { tier: true } });
+  // Return user tier alongside data. `tier` stays the raw billing tier;
+  // `effectiveTier` adds the 7-day trial window so the client can unlock
+  // Pro features without a second round-trip.
+  const dbUser = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { tier: true, trialStartsAt: true, trialEndsAt: true, schoolStage: true, schoolClass: true, universityYear: true },
+  });
+  const effective = computeEffectiveTier({
+    tier: dbUser?.tier ?? 'FREE',
+    trialStartsAt: dbUser?.trialStartsAt ?? null,
+    trialEndsAt: dbUser?.trialEndsAt ?? null,
+  });
 
   return c.json({
     tier: dbUser?.tier ?? 'FREE',
+    effectiveTier: effective,
+    trialStartsAt: dbUser?.trialStartsAt ?? null,
+    trialEndsAt: dbUser?.trialEndsAt ?? null,
+    studentProfile: {
+      schoolStage:    dbUser?.schoolStage ?? null,
+      schoolClass:    dbUser?.schoolClass ?? null,
+      universityYear: dbUser?.universityYear ?? null,
+    },
     notes,
     contacts,
     flashcards,
@@ -196,9 +215,12 @@ syncRouter.post('/', zValidator('json', SyncBody), async c => {
   // the user further over.
   const dbUser = await prisma.user.findUnique({
     where:  { id: user.id },
-    select: { tier: true },
+    select: { tier: true, trialEndsAt: true },
   });
-  const isPro = dbUser?.tier === 'PRO';
+  const isPro = computeEffectiveTier({
+    tier: dbUser?.tier ?? 'FREE',
+    trialEndsAt: dbUser?.trialEndsAt ?? null,
+  }) === 'PRO';
   if (!isPro) {
     const [n, co, fc] = await Promise.all([
       prisma.note.count({ where: { userId: user.id } }),

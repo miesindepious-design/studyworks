@@ -33,7 +33,16 @@ export async function buildTestApp() {
     });
   };
 
-  const login = (user: { id: string; email: string; name: string | null; tier: 'FREE' | 'PRO' }) => {
+  const login = (user: {
+    id: string;
+    email: string;
+    name: string | null;
+    tier: 'FREE' | 'PRO';
+    // Trial fields — default to an already-expired trial so existing tests
+    // exercise genuinely-free users. Pass `trialDaysLeft` to simulate an
+    // active trial (e.g. login({ ..., trialDaysLeft: 5 })).
+    trialDaysLeft?: number;
+  }) => {
     globalThis.__testUser = user;
     globalThis.__testSession = {
       id: 'session-1',
@@ -45,12 +54,24 @@ export async function buildTestApp() {
     // the tier passed to `login()`. Without this the route sees tier FREE
     // regardless of what the test asked for, and every Pro-gated assertion
     // fails with a 403 instead of reaching the route handler.
+    const trialLeft = user.trialDaysLeft;
+    const trialStartsAt = trialLeft === undefined
+      ? new Date(Date.now() - 8 * 86400_000)  // expired 7-day trial
+      : new Date(Date.now() - (7 - trialLeft) * 86400_000);
+    const trialEndsAt = trialLeft === undefined
+      ? new Date(Date.now() - 1 * 86400_000)  // ended yesterday
+      : new Date(Date.now() + trialLeft * 86400_000);
     prismaMock.user.findUnique.mockResolvedValue({
       id: user.id,
       email: user.email,
       name: user.name,
       tier: user.tier,
       educationLevel: null,
+      schoolStage: null,
+      schoolClass: null,
+      universityYear: null,
+      trialStartsAt,
+      trialEndsAt,
     } as any);
   };
 

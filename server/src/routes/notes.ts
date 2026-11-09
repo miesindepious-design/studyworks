@@ -81,8 +81,8 @@ notesRouter.post('/', zValidator('json', NoteBody), async c => {
   const user = c.get('user');
   const body = c.req.valid('json');
 
-  // Free tier limit (server-side enforcement)
-  if (user.tier !== 'PRO') {
+  // Free tier limit (server-side enforcement, trial-aware)
+  if (user.effectiveTier !== 'PRO') {
     const blocked = await enforceFreeItemLimit(c, user.id);
     if (blocked) return blocked;
   }

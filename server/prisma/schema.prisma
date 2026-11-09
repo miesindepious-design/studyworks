@@ -21,13 +21,22 @@ model User {
   updatedAt     DateTime @updatedAt
 
   tier          Tier     @default(FREE)
+
+  // 7-day free Pro trial — started automatically on the user's first login.
+  trialStartsAt DateTime?
+  trialEndsAt   DateTime?
+
+  // Student profile (collected at signup; drives AI tutor difficulty/syllabus)
+  schoolStage    String? // "primary" | "secondary" | "university"
+  schoolClass    String? // exact class, e.g. "Primary 5", "JSS 2", "SS 3", "Grade 7"
+  universityYear String? // exact year, e.g. "Year 1" .. "Year 5", "Postgraduate"
+
+  // AI Tutor: education level for adaptive lesson complexity
+  educationLevel String? // "high-school" | "college-freshman" | "college-sophomore" | "college-junior" | "college-senior" | "university" | "graduate" | "phd"
   stripeCustomerId       String? @unique
   stripeSubscriptionId   String? @unique
   stripePriceId          String?
   stripeCurrentPeriodEnd DateTime?
-
-  // AI Tutor: education level for adaptive lesson complexity
-  educationLevel String? // "high-school" | "college-freshman" | "college-sophomore" | "college-junior" | "college-senior" | "university" | "graduate" | "phd"
 
   sessions      Session[]
   accounts      Account[]

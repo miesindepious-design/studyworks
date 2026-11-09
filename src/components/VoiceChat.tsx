@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
- * Build the ICE server list at runtime so TURN credentials can be injected
- * via env vars without being hardcoded in the bundle.
+ * Voice chat — P2P WebRTC audio with two signaling paths:
  *
- * Required Vercel env vars (set in project → Settings → Environment Variables):
- *   VITE_TURN_USERNAME   — Metered username  (from dashboard.metered.ca)
- *   VITE_TURN_CREDENTIAL — Metered credential (from dashboard.metered.ca)
+ * 1. Socket.IO (primary): the app's own signaling server
+ *    (VITE_VOICE_SIGNALING_URL or same-origin).
+ * 2. Trystero (fallback): fully free, serverless signaling over public
+ *    Nostr relays. Kicks in automatically when the Socket.IO server is
+ *    unreachable, so study-room voice keeps working with zero infrastructure.
+ *    Audio itself is always peer-to-peer WebRTC in both modes.
  *
- * Without these the app still works for users on home/mobile networks (STUN
- * only). TURN is only needed for symmetric-NAT environments (corporate Wi-Fi,
- * some mobile carriers).
+ * Optional TURN (Metered Open Relay, free 20 GB/month) is injected via env:
+ *   VITE_TURN_USERNAME / VITE_TURN_CREDENTIAL
  */
 function buildIceServers(): RTCIceServer[] {
   const base: RTCIceServer[] = [
@@ -25,8 +26,6 @@ function buildIceServers(): RTCIceServer[] {
   const credential = import.meta.env.VITE_TURN_CREDENTIAL as string | undefined;
 
   if (username && credential) {
-    // Metered Open Relay TURN servers (free tier: 20 GB/month)
-    // https://www.metered.ca/tools/openrelay/
     base.push(
       { urls: 'turn:standard.relay.metered.ca:80',  username, credential },
       { urls: 'turn:standard.relay.metered.ca:80?transport=tcp', username, credential },
@@ -46,6 +45,8 @@ export interface VoiceChatProps {
   isVoiceActive?: boolean;
 }
 
+type SignalingMode = 'socket' | 'p2p';
+
 export default function VoiceChat({
   signalingUrl,
   roomId,
@@ -56,12 +57,30 @@ export default function VoiceChat({
   const [isMuted, setIsMuted] = useState(false);
   const [isDeafened, setIsDeafened] = useState(false);
   const [micError, setMicError] = useState<string | null>(null);
+  // Surface which signaling path is live so the UI can reassure the user.
+  const [signalingMode, setSignalingMode] = useState<SignalingMode>('socket');
 
   const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnections = useRef<Record<string, RTCPeerConnection>>({});
   const pendingCandidates = useRef<Record<string, RTCIceCandidateInit[]>>({});
   const remoteAudiosRef = useRef<Record<string, HTMLAudioElement>>({});
   const socketRef = useRef<unknown | null>(null);
+  const modeRef = useRef<SignalingMode>('socket');
+  const trysteroRoomRef = useRef<{ leave: () => void; addStream: (s: MediaStream, o?: any) => Promise<void[]>; removeStream: (s: MediaStream, o?: any) => void } | null>(null);
+  const deafenedRef = useRef(false);
+
+  const attachRemoteAudio = useCallback((peerId: string, stream: MediaStream) => {
+    let audioEl = remoteAudiosRef.current[peerId];
+    if (!audioEl) {
+      audioEl = new Audio();
+      audioEl.autoplay = true;
+      audioEl.setAttribute('playsinline', 'true');
+      remoteAudiosRef.current[peerId] = audioEl;
+    }
+    audioEl.srcObject = stream;
+    audioEl.muted = deafenedRef.current;
+    audioEl.play().catch(() => {});
+  }, []);
 
   const cleanupVoice = useCallback(() => {
     if (localStreamRef.current) {
@@ -83,6 +102,14 @@ export default function VoiceChat({
       } catch {}
     });
     remoteAudiosRef.current = {};
+
+    // Leave the Trystero room if the P2P fallback was active
+    if (trysteroRoomRef.current) {
+      try { trysteroRoomRef.current.leave(); } catch {}
+      trysteroRoomRef.current = null;
+    }
+    modeRef.current = 'socket';
+    setSignalingMode('socket');
   }, []);
 
   const createPeerConnection = useCallback(
@@ -100,7 +127,7 @@ export default function VoiceChat({
       }
 
       pc.onicecandidate = (event) => {
-        if (event.candidate) {
+        if (event.candidate && modeRef.current === 'socket') {
           (socketRef.current as any)?.emit?.('voice:signal', {
             roomId,
             senderPlayerId: myPlayerId,
@@ -111,36 +138,23 @@ export default function VoiceChat({
       };
 
       pc.ontrack = (event) => {
-        let audioEl = remoteAudiosRef.current[targetPlayerId];
-        if (!audioEl) {
-          audioEl = new Audio();
-          audioEl.autoplay = true;
-          audioEl.setAttribute('playsinline', 'true');
-          remoteAudiosRef.current[targetPlayerId] = audioEl;
-        }
-        audioEl.srcObject = event.streams[0];
-        audioEl.muted = isDeafened;
-        audioEl.play().catch(() => {});
+        attachRemoteAudio(targetPlayerId, event.streams[0]);
       };
 
       peerConnections.current[targetPlayerId] = pc;
       return pc;
     },
-    [isDeafened, myPlayerId, roomId],
+    [attachRemoteAudio, myPlayerId, roomId],
   );
 
-  const startVoiceSession = useCallback(async () => {
+  const ensureLocalStream = useCallback(async (): Promise<MediaStream | null> => {
+    if (localStreamRef.current) return localStreamRef.current;
     setMicError(null);
     try {
-      if (localStreamRef.current) {
-        return;
-      }
-
       if (!navigator?.mediaDevices?.getUserMedia) {
         setMicError('Audio devices not supported in this browser.');
-        return;
+        return null;
       }
-
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -149,32 +163,88 @@ export default function VoiceChat({
         },
         video: false,
       });
-
       localStreamRef.current = stream;
-
-      for (const targetId of peerIds) {
-        if (!targetId || targetId === myPlayerId) continue;
-        const pc = createPeerConnection(targetId);
-        const isInitiator = myPlayerId < targetId;
-        if (isInitiator) {
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          (socketRef.current as any)?.emit?.('voice:signal', {
-            roomId,
-            senderPlayerId: myPlayerId,
-            targetPlayerId: targetId,
-            signal: { sdp: pc.localDescription },
-          });
-        }
-      }
+      return stream;
     } catch (err: any) {
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
         setMicError('Mic blocked. Click to retry.');
       } else {
         setMicError('Mic unavailable. Click to retry.');
       }
+      return null;
     }
-  }, [createPeerConnection, myPlayerId, peerIds, roomId]);
+  }, []);
+
+  const startVoiceSession = useCallback(async () => {
+    if (modeRef.current !== 'socket') return;
+    const stream = await ensureLocalStream();
+    if (!stream) return;
+
+    for (const targetId of peerIds) {
+      if (!targetId || targetId === myPlayerId) continue;
+      const pc = createPeerConnection(targetId);
+      const isInitiator = myPlayerId < targetId;
+      if (isInitiator) {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        (socketRef.current as any)?.emit?.('voice:signal', {
+          roomId,
+          senderPlayerId: myPlayerId,
+          targetPlayerId: targetId,
+          signal: { sdp: pc.localDescription },
+        });
+      }
+    }
+  }, [createPeerConnection, ensureLocalStream, myPlayerId, peerIds, roomId]);
+
+  // ── P2P fallback (Trystero over Nostr relays — free, serverless) ──────────
+  const startP2PFallback = useCallback(async () => {
+    if (trysteroRoomRef.current) return;
+    modeRef.current = 'p2p';
+    setSignalingMode('p2p');
+
+    const stream = await ensureLocalStream();
+    if (!stream) return;
+
+    try {
+      const nostrModule = await import('trystero/nostr');
+      const joinRoom = (nostrModule as any).joinRoom;
+      const room = joinRoom(
+        {
+          appId: 'studyworks-voice',
+          rtcConfig: { iceServers: buildIceServers() },
+        },
+        `voice-${roomId}`,
+      );
+      trysteroRoomRef.current = room;
+
+      room.onPeerJoin((peerId: string) => {
+        // Announce presence to StudyRoom (uses trystero's peer id, which is
+        // not the logged-in user id — the UI shows it as a voice participant).
+        window.dispatchEvent(new CustomEvent('voice:peer_joined', { detail: { playerId: peerId } }));
+        room.addStream(stream, { target: peerId }).catch(() => {});
+      });
+
+      room.onPeerLeave((peerId: string) => {
+        window.dispatchEvent(new CustomEvent('voice:peer_left', { detail: { playerId: peerId } }));
+        const audio = remoteAudiosRef.current[peerId];
+        if (audio) {
+          try { audio.pause(); audio.srcObject = null; } catch {}
+          delete remoteAudiosRef.current[peerId];
+        }
+      });
+
+      room.onPeerStream((remoteStream: MediaStream, peerId: string) => {
+        attachRemoteAudio(peerId, remoteStream);
+        window.dispatchEvent(new CustomEvent('voice:peer_joined', { detail: { playerId: peerId } }));
+      });
+
+      console.info('[VoiceChat] Using free P2P signaling (Trystero/Nostr) — voice server unreachable.');
+    } catch (e) {
+      console.warn('[VoiceChat] P2P fallback failed:', e);
+      setMicError('Voice unavailable: signaling and P2P fallback both failed.');
+    }
+  }, [attachRemoteAudio, ensureLocalStream, roomId]);
 
   const toggleMute = useCallback(() => {
     const nextMuted = !isMuted;
@@ -184,16 +254,19 @@ export default function VoiceChat({
         track.enabled = !nextMuted;
       });
     }
-    (socketRef.current as any)?.emit?.('voice:state', {
-      roomId,
-      isMuted: nextMuted,
-      isDeafened,
-    });
+    if (modeRef.current === 'socket') {
+      (socketRef.current as any)?.emit?.('voice:state', {
+        roomId,
+        isMuted: nextMuted,
+        isDeafened,
+      });
+    }
   }, [isDeafened, isMuted, roomId]);
 
   const toggleDeafen = useCallback(() => {
     const nextDeafened = !isDeafened;
     setIsDeafened(nextDeafened);
+    deafenedRef.current = nextDeafened;
     Object.values(remoteAudiosRef.current).forEach((audio) => {
       if (audio) audio.muted = nextDeafened;
     });
@@ -201,11 +274,13 @@ export default function VoiceChat({
       setIsMuted(true);
       localStreamRef.current?.getAudioTracks().forEach((t) => (t.enabled = false));
     }
-    (socketRef.current as any)?.emit?.('voice:state', {
-      roomId,
-      isMuted: nextDeafened ? true : isMuted,
-      isDeafened: nextDeafened,
-    });
+    if (modeRef.current === 'socket') {
+      (socketRef.current as any)?.emit?.('voice:state', {
+        roomId,
+        isMuted: nextDeafened ? true : isMuted,
+        isDeafened: nextDeafened,
+      });
+    }
   }, [isDeafened, isMuted, roomId]);
 
   useEffect(() => {
@@ -216,6 +291,8 @@ export default function VoiceChat({
 
     let socket: unknown = null;
     let cancelled = false;
+    let connectTimeout: ReturnType<typeof setTimeout> | undefined;
+    let socketConnected = false;
 
     const unlockAudio = () => {
       Object.values(remoteAudiosRef.current).forEach((audio) => {
@@ -236,12 +313,19 @@ export default function VoiceChat({
           path: '/socket.io/voice',
           transports: ['websocket', 'polling'],
           reconnection: true,
-          reconnectionAttempts: 10,
+          reconnectionAttempts: 5,
           reconnectionDelay: 1000,
+          reconnectionDelayMax: 3000,
         });
         socketRef.current = socket;
 
         (socket as any).on('connect', () => {
+          if (cancelled) return;
+          socketConnected = true;
+          if (connectTimeout) clearTimeout(connectTimeout);
+          modeRef.current = 'socket';
+          setSignalingMode('socket');
+          setMicError(null);
           (socket as any).emit('voice:join', { playerId: myPlayerId, roomId });
           startVoiceSession().catch(() => {});
           // Notify StudyRoom that the local user has joined so it can show them
@@ -249,7 +333,7 @@ export default function VoiceChat({
         });
 
         (socket as any).on('voice:signal', async ({ senderPlayerId, signal }: any) => {
-          if (cancelled) return;
+          if (cancelled || modeRef.current !== 'socket') return;
           try {
             let pc = peerConnections.current[senderPlayerId];
             if (!pc) {
@@ -296,9 +380,21 @@ export default function VoiceChat({
           }
         });
 
+        // Signaling server unreachable → fall back to free serverless
+        // signaling (Trystero) so voice still works.
         (socket as any).on('connect_error', () => {
-          if (!cancelled) setMicError('Voice signaling unreachable.');
+          if (cancelled || socketConnected) return;
+          setMicError(null);
+          startP2PFallback();
         });
+
+        // Also guard against silent hangs: if we never connect within 6s,
+        // switch to the P2P fallback.
+        connectTimeout = setTimeout(() => {
+          if (!cancelled && !socketConnected && !trysteroRoomRef.current) {
+            startP2PFallback();
+          }
+        }, 6000);
 
         // Relay peer mute/deafen state changes to StudyRoom
         (socket as any).on('voice:state_change', ({ playerId, isMuted, isDeafened }: any) => {
@@ -312,7 +408,7 @@ export default function VoiceChat({
           window.dispatchEvent(new CustomEvent('voice:peer_left', { detail: { playerId } }));
         });
       } catch (e) {
-        if (!cancelled) setMicError('Voice chat unavailable in this environment.');
+        if (!cancelled) startP2PFallback();
       }
     };
 
@@ -324,6 +420,7 @@ export default function VoiceChat({
 
     return () => {
       cancelled = true;
+      if (connectTimeout) clearTimeout(connectTimeout);
       // Tell StudyRoom this client is leaving
       window.dispatchEvent(new CustomEvent('voice:peer_left', { detail: { playerId: myPlayerId } }));
       cleanupVoice();
@@ -337,10 +434,12 @@ export default function VoiceChat({
       window.removeEventListener('touchstart', unlockAudio);
       window.removeEventListener('click', unlockAudio);
     };
-  }, [cleanupVoice, createPeerConnection, isVoiceActive, myPlayerId, peerIds, roomId, signalingUrl, startVoiceSession]);
+    // startVoiceSession / startP2PFallback are stable per (peerIds, roomId)
+  }, [cleanupVoice, createPeerConnection, isVoiceActive, myPlayerId, roomId, signalingUrl, startP2PFallback, startVoiceSession]);
 
+  // When new peers appear in socket mode, call them.
   useEffect(() => {
-    if (!isVoiceActive || !localStreamRef.current || !socketRef.current) return;
+    if (!isVoiceActive || modeRef.current !== 'socket' || !localStreamRef.current) return;
 
     peerIds.forEach(async (targetId) => {
       if (!targetId || targetId === myPlayerId || peerConnections.current[targetId]) return;
@@ -361,7 +460,7 @@ export default function VoiceChat({
         }
       }
     });
-  }, [peerIds.join(','), createPeerConnection, isVoiceActive, myPlayerId, roomId]);
+  }, [peerIds.join(','), createPeerConnection, isVoiceActive, myPlayerId, roomId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isVoiceActive) return null;
 
@@ -377,7 +476,10 @@ export default function VoiceChat({
     }}>
       {micError ? (
         <button
-          onClick={startVoiceSession}
+          onClick={() => {
+            if (modeRef.current === 'socket') startVoiceSession();
+            else { cleanupVoice(); startP2PFallback(); }
+          }}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -434,6 +536,15 @@ export default function VoiceChat({
           >
             {isDeafened ? <span>🔕</span> : <span>🔔</span>}
           </button>
+          <span
+            className="text-xs text-muted"
+            title={signalingMode === 'p2p'
+              ? 'Connected via free peer-to-peer signaling (no voice server needed)'
+              : 'Connected via the voice signaling server'}
+            style={{ fontSize: '0.7rem', userSelect: 'none' }}
+          >
+            {signalingMode === 'p2p' ? '🌐 P2P' : '☁️ Live'}
+          </span>
         </>
       )}
     </div>

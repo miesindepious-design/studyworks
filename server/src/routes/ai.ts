@@ -523,7 +523,25 @@ aiRouter.post('/tutor', requirePro, zValidator('json', TutorRequestBody), async 
     'phd':                'PhD / research level',
     'college':            'college level',
   };
-  const audience = levelLabel[effectiveLevel] ?? 'college level';
+  let audience = levelLabel[effectiveLevel] ?? 'college level';
+
+  // The exact student profile captured at signup (school stage + exact class
+  // or university year) takes precedence over the generic level dropdown —
+  // it is more specific, so the tutor tailors depth and curriculum to it.
+  const profileBits: string[] = [];
+  if (user.schoolStage === 'primary' && user.schoolClass) {
+    profileBits.push(`a primary school pupil in ${user.schoolClass}`);
+  } else if (user.schoolStage === 'secondary' && user.schoolClass) {
+    profileBits.push(`a secondary school student in ${user.schoolClass}`);
+  } else if (user.schoolStage === 'university' && user.universityYear) {
+    profileBits.push(`a university student in ${user.universityYear}`);
+  }
+  if (profileBits.length > 0) {
+    audience = profileBits.join(', ');
+  }
+  const studentContext = profileBits.length > 0
+    ? ` The student you are teaching is ${audience}. Tailor examples, vocabulary, curriculum coverage and exam style to that exact class/year (e.g. align with what is taught at that stage, not above it).`
+    : '';
 
   const modeInstructions: Record<TutorMode, string> = {
     lesson: `Teach the requested topic from scratch as exam-ready study notes for a ${audience} student. Write comprehensive, well-explained notes the student can use to revise for exams: motivation, clear section headings, formal definitions, key formulas with explanations, worked examples, comparison tables where useful, common misconceptions and exam traps, and end with a "likely exam questions" section including model answers. Do not keep explanations brief — cover the topic's important sub-topics, prerequisites, and applications at a depth matching the student's level (foundational but precise for beginners; thorough and rigorous for university/graduate levels).`,
@@ -533,7 +551,7 @@ aiRouter.post('/tutor', requirePro, zValidator('json', TutorRequestBody), async 
   };
 
   const messages = [
-    { role: 'system', content: `${SYSTEM_BASE}\nYou are an expert AI tutor. ${modeInstructions[mode]}` },
+    { role: 'system', content: `${SYSTEM_BASE}\nYou are an expert AI tutor. ${modeInstructions[mode]}${studentContext}` },
     ...history,
     { role: 'user', content: lastAnswer ? `Student answer: ${lastAnswer}\nContinue the tutoring session appropriately.` : `Topic: ${topic}` },
   ];
@@ -559,21 +577,43 @@ aiRouter.post('/tutor', requirePro, zValidator('json', TutorRequestBody), async 
   }
 });
 
-const ProfileBody = z.object({ educationLevel: z.string().optional().nullable() });
+const ProfileBody = z.object({
+  educationLevel: z.string().optional().nullable(),
+  schoolStage:    z.enum(['primary', 'secondary', 'university']).optional().nullable(),
+  schoolClass:    z.string().max(60).optional().nullable(),
+  universityYear: z.string().max(60).optional().nullable(),
+});
 
 aiRouter.put('/profile', zValidator('json', ProfileBody), async c => {
   const user = c.get('user');
   const body = c.req.valid('json');
 
+  // Keep the generic educationLevel in sync so the tutor dropdown stays
+  // consistent with the structured profile captured at signup.
+  const derivedLevel =
+    body.schoolStage === 'primary'   ? 'high-school' :
+    body.schoolStage === 'secondary' ? 'high-school' :
+    body.schoolStage === 'university' ? 'university' :
+    body.educationLevel ?? null;
+
   const updated = await prisma.user.update({
     where: { id: user.id },
     data: {
-      educationLevel: body.educationLevel ?? null,
+      educationLevel: derivedLevel,
+      // Only overwrite profile fields that were actually sent — the tutor's
+      // level dropdown PUTs educationLevel alone and must not wipe the
+      // student profile captured at signup.
+      ...(body.schoolStage    !== undefined ? { schoolStage:    body.schoolStage }    : {}),
+      ...(body.schoolClass    !== undefined ? { schoolClass:    body.schoolClass }    : {}),
+      ...(body.universityYear !== undefined ? { universityYear: body.universityYear } : {}),
     },
     select: {
       id: true,
       email: true,
       educationLevel: true,
+      schoolStage: true,
+      schoolClass: true,
+      universityYear: true,
     },
   });
 

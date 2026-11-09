@@ -6,8 +6,15 @@
 import { useState, useEffect } from 'react';
 import { signIn, signUp, forgotPassword, signInWithGoogle } from '../api/auth';
 import type { AuthUser } from '../api/auth';
+import { saveStudentProfile } from '../api/ai';
 
 type AuthMode = 'signin' | 'signup' | 'forgot';
+
+type SchoolStage = 'primary' | 'secondary' | 'university';
+
+const PRIMARY_CLASSES  = ['Primary 1', 'Primary 2', 'Primary 3', 'Primary 4', 'Primary 5', 'Primary 6'];
+const SECONDARY_CLASSES = ['JSS 1', 'JSS 2', 'JSS 3', 'SS 1', 'SS 2', 'SS 3'];
+const UNIVERSITY_YEARS = ['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5', 'Postgraduate'];
 
 function passwordStrength(pw: string): { score: number; label: string; color: string } {
   if (!pw) return { score: 0, label: '', color: 'transparent' };
@@ -36,6 +43,10 @@ export default function AuthPage({ onAuth }: AuthPageProps) {
   const [email, setEmail] = useState('');
   const [pass,  setPass]  = useState('');
   const [confirmPass, setConfirmPass] = useState('');
+  // Student credentials — collected at signup, drive the AI tutor's level.
+  const [schoolStage, setSchoolStage] = useState<SchoolStage | ''>('');
+  const [schoolClass, setSchoolClass] = useState('');
+  const [universityYear, setUniversityYear] = useState('');
   const [rememberMe, setRememberMe] = useState(() => {
     try { return localStorage.getItem('studyworks:rememberMe') === '1'; } catch { return false; }
   });
@@ -102,6 +113,19 @@ export default function AuthPage({ onAuth }: AuthPageProps) {
           setLoading(false); return;
         }
         const session = await signUp(email, pass, name);
+        // Persist the student credentials (best-effort — the account exists
+        // either way, and the AI Tutor lets them change the level later).
+        if (schoolStage) {
+          try {
+            await saveStudentProfile({
+              schoolStage,
+              schoolClass: schoolStage === 'university' ? null : schoolClass || null,
+              universityYear: schoolStage === 'university' ? (universityYear || null) : null,
+            });
+          } catch (profileErr) {
+            console.warn('[Auth] Student profile save failed (non-blocking):', profileErr);
+          }
+        }
         onAuth(session.user);
 
       } else if (mode === 'signin') {
@@ -133,26 +157,56 @@ export default function AuthPage({ onAuth }: AuthPageProps) {
   };
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'var(--bg)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '1.5rem',
-    }}>
-      <div style={{ width: '100%', maxWidth: '420px' }}>
+    <div className="auth-shell">
+      {/* ── Brand panel (desktop only; collapses on mobile) ── */}
+      <aside className="auth-brand">
+        <div className="auth-brand-top">
+          <img src="/logo.svg" alt="" className="auth-brand-mark" />
+          <span className="auth-brand-name">StudyWorks</span>
+        </div>
 
-        {/* Logo */}
-        <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
-          <img src="/logo.svg" alt="StudyWorks" style={{ width: 56, height: 56, marginBottom: '0.75rem' }} />
+        <div className="auth-brand-body">
+          <h2 className="auth-brand-headline">
+            Study smarter,<br />not longer.
+          </h2>
+          <p className="auth-brand-sub">
+            Notes, flashcards, study rooms and an AI tutor that teaches at
+            your exact class level — all in one place.
+          </p>
+
+          <ul className="auth-brand-list">
+            <li><span className="auth-brand-bullet">📝</span> Rich notes with AI summaries &amp; PDF attachments</li>
+            <li><span className="auth-brand-bullet">💡</span> Flashcards with spaced repetition (SM-2)</li>
+            <li><span className="auth-brand-bullet">🎓</span> AI Tutor pitched to your exact class or year</li>
+            <li><span className="auth-brand-bullet">📹</span> Study rooms with free peer-to-peer voice chat</li>
+          </ul>
+
+          <div className="auth-brand-trial">
+            <span className="auth-brand-trial-emoji">🎁</span>
+            <div>
+              <p className="auth-brand-trial-title">Free 7-day Pro trial</p>
+              <p className="auth-brand-trial-sub">Every new account. No credit card required.</p>
+            </div>
+          </div>
+        </div>
+
+        <p className="auth-brand-foot">© {new Date().getFullYear()} StudyWorks</p>
+      </aside>
+
+      {/* ── Form column ── */}
+      <main className="auth-main">
+        <div className="auth-form-col">
+
+        {/* Compact logo — mobile only (brand panel is hidden) */}
+        <div className="auth-mobile-logo">
+          <img src="/logo.svg" alt="StudyWorks" style={{ width: 44, height: 44, marginBottom: '0.5rem' }} />
           <h1 style={{
-            fontSize: '1.75rem', fontWeight: 900,
+            fontSize: '1.5rem', fontWeight: 900,
             background: 'linear-gradient(135deg, var(--accent), var(--accent-2))',
             WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
             backgroundClip: 'text',
           }}>StudyWorks</h1>
-          <p className="text-muted text-sm" style={{ marginTop: '0.375rem' }}>
+          <p className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
             {mode === 'signin'  && 'Sign in to your account'}
             {mode === 'signup'  && 'Create your free account'}
             {mode === 'forgot'  && 'Reset your password'}
@@ -221,6 +275,68 @@ export default function AuthPage({ onAuth }: AuthPageProps) {
                   autoComplete="name"
                 />
               </div>
+            )}
+
+            {/* Student credentials — signup only. The AI Tutor uses these to
+                pitch every lesson at the student's exact class/year. */}
+            {isSignup && (
+              <>
+                <div className="form-group">
+                  <label className="form-label">Level of study</label>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    {(['primary', 'secondary', 'university'] as SchoolStage[]).map(stage => (
+                      <button
+                        key={stage}
+                        type="button"
+                        onClick={() => { setSchoolStage(stage); setSchoolClass(''); setUniversityYear(''); }}
+                        className="btn btn-sm"
+                        style={{
+                          flex: 1,
+                          background: schoolStage === stage ? 'var(--accent)' : 'var(--surface-2)',
+                          color: schoolStage === stage ? 'var(--accent-ink)' : 'var(--text-2)',
+                          border: `1px solid ${schoolStage === stage ? 'var(--accent)' : 'var(--border)'}`,
+                          fontWeight: 600,
+                          textTransform: 'capitalize',
+                        }}
+                      >
+                        {stage}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {(schoolStage === 'primary' || schoolStage === 'secondary') && (
+                  <div className="form-group">
+                    <label className="form-label">Which class are you in?</label>
+                    <select
+                      className="select"
+                      value={schoolClass}
+                      onChange={e => setSchoolClass(e.target.value)}
+                    >
+                      <option value="">Select your class…</option>
+                      {(schoolStage === 'primary' ? PRIMARY_CLASSES : SECONDARY_CLASSES).map(cls => (
+                        <option key={cls} value={cls}>{cls}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {schoolStage === 'university' && (
+                  <div className="form-group">
+                    <label className="form-label">Which year?</label>
+                    <select
+                      className="select"
+                      value={universityYear}
+                      onChange={e => setUniversityYear(e.target.value)}
+                    >
+                      <option value="">Select your year…</option>
+                      {UNIVERSITY_YEARS.map(y => (
+                        <option key={y} value={y}>{y}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </>
             )}
 
             {/* Email */}
@@ -385,13 +501,14 @@ export default function AuthPage({ onAuth }: AuthPageProps) {
           )}
         </div>
 
-        {/* Free plan note */}
+        {/* Free plan + trial note */}
         {mode === 'signup' && (
           <p className="text-xs text-muted" style={{ textAlign: 'center', marginTop: '1.25rem', lineHeight: 1.7 }}>
-            Free plan includes 50 items, 20 AI summaries/month, and all core features. No credit card required.
+            🎁 Every new account starts with a <strong style={{ color: 'var(--accent)' }}>free 7-day Pro trial</strong> — no credit card required. After that, the free plan includes 50 items and 20 AI summaries/month.
           </p>
         )}
-      </div>
+        </div>
+      </main>
     </div>
   );
 }

@@ -9,6 +9,8 @@ import StreakRing from './StreakRing';
 type Tier = 'free' | 'pro';
 
 interface DashboardProps {
+  userName?: string;
+  trialDaysLeft?: number;
   notes: Note[];
   contacts: Contact[];
   flashcards: Flashcard[];
@@ -164,7 +166,16 @@ function getTodayMinutes(): number {
 }
 
 // ── Dashboard ───────────────────────────────────────────────────────────────
-export default function Dashboard({ notes, contacts, flashcards, tier, totalItems, aiSummariesThisMonth, folders, practiceQuestions, setCurrentView, aiReady, aiProvider, onGenerateInsights, weeklyInsights, insightsLoading }: DashboardProps) {
+export default function Dashboard({ userName, trialDaysLeft = 0, notes, contacts, flashcards, tier, totalItems, aiSummariesThisMonth, folders, practiceQuestions, setCurrentView, aiReady, aiProvider, onGenerateInsights, weeklyInsights, insightsLoading }: DashboardProps) {
+  // Personalized, time-aware greeting — "Good morning, Ada 👋"
+  const greeting = (() => {
+    const h = new Date().getHours();
+    if (h < 12) return 'Good morning';
+    if (h < 17) return 'Good afternoon';
+    return 'Good evening';
+  })();
+  const displayName = (userName || '').trim();
+
   const stats = [
     { icon: '📝', label: 'Notes',       value: notes.length,           color: 'indigo',  view: 'notes',      items: notes as { updatedAt: Date }[] },
     { icon: '👥', label: 'People',      value: contacts.length,        color: 'violet',  view: 'contacts',   items: contacts as { updatedAt: Date }[] },
@@ -343,9 +354,20 @@ export default function Dashboard({ notes, contacts, flashcards, tier, totalItem
       {/* Hero */}
       <div className="dash-hero">
         <div>
-          <h2 className="dash-hero-title">Welcome back 👋</h2>
-          <p className="text-muted" style={{ marginTop: '0.35rem', fontSize: '0.9375rem' }}>
-            Here's what's happening in your study workspace
+          <h2 className="dash-hero-title">
+            {displayName ? `${greeting}, ${displayName} 👋` : `${greeting} 👋`}
+          </h2>
+          <p className="text-muted" style={{ marginTop: '0.35rem', fontSize: '0.9375rem', display: 'flex', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>
+            <span>Here's what's happening in your study workspace</span>
+            {trialDaysLeft > 0 && (
+              <span
+                className="tag primary"
+                title={`Your free Pro trial ends in ${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'}`}
+                style={{ fontSize: '0.75rem' }}
+              >
+                🎁 Trial · {trialDaysLeft} day{trialDaysLeft === 1 ? '' : 's'} left
+              </span>
+            )}
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>

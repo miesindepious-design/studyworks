@@ -116,6 +116,8 @@ export default function App() {
 
   // ── Cloud sync — pull on login ────────────────────────────────────────────
   const [syncing, setSyncing] = useState(false);
+  // Trial window (ISO string from the server). `null` = no trial started yet.
+  const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
 
   // Toasts (used by Stripe checkout handler below; declared early to avoid
   // "used before declaration" lint when other hooks reference them).
@@ -155,7 +157,10 @@ export default function App() {
       db.setPracticeQuestions(mergeByLWW(db.practiceQuestions, remote.practiceQuestions));
       db.setSavedSearches(mergeByLWW(db.savedSearches, remote.savedSearches));
       // Tier — server is authoritative for billing (Stripe webhook updates it).
-      db.setTier(mergeTier(db.tier, remote.tier));
+      // The server sends `effectiveTier` (PRO subscription OR active 7-day
+      // trial); fall back to the raw tier for older servers.
+      db.setTier(mergeTier(db.tier, (remote as any).effectiveTier ?? remote.tier));
+      setTrialEndsAt((remote as any).trialEndsAt ?? null);
       // Cross-device streak sync (Phase 2) — merge local streak with server.
       syncStreak().catch(() => {});
     } catch (err) {
@@ -272,6 +277,13 @@ export default function App() {
   // ── Helpers ───────────────────────────────────────────────────────────────
   const navigateTo  = (view: string) => setCurrentView(view as View);
   const tier        = (db.tier as Tier) || 'free';
+  // Days remaining in the 7-day trial (0 once it's over or never started).
+  const trialDaysLeft = (() => {
+    if (!trialEndsAt) return 0;
+    const ms = new Date(trialEndsAt).getTime() - Date.now();
+    return ms > 0 ? Math.ceil(ms / (24 * 60 * 60 * 1000)) : 0;
+  })();
+  const userName = session.user?.name?.trim() || session.user?.email?.split('@')[0] || 'there';
   const totalItems  = notesUR.state.length + contactsUR.state.length + flashcardsUR.state.length;
   const dueFlashcards = flashcardsUR.state.filter(c => !c.nextReview || new Date(c.nextReview) <= new Date()).length;
 
@@ -368,6 +380,31 @@ export default function App() {
     db.setTier('free');
     addToast('Downgraded to Free plan', 'info');
     setDowngradeModal(false);
+  };
+
+  // ── Import / Export ───────────────────────────────────────────────────────
+  const handleImportFile = (file: File) => {
+    if (tier !== 'pro' && trialDaysLeft <= 0) { addToast('Import is a Pro feature!', 'info'); setCurrentView('pricing'); return; }
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const data = JSON.parse(String(reader.result));
+        const imported = {
+          notes: Array.isArray(data.notes) ? data.notes : [],
+          contacts: Array.isArray(data.contacts) ? data.contacts : [],
+          flashcards: Array.isArray(data.flashcards) ? data.flashcards : [],
+        };
+        // LWW-merge with existing data so an import never deletes anything.
+        db.setNotes(mergeByLWW(notesUR.state, imported.notes));
+        db.setContacts(mergeByLWW(contactsUR.state, imported.contacts));
+        db.setFlashcards(mergeByLWW(flashcardsUR.state, imported.flashcards));
+        const count = imported.notes.length + imported.contacts.length + imported.flashcards.length;
+        addToast(`Imported ${count} items (merged with existing).`, 'success');
+      } catch {
+        addToast('Import failed: not a valid StudyWorks export file.', 'error');
+      }
+    };
+    reader.readAsText(file);
   };
 
   // ── Export / Import ───────────────────────────────────────────────────────
@@ -499,7 +536,11 @@ export default function App() {
             )}
             {syncing && <p className="text-xs text-muted" style={{ padding: '0 0.75rem', marginBottom: '0.25rem' }}>☁️ Syncing…</p>}
             <div className={`tier-badge${tier === 'pro' ? ' pro' : ''}`}>
-              {tier === 'pro' ? <>⭐ Pro plan</> : <>🆓 Free plan</>}
+              {tier === 'pro'
+                ? (trialDaysLeft > 0
+                    ? <>⭐ Trial · {trialDaysLeft} day{trialDaysLeft === 1 ? '' : 's'} left</>
+                    : <>⭐ Pro plan</>)
+                : <>🆓 Free plan</>}
             </div>
             {tier === 'free' && (
               <div>
@@ -520,8 +561,12 @@ export default function App() {
               </button>
               <button className="icon-btn" onClick={exportData} title="Export JSON" style={{ flex: 1 }}>📤</button>
               {tier === 'pro' && (
-                <label className="icon-btn" style={{ flex: 1, cursor: 'pointer' }} title="Import data">
-                  📥<input type="file" accept=".json" onChange={() => {}} style={{ display: 'none' }} />
+                <label className="icon-btn" style={{ flex: 1, cursor: 'pointer' }} title="Import data (JSON export file)">
+                  📥<input type="file" accept=".json" onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleImportFile(file);
+                    e.target.value = ''; // allow re-selecting the same file
+                  }} style={{ display: 'none' }} />
                 </label>
               )}
             </div>
@@ -550,7 +595,11 @@ export default function App() {
               </button>
               <button className="icon-btn" onClick={() => { notesUR.undo(); contactsUR.undo(); flashcardsUR.undo(); addToast('Undone', 'info'); }} disabled={!notesUR.canUndo && !contactsUR.canUndo && !flashcardsUR.canUndo} title="Undo (⌘Z)" style={{ fontSize: '1rem' }}>↩</button>
               <button className="icon-btn" onClick={() => { notesUR.redo(); contactsUR.redo(); flashcardsUR.redo(); addToast('Redone', 'info'); }} disabled={!notesUR.canRedo && !contactsUR.canRedo && !flashcardsUR.canRedo} title="Redo (⌘⇧Z)" style={{ fontSize: '1rem' }}>↪</button>
-              {tier === 'pro'  && <span className="tag primary" style={{ fontSize: '0.75rem' }}>⭐ Pro</span>}
+              {tier === 'pro'  && (
+                <span className="tag primary" style={{ fontSize: '0.75rem' }}>
+                  {trialDaysLeft > 0 ? `⭐ Trial · ${trialDaysLeft}d` : '⭐ Pro'}
+                </span>
+              )}
               {tier === 'free' && <button className="btn btn-primary btn-sm" onClick={() => setCurrentView('pricing')}>Upgrade</button>}
               <Achievements />
             </div>
@@ -569,6 +618,8 @@ export default function App() {
               <>
                 <GoalTracker />
                 <Dashboard
+                  userName={userName}
+                  trialDaysLeft={trialDaysLeft}
                   notes={notesUR.state} contacts={contactsUR.state} flashcards={flashcardsUR.state}
                   tier={tier} totalItems={totalItems}
                   aiSummariesThisMonth={db.aiSummariesThisMonth} qaQueriesThisMonth={db.qaQueriesThisMonth}
