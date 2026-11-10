@@ -34,8 +34,9 @@ import { getAccent, accentCssVars, accentGlow } from './config/accents';
 import Achievements from './components/Achievements';
 import GoalTracker from './components/GoalTracker';
 import AdminDashboard from './components/AdminDashboard';
+import { CornerDock } from './components/CornerDock';
+import { NAV_ITEMS, PAGE_TITLES, type View } from './config/nav';
 
-type View  = 'dashboard' | 'notes' | 'contacts' | 'flashcards' | 'pricing' | 'settings' | 'multiplayer' | 'studyRoom' | 'tutor' | 'timer' | 'admin';
 type Theme = 'light' | 'dark' | 'system';
 type Tier  = 'free' | 'pro';
 
@@ -51,33 +52,6 @@ function resolveTheme(t: Theme): 'light' | 'dark' {
 }
 
 interface ToastMessage { id: number; message: string; type: 'success' | 'error' | 'info'; }
-
-const NAV_ITEMS: { view: View; icon: string; label: string }[] = [
-  { view: 'dashboard',  icon: '⊞',  label: 'Dashboard'  },
-  { view: 'notes',      icon: '📝', label: 'Notes'       },
-  { view: 'contacts',   icon: '👥', label: 'People'      },
-  { view: 'flashcards', icon: '💡', label: 'Flashcards'  },
-  { view: 'pricing',    icon: '💎', label: 'Pricing'     },
-  { view: 'tutor',      icon: '🎓', label: 'AI Tutor'    },
-  { view: 'studyRoom',  icon: '📹', label: 'Study Room'  },
-  { view: 'multiplayer',icon: '🎮', label: 'Quiz Battle' },
-  { view: 'timer',      icon: '⏱️', label: 'Timer'       },
-  { view: 'settings',   icon: '⚙️', label: 'Settings'    },
-];
-
-const PAGE_TITLES: Record<View, string> = {
-  dashboard:  'Dashboard',
-  notes:      'Notes & Knowledge Base',
-  contacts:   'People & Reminders',
-  flashcards: 'Flashcards',
-  pricing:    'Pricing',
-  tutor:      'AI Tutor',
-  multiplayer:'Quiz Battle',
-  studyRoom:  'Study Room',
-  timer:      'Study Timer',
-  settings:   'Settings',
-  admin:      'Admin Dashboard',
-};
 
 // ── Notification permission banner ────────────────────────────────────────────
 function NotifBanner({ onEnable }: { onEnable: () => void }) {
@@ -766,6 +740,13 @@ export default function App() {
           onCancel={() => setDowngradeModal(false)}
         />
       )}
+
+      {/* Scroll-reveal corner dock — tabs deploy from the corner on scroll */}
+      <CornerDock
+        currentView={currentView}
+        onSelect={navigateTo}
+        hidden={showShortcuts || cmdkOpen || !db.onboardingDone}
+      />
 
       {/* Command palette */}
       <CommandPalette

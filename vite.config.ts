@@ -1,20 +1,25 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+// Where the dev server proxies API/auth/ws traffic. Override with
+// VITE_PROXY_TARGET=https://your-deployment.vercel.app to run the local
+// client against a live deployment (handy for UI checks).
+const API_TARGET = process.env.VITE_PROXY_TARGET || 'http://localhost:3001';
+
 export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: API_TARGET,
         changeOrigin: true,
       },
       '/auth': {
-        target: 'http://localhost:3001',
+        target: API_TARGET,
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://localhost:3001',
+        target: API_TARGET,
         ws: true,
         changeOrigin: true,
       },
