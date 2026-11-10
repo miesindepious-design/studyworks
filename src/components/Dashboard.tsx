@@ -5,6 +5,8 @@ import { getStreakData, last7Days, EMPTY_STREAK } from '../db/streaks';
 import type { StreakData } from '../db/schema';
 import { useCountUp } from '../hooks/useCountUp';
 import StreakRing from './StreakRing';
+import HeroDock from './HeroDock';
+import Reveal from './Reveal';
 
 type Tier = 'free' | 'pro';
 
@@ -351,8 +353,9 @@ export default function Dashboard({ userName, trialDaysLeft = 0, notes, contacts
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="animate-in">
-      {/* Hero */}
-      <div className="dash-hero">
+      {/* Hero — sits in the normal flow on arrival, then flies up and parks
+          itself in the top-right corner as you scroll down. */}
+      <HeroDock greeting={greeting} displayName={displayName} trialDaysLeft={trialDaysLeft}>
         <div>
           <h2 className="dash-hero-title">
             {displayName ? `${greeting}, ${displayName} 👋` : `${greeting} 👋`}
@@ -383,11 +386,57 @@ export default function Dashboard({ userName, trialDaysLeft = 0, notes, contacts
             </button>
           )}
         </div>
-      </div>
+      </HeroDock>
+
+      {/* Study Goals — slides in from the right right after the hero */}
+      <Reveal>
+        <div className="card" style={{ marginBottom: '1.5rem' }}>
+          <div className="card-header">
+            <span className="card-title">🎯 Daily Goals</span>
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowGoalEditor(!showGoalEditor)}>
+              {showGoalEditor ? 'Done' : 'Edit'}
+            </button>
+          </div>
+          <div className="goals-grid">
+            {[
+              { key: 'flashcards', label: 'Flashcards', current: todayReviews, goal: goals.dailyFlashcards, icon: '💡', unit: 'reviews' },
+              { key: 'notes',      label: 'Notes',      current: todayNotes,      goal: goals.dailyNotes,      icon: '📝', unit: 'new' },
+              { key: 'minutes',    label: 'Study Time', current: todaysStudyMinutes, goal: goals.dailyStudyMinutes, icon: '⏱️', unit: 'min' },
+            ].map(g => {
+              const progress = Math.min(1, g.current / g.goal);
+              const circumference = 2 * Math.PI * 18;
+              const offset = circumference * (1 - progress);
+              return (
+                <div key={g.key} className="goal-item">
+                  <div className="goal-ring">
+                    <svg viewBox="0 0 40 40" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
+                      <circle cx="20" cy="20" r="18" fill="none" stroke="var(--surface-3)" strokeWidth="3" />
+                      <circle cx="20" cy="20" r="18" fill="none" stroke="var(--accent)" strokeWidth="3" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={offset} style={{ transition: 'stroke-dashoffset 0.5s ease' }} />
+                    </svg>
+                    <div className="goal-ring-text">{Math.round(progress * 100)}%</div>
+                  </div>
+                  <div style={{ textAlign: 'center', marginTop: '0.5rem' }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.875rem' }}>{g.icon} {g.label}</div>
+                    <div className="text-xs text-muted">{g.current} / {g.goal} {g.unit}</div>
+                  </div>
+                  {showGoalEditor && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.5rem' }}>
+                      <button className="btn btn-ghost btn-xs" onClick={() => updateGoal(g.key as keyof StudyGoals, Math.max(1, g.goal - 5))}>−</button>
+                      <span className="text-sm" style={{ minWidth: '2rem', textAlign: 'center' }}>{g.goal}</span>
+                      <button className="btn btn-ghost btn-xs" onClick={() => updateGoal(g.key as keyof StudyGoals, g.goal + 5)}>+</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </Reveal>
 
       {/* Study Timer */}
       {(timerRunning || timerSeconds < WORK_SECONDS) && (
-        <div className="card study-timer-card" style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
+        <Reveal>
+          <div className="card study-timer-card" style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
           <div className="study-timer-ring">
             <svg viewBox="0 0 100 100" style={{ transform: 'rotate(-90deg)', width: '100%', height: '100%' }}>
               <circle cx="50" cy="50" r="42" fill="none" stroke="var(--surface-3)" strokeWidth="6" />
@@ -410,13 +459,17 @@ export default function Dashboard({ userName, trialDaysLeft = 0, notes, contacts
             <button className="btn btn-ghost btn-sm" onClick={resetTimer}>Reset</button>
             <button className="btn btn-primary btn-sm" onClick={toggleTimer}>{timerRunning ? 'Pause' : 'Resume'}</button>
           </div>
-        </div>
+          </div>
+        </Reveal>
       )}
 
       {/* Streak widget */}
-      <StreakWidget streak={streak} dueFlashcards={dueFlashcards} setCurrentView={setCurrentView} />
+      <Reveal>
+        <StreakWidget streak={streak} dueFlashcards={dueFlashcards} setCurrentView={setCurrentView} />
+      </Reveal>
 
       {/* Activity Heatmap */}
+      <Reveal>
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div className="card-header">
           <span className="card-title">📈 Activity</span>
@@ -453,51 +506,10 @@ export default function Dashboard({ userName, trialDaysLeft = 0, notes, contacts
           <span className="text-xs text-muted">More</span>
         </div>
       </div>
-
-      {/* Study Goals */}
-      <div className="card" style={{ marginBottom: '1.5rem' }}>
-        <div className="card-header">
-          <span className="card-title">🎯 Daily Goals</span>
-          <button className="btn btn-ghost btn-sm" onClick={() => setShowGoalEditor(!showGoalEditor)}>
-            {showGoalEditor ? 'Done' : 'Edit'}
-          </button>
-        </div>
-        <div className="goals-grid">
-          {[
-            { key: 'flashcards', label: 'Flashcards', current: todayReviews, goal: goals.dailyFlashcards, icon: '💡', unit: 'reviews' },
-            { key: 'notes',      label: 'Notes',      current: todayNotes,      goal: goals.dailyNotes,      icon: '📝', unit: 'new' },
-            { key: 'minutes',    label: 'Study Time', current: todaysStudyMinutes, goal: goals.dailyStudyMinutes, icon: '⏱️', unit: 'min' },
-          ].map(g => {
-            const progress = Math.min(1, g.current / g.goal);
-            const circumference = 2 * Math.PI * 18;
-            const offset = circumference * (1 - progress);
-            return (
-              <div key={g.key} className="goal-item">
-                <div className="goal-ring">
-                  <svg viewBox="0 0 40 40" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
-                    <circle cx="20" cy="20" r="18" fill="none" stroke="var(--surface-3)" strokeWidth="3" />
-                    <circle cx="20" cy="20" r="18" fill="none" stroke="var(--accent)" strokeWidth="3" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={offset} style={{ transition: 'stroke-dashoffset 0.5s ease' }} />
-                  </svg>
-                  <div className="goal-ring-text">{Math.round(progress * 100)}%</div>
-                </div>
-                <div style={{ textAlign: 'center', marginTop: '0.5rem' }}>
-                  <div style={{ fontWeight: 700, fontSize: '0.875rem' }}>{g.icon} {g.label}</div>
-                  <div className="text-xs text-muted">{g.current} / {g.goal} {g.unit}</div>
-                </div>
-                {showGoalEditor && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.5rem' }}>
-                    <button className="btn btn-ghost btn-xs" onClick={() => updateGoal(g.key as keyof StudyGoals, Math.max(1, g.goal - 5))}>−</button>
-                    <span className="text-sm" style={{ minWidth: '2rem', textAlign: 'center' }}>{g.goal}</span>
-                    <button className="btn btn-ghost btn-xs" onClick={() => updateGoal(g.key as keyof StudyGoals, g.goal + 5)}>+</button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      </Reveal>
 
       {/* Achievements */}
+      <Reveal>
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div className="card-header">
           <span className="card-title">🏅 Achievements</span>
@@ -529,16 +541,20 @@ export default function Dashboard({ userName, trialDaysLeft = 0, notes, contacts
         </div>
         )}
       </div>
+      </Reveal>
 
       {/* Stats grid — with trend arrows and click-to-filter */}
-      <div className="grid-stats stagger">
-        {trends.map(s => (
-          <TrendStatCard key={s.label} {...s} setCurrentView={setCurrentView} />
-        ))}
-      </div>
+      <Reveal>
+        <div className="grid-stats stagger">
+          {trends.map(s => (
+            <TrendStatCard key={s.label} {...s} setCurrentView={setCurrentView} />
+          ))}
+        </div>
+      </Reveal>
 
       {/* Alert row */}
       {(!aiReady || overdueContacts > 0 || dueFlashcards > 0) && (
+        <Reveal>
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
           {!aiReady && (
             <button
@@ -592,10 +608,12 @@ export default function Dashboard({ userName, trialDaysLeft = 0, notes, contacts
             </button>
           )}
         </div>
+        </Reveal>
       )}
 
       {/* Pro banner */}
       {tier === 'free' && (
+        <Reveal>
         <div className="pro-banner" style={{ marginBottom: '1.75rem' }}>
           <span className="pro-banner-icon">💎</span>
           <div className="pro-banner-text">
@@ -611,10 +629,12 @@ export default function Dashboard({ userName, trialDaysLeft = 0, notes, contacts
           </ul>
           <button className="btn btn-primary" onClick={() => setCurrentView('pricing')}>See plans</button>
         </div>
+        </Reveal>
       )}
 
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))' }}>
         {/* Recent notes */}
+        <Reveal fill>
         <div className="card">
           <div className="card-header">
             <span className="card-title">📝 Recent Notes</span>
@@ -641,8 +661,10 @@ export default function Dashboard({ userName, trialDaysLeft = 0, notes, contacts
           </div>
           )}
         </div>
+        </Reveal>
 
         {/* Weekly AI Insights */}
+        <Reveal fill delay={90}>
         <div className="card">
           <div className="card-header">
             <span className="card-title">🧠 Weekly Insights</span>
@@ -693,8 +715,10 @@ export default function Dashboard({ userName, trialDaysLeft = 0, notes, contacts
             </div>
           )}
         </div>
+        </Reveal>
 
         {/* Quick Tips — dynamic */}
+        <Reveal fill delay={180}>
         <div className="card">
           <div className="card-header"><span className="card-title">🚀 Quick Tips</span></div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
@@ -710,6 +734,7 @@ export default function Dashboard({ userName, trialDaysLeft = 0, notes, contacts
             ))}
           </div>
         </div>
+        </Reveal>
       </div>
     </div>
   );

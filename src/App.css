@@ -2125,189 +2125,137 @@ input:-webkit-autofill:focus {
   .auth-main { padding: 1.5rem 1.25rem; align-items: flex-start; padding-top: 3rem; }
 }
 
+
 /* ════════════════════════════════════════════════════════════════════════════
-   Corner Dock — scroll-reveal HUD navigation
-   Tabs deploy out of the bottom-right corner as you scroll down, each on its
-   own stagger with a slight 3D tilt and a neon rim light.
+   Scroll Cascade
+   1. The welcome banner flies up and parks itself in the top-right corner.
+   2. Every panel below it slides in from the right edge as it scrolls into
+      view, so the dashboard feels like cards being dealt onto the page.
    ════════════════════════════════════════════════════════════════════════════ */
 
-.corner-dock {
-  position: fixed;
-  right: 1.25rem;
-  bottom: 1.25rem;
-  z-index: 45;
-  display: flex;
-  align-items: flex-end;
-  gap: 0.625rem;
-  pointer-events: none;
-  perspective: 900px;
-}
-
-/* ── Scroll-depth rail (outer edge — never over content) ───────────────────── */
-.corner-dock-rail {
-  width: 3px;
-  height: 232px;
-  border-radius: 99px;
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  overflow: hidden;
-  opacity: 0;
-  transform: translateY(14px);
-  transition: opacity 0.45s var(--ease), transform 0.45s var(--ease);
-}
-.corner-dock.deployed .corner-dock-rail { opacity: 1; transform: translateY(0); }
-.corner-dock-rail-fill {
-  display: block;
-  width: 100%;
-  height: 100%;
-  transform-origin: bottom;
-  background: linear-gradient(180deg, var(--accent), var(--accent-2), var(--accent-3));
-  box-shadow: 0 0 10px var(--accent-glow);
-  transition: transform 0.15s linear;
-}
-
-/* ── Tab stack ─────────────────────────────────────────────────────────────── */
-.corner-dock-stack {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.375rem;
-}
-
-.corner-dock-tab {
-  --i: 0;
+/* ── Hero → corner ─────────────────────────────────────────────────────────── */
+.hero-dock-slot {
   position: relative;
+}
+
+/* The flying element. Transform is written from JS every frame, so it must
+   not carry a CSS transition of its own. */
+.hero-dock-fly {
+  display: flow-root;
+  transform-origin: top left;
+  will-change: transform, opacity;
+}
+
+/* The chip the banner parks as */
+.hero-dock-chip {
+  position: fixed;
+  top: 72px;
+  right: 18px;
+  z-index: 26;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  height: 34px;
-  min-width: 34px;
-  padding: 0 0.4rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border));
+  gap: 0.55rem;
+  max-width: min(340px, calc(100vw - 2rem));
+  padding: 0.38rem 0.8rem 0.38rem 0.38rem;
+  border-radius: var(--r-full);
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
   background:
     linear-gradient(135deg,
-      color-mix(in srgb, var(--accent) 12%, var(--surface-1, var(--surface-2))),
-      color-mix(in srgb, var(--accent-3) 7%, var(--surface-2)));
-  backdrop-filter: blur(10px) saturate(140%);
-  -webkit-backdrop-filter: blur(10px) saturate(140%);
-  color: var(--text-2);
-  cursor: pointer;
+      color-mix(in srgb, var(--accent) 18%, var(--surface-1)),
+      color-mix(in srgb, var(--accent-3) 10%, var(--surface-1)));
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  box-shadow:
+    0 14px 34px -14px rgba(0, 0, 0, .6),
+    0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent),
+    0 0 26px -10px var(--accent-glow);
+  color: var(--text);
+  font-size: 0.8125rem;
+  line-height: 1.2;
+  white-space: nowrap;
   overflow: hidden;
-  pointer-events: auto;
+  cursor: pointer;
+  user-select: none;
   opacity: 0;
-  transform: translate3d(30px, 30px, 0) rotateX(-22deg) rotateZ(-9deg) scale(0.82);
-  transform-origin: bottom right;
-  transition:
-    opacity   0.42s var(--ease),
-    transform 0.52s cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 0.25s ease,
-    box-shadow 0.3s ease,
-    color 0.25s ease;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  transform: translate3d(120%, 0, 0) scale(0.93);
 }
-.corner-dock.deployed .corner-dock-tab {
-  opacity: 1;
-  transform: translate3d(0, 0, 0) rotateX(0) rotateZ(0) scale(1);
-  transition-delay: calc(var(--i) * 45ms);
-}
-
-/* Icon stays centred; the label is revealed on hover/focus */
-.corner-dock-tab-icon {
+.hero-dock-chip-avatar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  font-size: 0.95rem;
-  line-height: 1;
-  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 45%, transparent));
-}
-.corner-dock-tab-label {
-  max-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  opacity: 0;
-  transition: max-width 0.34s var(--ease), opacity 0.24s ease;
-}
-.corner-dock-tab:hover .corner-dock-tab-label,
-.corner-dock-tab:focus-visible .corner-dock-tab-label { max-width: 130px; opacity: 1; }
-.corner-dock-tab:hover,
-.corner-dock-tab:focus-visible {
-  border-color: color-mix(in srgb, var(--accent) 62%, var(--border));
-  color: var(--text);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent),
-              0 6px 22px -6px var(--accent-glow);
-  outline: none;
-}
-
-/* Active tab glows with the current accent theme */
-.corner-dock-tab.active {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  font-weight: 800;
+  font-size: 0.8125rem;
   color: var(--accent-ink);
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  border-color: color-mix(in srgb, var(--accent) 80%, transparent);
-  box-shadow: 0 0 14px -2px var(--accent-glow),
-              inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  box-shadow: 0 0 12px -2px var(--accent-glow);
 }
-.corner-dock-tab.active .corner-dock-tab-icon { filter: none; }
-.corner-dock-tab.active .corner-dock-tab-label { max-width: 130px; opacity: 1; }
+.hero-dock-chip-text {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  overflow: hidden;
+}
+.hero-dock-chip-greeting {
+  font-weight: 700;
+  color: var(--text-2);
+}
+.hero-dock-chip-name {
+  font-weight: 800;
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hero-dock-chip-badge {
+  flex-shrink: 0;
+  padding: 0.14rem 0.45rem;
+  border-radius: var(--r-full);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+}
 
-/* Light sweep that runs across a tab when it lands */
-.corner-dock-tab-sweep {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.55) 50%, transparent 65%);
-  transform: translateX(-120%);
-  pointer-events: none;
+/* ── Panels sliding in from the right ─────────────────────────────────────── */
+.reveal-wrap {
+  min-width: 0;
 }
-.corner-dock.deployed .corner-dock-tab-sweep {
-  animation: dockSweep 0.75s var(--ease) both;
-  animation-delay: calc(var(--i) * 45ms + 120ms);
+.reveal-fill > * { height: 100%; }
+
+.reveal-right {
+  opacity: 0;
+  transform: translate3d(76px, 0, 0) scale(0.988);
+  transition:
+    opacity 520ms var(--ease) var(--rv-delay, 0ms),
+    transform 720ms cubic-bezier(0.16, 1, 0.3, 1) var(--rv-delay, 0ms);
+  will-change: transform, opacity;
 }
-@keyframes dockSweep {
-  from { transform: translateX(-120%); }
-  to   { transform: translateX(120%); }
+.reveal-right.is-in {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
 }
 
 /* ── Responsive ────────────────────────────────────────────────────────────── */
 @media (max-width: 900px) {
-  .corner-dock { display: none; }
+  .hero-dock-chip {
+    top: 62px;
+    right: 12px;
+    max-width: min(240px, calc(100vw - 1.5rem));
+    font-size: 0.75rem;
+  }
+  .hero-dock-chip-badge { display: none; }
+  .reveal-right { transform: translate3d(44px, 0, 0) scale(0.99); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .corner-dock-tab,
-  .corner-dock-rail,
-  .corner-dock-tab-label {
-    transition-duration: 0.01ms !important;
-    transition-delay: 0ms !important;
+  .reveal-right {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
   }
-  .corner-dock.deployed .corner-dock-tab-sweep { animation: none; }
-}
-
-/* ── HUD scan line above the stack ──────────────────────────────────────────── */
-.corner-dock-scan {
-  display: block;
-  height: 1px;
-  width: 52px;
-  margin-bottom: 3px;
-  border-radius: 99px;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  opacity: 0;
-  transform: scaleX(0.15);
-  transform-origin: right center;
-  transition: opacity 0.4s var(--ease), transform 0.55s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 0 8px var(--accent-glow);
-}
-.corner-dock.deployed .corner-dock-scan {
-  opacity: 0.85;
-  transform: scaleX(1);
-  transition-delay: 60ms;
-  animation: dockScanPulse 3s ease-in-out infinite;
-}
-@keyframes dockScanPulse {
-  0%, 100% { opacity: 0.45; }
-  50%      { opacity: 1; }
+  .hero-dock-fly { transform: none !important; opacity: 1 !important; }
+  .hero-dock-chip { display: none; }
 }

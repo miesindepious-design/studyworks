@@ -32,9 +32,7 @@ import { syncStreak } from './db/streaks';
 import { mergeByLWW, mergeTier } from './utils/merge';
 import { getAccent, accentCssVars, accentGlow } from './config/accents';
 import Achievements from './components/Achievements';
-import GoalTracker from './components/GoalTracker';
 import AdminDashboard from './components/AdminDashboard';
-import { CornerDock } from './components/CornerDock';
 import { NAV_ITEMS, PAGE_TITLES, type View } from './config/nav';
 
 type Theme = 'light' | 'dark' | 'system';
@@ -606,23 +604,19 @@ export default function App() {
               }} />
             )}
             {currentView === 'dashboard' && (
-              <>
-                {/* Greeting hero first, then the daily-goals tracker below */}
-                <Dashboard
-                  userName={userName}
-                  trialDaysLeft={trialDaysLeft}
-                  notes={notesUR.state} contacts={contactsUR.state} flashcards={flashcardsUR.state}
-                  tier={tier} totalItems={totalItems}
-                  aiSummariesThisMonth={db.aiSummariesThisMonth} qaQueriesThisMonth={db.qaQueriesThisMonth}
-                  folders={db.folders} practiceQuestions={db.practiceQuestions}
-                  setCurrentView={navigateTo}
-                  aiReady={ai.isReady} aiProvider={ai.config.provider}
-                  onGenerateInsights={handleGenerateInsights}
-                  weeklyInsights={weeklyInsights}
-                  insightsLoading={insightsLoading}
-                />
-                <GoalTracker />
-              </>
+              <Dashboard
+                userName={userName}
+                trialDaysLeft={trialDaysLeft}
+                notes={notesUR.state} contacts={contactsUR.state} flashcards={flashcardsUR.state}
+                tier={tier} totalItems={totalItems}
+                aiSummariesThisMonth={db.aiSummariesThisMonth} qaQueriesThisMonth={db.qaQueriesThisMonth}
+                folders={db.folders} practiceQuestions={db.practiceQuestions}
+                setCurrentView={navigateTo}
+                aiReady={ai.isReady} aiProvider={ai.config.provider}
+                onGenerateInsights={handleGenerateInsights}
+                weeklyInsights={weeklyInsights}
+                insightsLoading={insightsLoading}
+              />
             )}
             {currentView === 'notes' && (
               <NotesView
@@ -740,13 +734,6 @@ export default function App() {
           onCancel={() => setDowngradeModal(false)}
         />
       )}
-
-      {/* Scroll-reveal corner dock — tabs deploy from the corner on scroll */}
-      <CornerDock
-        currentView={currentView}
-        onSelect={navigateTo}
-        hidden={showShortcuts || cmdkOpen || !db.onboardingDone}
-      />
 
       {/* Command palette */}
       <CommandPalette
