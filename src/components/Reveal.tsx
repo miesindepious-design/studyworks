@@ -8,14 +8,22 @@ interface RevealProps {
   className?: string;
   /** Make the wrapped element fill the wrapper (needed inside grids). */
   fill?: boolean;
+  /** Which edge the panel slides in from. Defaults to the left. */
+  side?: 'left' | 'right';
 }
 
 /**
- * Wraps a panel so it slides in from the right edge the first time it comes
+ * Wraps a panel so it slides in from the left edge the first time it comes
  * into view. Panels below the fold therefore feel like they are being dealt
- * onto the page from the right as you scroll down.
+ * onto the page from the left as you scroll down.
  */
-export default function Reveal({ children, delay = 0, className = '', fill = false }: RevealProps) {
+export default function Reveal({
+  children,
+  delay = 0,
+  className = '',
+  fill = false,
+  side = 'left',
+}: RevealProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -47,7 +55,7 @@ export default function Reveal({ children, delay = 0, className = '', fill = fal
 
   const classes = [
     'reveal-wrap',
-    'reveal-right',
+    side === 'right' ? 'reveal-right' : 'reveal-left',
     fill ? 'reveal-fill' : '',
     className,
   ].filter(Boolean).join(' ');

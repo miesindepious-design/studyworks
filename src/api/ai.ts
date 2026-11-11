@@ -183,14 +183,45 @@ export interface StudentProfile {
   department?:    string | null;
 }
 
+export interface StudentProfileResponse {
+  user: {
+    id: string;
+    email: string;
+    educationLevel: string | null;
+    schoolStage:    string | null;
+    schoolClass:    string | null;
+    universityYear: string | null;
+    department:     string | null;
+  };
+}
+
+/**
+ * Read the student's saved credentials. The Settings page uses this to
+ * render the profile card — without it the card always looked empty.
+ */
+export async function fetchStudentProfile(): Promise<StudentProfileResponse | null> {
+  try {
+    return await apiGet<StudentProfileResponse>('/api/ai/profile');
+  } catch (err) {
+    console.warn('[ai] fetchStudentProfile failed:', err);
+    return null;
+  }
+}
+
 /**
  * Persist the student credentials captured at signup (exact class in
  * primary/secondary school, exact year + department at university). The AI
  * tutor reads these server-side to tailor lessons to the student's exact level.
  */
 export async function saveStudentProfile(profile: StudentProfile) {
-  return apiPut<{ user: { id: string; email: string; educationLevel: string | null; schoolStage: string | null; schoolClass: string | null; universityYear: string | null; department: string | null } }>(
-    '/api/ai/profile',
-    profile,
-  );
+  return apiPut<StudentProfileResponse>('/api/ai/profile', profile);
 }
+
+/**
+ * Save the full student profile, including the generic study level used by
+ * the AI Tutor (high-school → phd).
+ */
+export async function saveFullStudentProfile(profile: StudentProfile & { educationLevel?: string | null }) {
+  return apiPut<StudentProfileResponse>('/api/ai/profile', profile);
+}
+

@@ -1,22 +1,22 @@
+import { SHORTCUT_DEFS, comboToKeys, resolveCombo } from '../config/shortcuts';
+import { useShortcutOverrides } from '../hooks/useShortcuts';
+
 interface ShortcutsModalProps {
   onClose: () => void;
 }
 
-const SHORTCUTS = [
-  { keys: ['⌘', 'Z'],        label: 'Undo' },
-  { keys: ['⌘', '⇧', 'Z'],   label: 'Redo' },
-  { keys: ['⌘', '1'],        label: 'Go to Dashboard' },
-  { keys: ['⌘', '2'],        label: 'Go to Notes' },
-  { keys: ['⌘', '3'],        label: 'Go to People' },
-  { keys: ['⌘', '4'],        label: 'Go to Flashcards' },
-  { keys: ['⌘', '5'],        label: 'Go to Pricing' },
-  { keys: ['⌘', '6'],        label: 'Go to Settings' },
-  { keys: ['Escape'],         label: 'Close modal / panel' },
-  { keys: ['Enter'],          label: 'Flip flashcard' },
-  { keys: ['?'],              label: 'Show keyboard shortcuts' },
-];
-
+/**
+ * The shortcuts reference sheet.
+ *
+ * It used to carry its own hardcoded list, which drifted away from the real
+ * bindings. It now renders the shared registry with any custom rebinds
+ * applied, so it always tells the truth.
+ */
 export default function ShortcutsModal({ onClose }: ShortcutsModalProps) {
+  const { overrides } = useShortcutOverrides();
+
+  const groups = ['Navigate', 'Edit', 'General'] as const;
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
@@ -28,19 +28,31 @@ export default function ShortcutsModal({ onClose }: ShortcutsModalProps) {
           <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-            {SHORTCUTS.map(s => (
-              <div key={s.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span className="text-sm text-muted">{s.label}</span>
-                <div style={{ display: 'flex', gap: '0.25rem' }}>
-                  {s.keys.map(k => (
-                    <span key={k} className="keycap">{k}</span>
-                  ))}
+          {groups.map(group => {
+            const items = SHORTCUT_DEFS.filter(d => d.group === group);
+            if (items.length === 0) return null;
+            return (
+              <div key={group} style={{ marginBottom: '1.25rem' }}>
+                <p className="cmdk-group-label" style={{ padding: 0, marginBottom: '0.5rem' }}>{group}</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+                  {items.map(d => {
+                    const combo = resolveCombo(overrides, d.id, d.combo);
+                    return (
+                      <div key={d.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+                        <span className="text-sm text-muted">{d.label}</span>
+                        <div style={{ display: 'flex', gap: '0.25rem', flexShrink: 0 }}>
+                          {comboToKeys(combo).map((k, i) => (
+                            <span key={`${k}-${i}`} className="keycap">{k}</span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-            ))}
-          </div>
-          <p className="text-xs text-muted" style={{ marginTop: '1.25rem' }}>On Windows/Linux, ⌘ = Ctrl</p>
+            );
+          })}
+          <p className="text-xs text-muted">On Windows/Linux, ⌘ = Ctrl · Rebind any of these in Settings.</p>
         </div>
       </div>
     </div>

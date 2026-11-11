@@ -354,8 +354,18 @@ export default function Dashboard({ userName, trialDaysLeft = 0, notes, contacts
   return (
     <div className="animate-in">
       {/* Hero — sits in the normal flow on arrival, then flies up and parks
-          itself in the top-right corner as you scroll down. */}
-      <HeroDock greeting={greeting} displayName={displayName} trialDaysLeft={trialDaysLeft}>
+          itself in the top-left corner as you scroll down. */}
+      <HeroDock
+        side="left"
+        chipIcon={(displayName.trim()[0] || '👋').toUpperCase()}
+        chipLabel={greeting}
+        chipMeta={displayName || undefined}
+        chipBadge={trialDaysLeft > 0 ? {
+          text: `🎁 ${trialDaysLeft}d`,
+          title: `Free Pro trial — ${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} left`,
+        } : null}
+        chipTitle="Back to top"
+      >
         <div>
           <h2 className="dash-hero-title">
             {displayName ? `${greeting}, ${displayName} 👋` : `${greeting} 👋`}

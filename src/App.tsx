@@ -19,6 +19,8 @@ import MultiplayerQuiz from './components/MultiplayerQuiz';
 import AuthPage from './components/AuthPage';
 import ConfirmModal from './components/ConfirmModal';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useShortcutOverrides } from './hooks/useShortcuts';
+import { SHORTCUT_BY_ID, isShortcutCaptureActive, matchesCombo, resolveCombo } from './config/shortcuts';
 import { useUndoRedo } from './hooks/useUndoRedo';
 import { useDB } from './hooks/useDB';
 import { useSession } from './hooks/useSession';
@@ -30,6 +32,7 @@ import CommandPalette, { type Command } from './components/CommandPalette';
 import { pullSync, pushSync } from './api/sync';
 import { syncStreak } from './db/streaks';
 import { mergeByLWW, mergeTier } from './utils/merge';
+import { buildExportPayload, downloadJSON } from './utils/dataExport';
 import { getAccent, accentCssVars, accentGlow } from './config/accents';
 import Achievements from './components/Achievements';
 import AdminDashboard from './components/AdminDashboard';
@@ -98,17 +101,23 @@ export default function App() {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [cmdkOpen, setCmdkOpen] = useState(false);
 
-  // Global ⌘K / Ctrl+K to open the command palette.
+  // Custom keyboard-shortcut overrides (rebound in Settings).
+  const { overrides } = useShortcutOverrides();
+
+  // Command palette — bound separately so it still opens while the user is
+  // typing in a note. Uses the same rebindable combo as everything else.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      if (isShortcutCaptureActive()) return;
+      const combo = resolveCombo(overrides, 'general.palette', SHORTCUT_BY_ID['general.palette'].combo);
+      if (matchesCombo(e, combo)) {
         e.preventDefault();
         setCmdkOpen(o => !o);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [overrides]);
   const addToast    = useCallback((message: string, type: 'success'|'error'|'info' = 'info') =>
     setToasts(p => [...p, { id: Date.now(), message, type }]), []);
   const removeToast = (id: number) => setToasts(p => p.filter(t => t.id !== id));
@@ -340,20 +349,35 @@ export default function App() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
-  const shortcuts = useCallback((): Record<string, (e: KeyboardEvent) => void> => ({
-    'mod+z':       () => { notesUR.undo(); contactsUR.undo(); flashcardsUR.undo(); addToast('Undone', 'info'); },
-    'mod+shift+z': () => { notesUR.redo(); contactsUR.redo(); flashcardsUR.redo(); addToast('Redone', 'info'); },
-    'mod+1': () => setCurrentView('dashboard'),
-    'mod+2': () => setCurrentView('notes'),
-    'mod+3': () => setCurrentView('contacts'),
-    'mod+4': () => setCurrentView('flashcards'),
-    'mod+5': () => setCurrentView('pricing'),
-    'mod+6': () => setCurrentView('settings'),
-    '?':      () => setShowShortcuts(s => !s),
-    'escape': () => setShowShortcuts(false),
-  }), [notesUR, contactsUR, flashcardsUR, addToast]);
+  // Built from the shared registry (src/config/shortcuts.ts) so a rebind in
+  // Settings changes the real behaviour, not just a label.
+  const shortcutMap = useMemo<Record<string, (e: KeyboardEvent) => void>>(() => {
+    const combo = (id: string) => resolveCombo(overrides, id, SHORTCUT_BY_ID[id].combo);
+    const map: Record<string, (e: KeyboardEvent) => void> = {};
+    const bind = (id: string, fn: () => void) => {
+      map[combo(id)] = (e) => { e.preventDefault(); fn(); };
+    };
 
-  useKeyboardShortcuts(shortcuts(), !db.onboardingDone || db.status !== 'ready');
+    bind('edit.undo', () => { notesUR.undo(); contactsUR.undo(); flashcardsUR.undo(); addToast('Undone', 'info'); });
+    bind('edit.redo', () => { notesUR.redo(); contactsUR.redo(); flashcardsUR.redo(); addToast('Redone', 'info'); });
+    bind('nav.dashboard',  () => setCurrentView('dashboard'));
+    bind('nav.notes',      () => setCurrentView('notes'));
+    bind('nav.contacts',   () => setCurrentView('contacts'));
+    bind('nav.flashcards', () => setCurrentView('flashcards'));
+    bind('nav.pricing',    () => setCurrentView('pricing'));
+    bind('nav.settings',   () => setCurrentView('settings'));
+    bind('general.help',   () => setShowShortcuts(s => !s));
+    bind('general.escape', () => setShowShortcuts(false));
+
+    return map;
+    // `notesUR.undo` etc. are stable callbacks — depending on them instead of
+    // the whole object keeps the listener from being re-registered on every
+    // render.
+  }, [overrides, notesUR.undo, contactsUR.undo, flashcardsUR.undo, notesUR.redo, contactsUR.redo, flashcardsUR.redo, addToast]);
+
+  // NOTE: the previous flag was inverted — shortcuts were enabled *while*
+  // onboarding and never worked for a normal signed-in user.
+  useKeyboardShortcuts(shortcutMap, db.onboardingDone && db.status === 'ready');
 
   // ── Tier management ───────────────────────────────────────────────────────
   // Upgrades are now real Stripe flows triggered inside PricingView. The
@@ -399,16 +423,15 @@ export default function App() {
   // ── Export / Import ───────────────────────────────────────────────────────
   const exportData = () => {
     if (tier !== 'pro') { addToast('Export is a Pro feature!', 'info'); setCurrentView('pricing'); return; }
-    const payload = {
-      notes: notesUR.state, contacts: contactsUR.state, flashcards: flashcardsUR.state,
-      folders: db.folders, practiceQuestions: db.practiceQuestions,
-      savedSearches: db.savedSearches, exportedAt: new Date().toISOString(),
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `studyworks-export-${new Date().toISOString().split('T')[0]}.json`; a.click();
-    URL.revokeObjectURL(url); addToast('Data exported!', 'success');
+    downloadJSON(buildExportPayload({
+      notes:             notesUR.state,
+      contacts:          contactsUR.state,
+      flashcards:        flashcardsUR.state,
+      folders:           db.folders,
+      practiceQuestions: db.practiceQuestions,
+      savedSearches:     db.savedSearches,
+    }));
+    addToast('Data exported!', 'success');
   };
 
   // ── Loading / error / auth gate ──────────────────────────────────────────
@@ -596,8 +619,10 @@ export default function App() {
 
           {/* Pages — keyed wrapper animates on view switch */}
           <div className="page-content view-enter" key={currentView}>
-            {/* Notification permission nudge — shows once until granted or dismissed */}
-            {notif.supported && notif.permission === 'default' && (
+            {/* Notification permission nudge — shows once until granted or
+                dismissed. Hidden on Settings, which owns a full Notifications
+                card, so the two don't compete. */}
+            {notif.supported && notif.permission === 'default' && currentView !== 'settings' && (
               <NotifBanner onEnable={async () => {
                 const result = await notif.request();
                 if (result === 'granted') addToast('🔔 Reminders enabled! You\'ll get notified when items are due.', 'success');
@@ -689,7 +714,22 @@ export default function App() {
               />
             )}
             {currentView === 'settings' && (
-              <SettingsView notif={notif} tier={tier} onAddToast={addToast} onShowShortcuts={() => setShowShortcuts(true)} onAISaved={ai.reloadConfig} folders={db.folders} theme={theme} onThemeChange={db.setTheme} accent={db.accent} onAccentChange={db.setAccent} />
+              <SettingsView
+                notif={notif} tier={tier} onAddToast={addToast}
+                onShowShortcuts={() => setShowShortcuts(true)}
+                onAISaved={ai.reloadConfig}
+                folders={db.folders}
+                theme={theme} onThemeChange={db.setTheme}
+                accent={db.accent} onAccentChange={db.setAccent}
+                data={{
+                  notes:             notesUR.state,
+                  contacts:          contactsUR.state,
+                  flashcards:        flashcardsUR.state,
+                  practiceQuestions: db.practiceQuestions,
+                  savedSearches:     db.savedSearches,
+                }}
+                displayName={userName}
+              />
             )}
             {currentView === 'multiplayer' && (
               <MultiplayerQuiz

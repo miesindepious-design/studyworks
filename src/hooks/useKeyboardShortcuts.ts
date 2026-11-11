@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { isShortcutCaptureActive, matchesCombo } from '../config/shortcuts';
 
 export type ShortcutMap = {
   [combo: string]: (e: KeyboardEvent) => void;
@@ -14,31 +15,18 @@ export function useKeyboardShortcuts(shortcuts: ShortcutMap, enabled = true) {
     if (!enabled) return;
 
     const handler = (e: KeyboardEvent) => {
+      // The Settings shortcut editor is mid-capture — it owns the keyboard.
+      if (isShortcutCaptureActive()) return;
+
       // Don't fire when user is typing in an input/textarea
       const tag = (e.target as HTMLElement)?.tagName;
       const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 
-      const mod  = e.metaKey || e.ctrlKey;
-      const shift = e.shiftKey;
-      const key  = e.key.toLowerCase();
-
       for (const [combo, cb] of Object.entries(shortcuts)) {
-        const parts   = combo.toLowerCase().split('+');
-        const needMod  = parts.includes('mod') || parts.includes('ctrl');
-        const needShift = parts.includes('shift');
-        const mainKey  = parts[parts.length - 1];
-
-        const isEscape = mainKey === 'escape';
-
+        const isEscape = combo.toLowerCase().split('+').pop() === 'escape';
         if (isTyping && !isEscape) continue;
 
-        if (
-          mainKey === key &&
-          (!needMod  || mod) &&
-          (!needShift || shift) &&
-          (needMod  === mod  || !needMod) &&
-          (needShift === shift || !needShift)
-        ) {
+        if (matchesCombo(e, combo)) {
           e.preventDefault();
           cb(e);
           break;

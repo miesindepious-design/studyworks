@@ -479,17 +479,47 @@ const ProfileBody = z.object({
   department:     z.string().max(80).optional().nullable(),
 });
 
+// ── GET /api/ai/profile ──────────────────────────────────────────────────────
+// The Settings page needs the saved student credentials to render the
+// profile card. The session middleware already carries every field, so this
+// is a straight read — no extra database round-trip.
+aiRouter.get('/profile', async c => {
+  const user = c.get('user');
+  return c.json({
+    user: {
+      id:             user.id,
+      email:          user.email,
+      educationLevel: user.educationLevel ?? null,
+      schoolStage:    user.schoolStage    ?? null,
+      schoolClass:    user.schoolClass    ?? null,
+      universityYear: user.universityYear ?? null,
+      department:     user.department     ?? null,
+    },
+  });
+});
+
 aiRouter.put('/profile', zValidator('json', ProfileBody), async c => {
   const user = c.get('user');
   const body = c.req.valid('json');
 
   // Keep the generic educationLevel in sync so the tutor dropdown stays
   // consistent with the structured profile captured at signup.
-  const derivedLevel =
+  //
+  // An explicitly supplied educationLevel always wins — the Settings page
+  // lets a student say "Graduate" or "PhD", which the stage alone can't
+  // express. When no level is sent (the signup flow), it is derived from
+  // the stage as before.
+  const derivedFromStage =
     body.schoolStage === 'primary'   ? 'high-school' :
     body.schoolStage === 'secondary' ? 'high-school' :
-    body.schoolStage === 'university' ? 'university' :
-    body.educationLevel ?? null;
+    body.schoolStage === 'university' ? 'university' : null;
+
+  const explicitLevel =
+    typeof body.educationLevel === 'string' && body.educationLevel.trim()
+      ? body.educationLevel
+      : null;
+
+  const derivedLevel = explicitLevel ?? derivedFromStage;
 
   const updated = await prisma.user.update({
     where: { id: user.id },

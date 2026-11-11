@@ -1,32 +1,19 @@
 /**
  * StudyTimer — Pomodoro timer with circular progress, daily session counter,
  * Web Audio beep, auto-start breaks, and localStorage persistence.
+ *
+ * The timer *settings* live in a shared store (src/hooks/useTimerSettings.ts)
+ * and are rendered by a shared panel (src/components/TimerSettingsPanel.tsx),
+ * so the Timer tab and the Settings page can never disagree about them.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useTimerSettings } from '../hooks/useTimerSettings';
+import TimerSettingsPanel, { playBeep } from './TimerSettingsPanel';
+
+export type { TimerSettings } from '../hooks/useTimerSettings';
 
 const FOCUS_MS = 25 * 60_000;
-
-export interface TimerSettings {
-  focusDuration: number;   // minutes
-  breakDuration: number;   // minutes
-  autoStartBreak: boolean;
-  soundEnabled: boolean;
-}
-const DEFAULT_SETTINGS: TimerSettings = {
-  focusDuration: 25,
-  breakDuration: 5,
-  autoStartBreak: false,
-  soundEnabled:  true,
-};
-
-function loadSettings(): TimerSettings {
-  try {
-    const raw = localStorage.getItem('studyworks:timerSettings');
-    if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
-  } catch {}
-  return DEFAULT_SETTINGS;
-}
 
 function loadDailyCounters(): { count: number; date: string } {
   try {
@@ -44,25 +31,6 @@ function saveDailyCounters(counters: { count: number; date: string }) {
   localStorage.setItem('studyworks:timerDaily', JSON.stringify(counters));
 }
 
-function playBeep() {
-  try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const now = ctx.currentTime;
-    [0, 0.18, 0.36].forEach((offset, i) => {
-      const osc  = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(i === 0 ? 880 : 660, now + offset);
-      gain.gain.setValueAtTime(0.35, now + offset);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.14);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(now + offset);
-      osc.stop(now + offset + 0.15);
-    });
-    setTimeout(() => ctx.close(), 1200);
-  } catch {}
-}
-
 function formatTime(ms: number): string {
   const totalSec = Math.max(0, Math.ceil(ms / 1000));
   const m = Math.floor(totalSec / 60);
@@ -73,7 +41,7 @@ function formatTime(ms: number): string {
 type Phase = 'focus' | 'break';
 
 export default function StudyTimer() {
-  const [settings, setSettings]     = useState<TimerSettings>(DEFAULT_SETTINGS);
+  const { settings, update: updateSetting } = useTimerSettings();
   const [task, setTask]             = useState('');
   const [phase, setPhase]           = useState<Phase>('focus');
   const [remaining, setRemaining]   = useState(FOCUS_MS);
@@ -86,9 +54,8 @@ export default function StudyTimer() {
   const lastTick  = useRef<number>(0);
   const endedRef  = useRef(false);
 
-  // Hydrate settings + counters from localStorage once on mount.
+  // Hydrate daily counters once on mount.
   useEffect(() => {
-    setSettings(loadSettings());
     setCounters(loadDailyCounters());
   }, []);
 
@@ -100,11 +67,6 @@ export default function StudyTimer() {
       setRemaining(phase === 'focus' ? focusMs : breakMs);
     }
   }, [settings.focusDuration, settings.breakDuration, phase, running]);
-
-  // Persist settings.
-  useEffect(() => {
-    localStorage.setItem('studyworks:timerSettings', JSON.stringify(settings));
-  }, [settings]);
 
   // Persist daily counters.
   useEffect(() => {
@@ -191,10 +153,6 @@ export default function StudyTimer() {
       setRemaining(focusMs);
     }
   }, [phase, focusMs, breakMs]);
-
-  const updateSetting = <K extends keyof TimerSettings>(key: K, value: TimerSettings[K]) => {
-    setSettings(s => ({ ...s, [key]: value }));
-  };
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -360,7 +318,8 @@ export default function StudyTimer() {
         </div>
       </div>
 
-      {/* Timer settings panel */}
+      {/* Timer settings panel — the same component the Settings page renders,
+          reading the same store, so the two can never drift apart. */}
       {showSettings && (
         <div className="card study-timer-settings animate-in">
           <div className="card-header">
@@ -370,77 +329,7 @@ export default function StudyTimer() {
             </button>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            {/* Focus duration */}
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                <label className="form-label">Focus duration</label>
-                <span className="text-sm" style={{ fontWeight: 700, color: 'var(--accent)' }}>
-                  {settings.focusDuration} min
-                </span>
-              </div>
-              <input
-                type="range" min="5" max="60" step="5"
-                value={settings.focusDuration}
-                onChange={e => updateSetting('focusDuration', +e.target.value)}
-                style={{ width: '100%', accentColor: 'var(--accent)' }}
-              />
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span className="text-xs text-muted">5 min</span>
-                <span className="text-xs text-muted">60 min</span>
-              </div>
-            </div>
-
-            {/* Break duration */}
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                <label className="form-label">Break duration</label>
-                <span className="text-sm" style={{ fontWeight: 700, color: 'var(--accent)' }}>
-                  {settings.breakDuration} min
-                </span>
-              </div>
-              <input
-                type="range" min="1" max="30" step="1"
-                value={settings.breakDuration}
-                onChange={e => updateSetting('breakDuration', +e.target.value)}
-                style={{ width: '100%', accentColor: 'var(--accent)' }}
-              />
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span className="text-xs text-muted">1 min</span>
-                <span className="text-xs text-muted">30 min</span>
-              </div>
-            </div>
-
-            {/* Auto-start break */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <p style={{ fontWeight: 600, fontSize: '0.875rem' }}>Auto-start breaks</p>
-                <p className="text-xs text-muted">Automatically start the break after each focus session.</p>
-              </div>
-              <button
-                className="toggle"
-                onClick={() => updateSetting('autoStartBreak', !settings.autoStartBreak)}
-                role="switch" aria-checked={settings.autoStartBreak}
-              />
-            </div>
-
-            {/* Sound on/off */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <p style={{ fontWeight: 600, fontSize: '0.875rem' }}>🔔 Sound notification</p>
-                <p className="text-xs text-muted">Play a chime when each session ends.</p>
-              </div>
-              <button
-                className="toggle"
-                onClick={() => {
-                  const next = !settings.soundEnabled;
-                  updateSetting('soundEnabled', next);
-                  if (next) playBeep();
-                }}
-                role="switch" aria-checked={settings.soundEnabled}
-              />
-            </div>
-          </div>
+          <TimerSettingsPanel settings={settings} onChange={updateSetting} />
         </div>
       )}
     </div>

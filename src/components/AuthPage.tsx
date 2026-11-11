@@ -7,24 +7,15 @@ import { useState, useEffect } from 'react';
 import { signIn, signUp, forgotPassword, signInWithGoogle } from '../api/auth';
 import type { AuthUser } from '../api/auth';
 import { saveStudentProfile } from '../api/ai';
+import {
+  PRIMARY_CLASSES,
+  SECONDARY_CLASSES,
+  UNIVERSITY_YEARS,
+  UNIVERSITY_DEPARTMENTS,
+  type SchoolStage,
+} from '../config/studentProfile';
 
 type AuthMode = 'signin' | 'signup' | 'forgot';
-
-type SchoolStage = 'primary' | 'secondary' | 'university';
-
-const PRIMARY_CLASSES  = ['Primary 1', 'Primary 2', 'Primary 3', 'Primary 4', 'Primary 5', 'Primary 6'];
-const SECONDARY_CLASSES = ['JSS 1', 'JSS 2', 'JSS 3', 'SS 1', 'SS 2', 'SS 3'];
-const UNIVERSITY_YEARS = ['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5', 'Postgraduate'];
-const UNIVERSITY_DEPARTMENTS = [
-  'Accounting', 'Agriculture', 'Anatomy', 'Architecture', 'Banking & Finance',
-  'Biochemistry', 'Biology', 'Business Administration', 'Chemistry',
-  'Computer Science', 'Dentistry', 'Economics', 'Education', 'Engineering',
-  'English & Literary Studies', 'Estate Management', 'History',
-  'International Relations', 'Law', 'Linguistics', 'Mass Communication',
-  'Mathematics', 'Medicine & Surgery', 'Microbiology', 'Nursing Science',
-  'Pharmacy', 'Physics', 'Physiology', 'Political Science', 'Psychology',
-  'Sociology', 'Statistics', 'Other',
-];
 
 function passwordStrength(pw: string): { score: number; label: string; color: string } {
   if (!pw) return { score: 0, label: '', color: 'transparent' };

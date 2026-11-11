@@ -2128,9 +2128,10 @@ input:-webkit-autofill:focus {
 
 /* ════════════════════════════════════════════════════════════════════════════
    Scroll Cascade
-   1. The welcome banner flies up and parks itself in the top-right corner.
-   2. Every panel below it slides in from the right edge as it scrolls into
-      view, so the dashboard feels like cards being dealt onto the page.
+   1. The hero banner flies up and parks itself in the top-left corner.
+   2. Every panel below it slides in from the left edge as it scrolls into
+      view, so the page feels like cards being dealt onto the page.
+   The corner is configurable per hero (dashboard + settings both park left).
    ════════════════════════════════════════════════════════════════════════════ */
 
 /* ── Hero → corner ─────────────────────────────────────────────────────────── */
@@ -2142,15 +2143,16 @@ input:-webkit-autofill:focus {
    not carry a CSS transition of its own. */
 .hero-dock-fly {
   display: flow-root;
-  transform-origin: top left;
   will-change: transform, opacity;
 }
+/* Shrink toward the edge the banner is flying to. */
+.hero-dock-slot-left  .hero-dock-fly { transform-origin: top left; }
+.hero-dock-slot-right .hero-dock-fly { transform-origin: top right; }
 
 /* The chip the banner parks as */
 .hero-dock-chip {
   position: fixed;
   top: 72px;
-  right: 18px;
   z-index: 26;
   display: flex;
   align-items: center;
@@ -2177,6 +2179,14 @@ input:-webkit-autofill:focus {
   cursor: pointer;
   user-select: none;
   opacity: 0;
+}
+/* Parked corner + the direction the chip slides in from. */
+.hero-dock-chip-left {
+  left: 18px;
+  transform: translate3d(-120%, 0, 0) scale(0.93);
+}
+.hero-dock-chip-right {
+  right: 18px;
   transform: translate3d(120%, 0, 0) scale(0.93);
 }
 .hero-dock-chip-avatar {
@@ -2219,12 +2229,27 @@ input:-webkit-autofill:focus {
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
 }
 
-/* ── Panels sliding in from the right ─────────────────────────────────────── */
+/* ── Panels sliding in from the left ──────────────────────────────────────── */
 .reveal-wrap {
   min-width: 0;
 }
 .reveal-fill > * { height: 100%; }
 
+.reveal-left {
+  opacity: 0;
+  transform: translate3d(-76px, 0, 0) scale(0.988);
+  transition:
+    opacity 520ms var(--ease) var(--rv-delay, 0ms),
+    transform 720ms cubic-bezier(0.16, 1, 0.3, 1) var(--rv-delay, 0ms);
+  will-change: transform, opacity;
+}
+.reveal-left.is-in {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+}
+
+/* Right-hand variant — kept for any panel that should arrive from the other
+   edge (e.g. a "coming back" panel). */
 .reveal-right {
   opacity: 0;
   transform: translate3d(76px, 0, 0) scale(0.988);
@@ -2238,19 +2263,81 @@ input:-webkit-autofill:focus {
   transform: translate3d(0, 0, 0) scale(1);
 }
 
+/* ── Settings hero banner ─────────────────────────────────────────────────── */
+.settings-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.75rem;
+  padding: 1.75rem 2rem;
+  border-radius: var(--r-xl);
+  background:
+    radial-gradient(600px 240px at 8% -40%, rgba(255, 81, 54, .22), transparent 70%),
+    radial-gradient(500px 240px at 92% 140%, rgb(79 140 255 / .14), transparent 70%),
+    linear-gradient(135deg, var(--surface-1), var(--surface-0));
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-md);
+  position: relative;
+  overflow: hidden;
+  animation: slideUp var(--t-slow) var(--ease) both;
+}
+.settings-hero::before {
+  content: "";
+  position: absolute; inset: 0;
+  background: radial-gradient(380px 200px at 4% 0%, rgba(255, 81, 54, .10), transparent 70%);
+  pointer-events: none;
+}
+.settings-hero-title {
+  font-size: 1.875rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  background: linear-gradient(120deg, var(--text), var(--accent));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.settings-hero-stats {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.settings-hero-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: var(--r-full);
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-1) 70%, transparent);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-2);
+}
+
 /* ── Responsive ────────────────────────────────────────────────────────────── */
 @media (max-width: 900px) {
   .hero-dock-chip {
     top: 62px;
-    right: 12px;
     max-width: min(240px, calc(100vw - 1.5rem));
     font-size: 0.75rem;
   }
+  .hero-dock-chip-left  { left: 12px; }
+  .hero-dock-chip-right { right: 12px; }
   .hero-dock-chip-badge { display: none; }
+  .reveal-left  { transform: translate3d(-44px, 0, 0) scale(0.99); }
   .reveal-right { transform: translate3d(44px, 0, 0) scale(0.99); }
+  .settings-hero { padding: 1.25rem; }
+  .settings-hero-title { font-size: 1.25rem; }
+}
+
+@media (max-width: 640px) {
+  .settings-hero { padding: 1.25rem; }
+  .settings-hero-title { font-size: 1.25rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .reveal-left,
   .reveal-right {
     opacity: 1 !important;
     transform: none !important;
@@ -2259,3 +2346,4 @@ input:-webkit-autofill:focus {
   .hero-dock-fly { transform: none !important; opacity: 1 !important; }
   .hero-dock-chip { display: none; }
 }
+

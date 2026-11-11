@@ -5,21 +5,27 @@
  * Rendered inside SettingsView. Folder sharing is Pro-only (enforced server
  * side too); the UI shows an upgrade nudge for free users.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { Folder } from '../types';
 import {
   listShares, createShare, revokeShare, type FolderShare,
   getInboundAddress, type InboundAddress,
   listTickets, createTicket, type SupportTicket,
 } from '../api/phase2';
+import Reveal from './Reveal';
 
 interface Props {
   folders: Folder[];
   tier: string;
   onAddToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
+  /**
+   * Wrap each card in the scroll-cascade reveal. Each of the three tools gets
+   * its own panel so they arrive one after another instead of as one block.
+   */
+  reveal?: boolean;
 }
 
-export default function Phase2Tools({ folders, tier, onAddToast }: Props) {
+export default function Phase2Tools({ folders, tier, onAddToast, reveal = false }: Props) {
   const isPro = tier === 'pro';
 
   // ── Folder sharing ──────────────────────────────────────────────────────────
@@ -86,9 +92,14 @@ export default function Phase2Tools({ folders, tier, onAddToast }: Props) {
 
   const folderName = (id: string) => folders.find(f => f.id === id)?.name ?? 'Unknown folder';
 
+  /** Wrap a card in the cascade reveal when the page asked for it. */
+  const panel = (delay: number, card: ReactNode) =>
+    reveal ? <Reveal delay={delay}>{card}</Reveal> : card;
+
   return (
     <>
       {/* ── Folder sharing ── */}
+      {panel(0, (
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div className="card-header">
           <span className="card-title">🔗 Folder Sharing</span>
@@ -125,8 +136,10 @@ export default function Phase2Tools({ folders, tier, onAddToast }: Props) {
           </>
         )}
       </div>
+      ))}
 
       {/* ── Email-to-save ── */}
+      {panel(60, (
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div className="card-header"><span className="card-title">📧 Save by Email</span></div>
         {inbound?.enabled && inbound.address ? (
@@ -141,8 +154,10 @@ export default function Phase2Tools({ folders, tier, onAddToast }: Props) {
           <p className="text-sm text-muted">Email-to-save isn't configured on this server yet. Once an inbound email domain is set up, your personal save address will appear here.</p>
         )}
       </div>
+      ))}
 
       {/* ── Support ── */}
+      {panel(120, (
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div className="card-header"><span className="card-title">💬 Contact Support</span></div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1rem' }}>
@@ -167,6 +182,7 @@ export default function Phase2Tools({ folders, tier, onAddToast }: Props) {
           </div>
         )}
       </div>
+      ))}
     </>
   );
 }
