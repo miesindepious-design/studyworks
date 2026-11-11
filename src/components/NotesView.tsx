@@ -772,7 +772,13 @@ export default function NotesView({
         );
       })()}
       <div className="page-header">
-        <h2>Notes &amp; Knowledge Base</h2>
+        <div>
+          <span className="sw-label">Study</span>
+          <h2>Notes &amp; Knowledge Base</h2>
+          <p className="text-sm text-muted">
+            {filteredNotes.length} note{filteredNotes.length === 1 ? '' : 's'} in {selectedFolder ? folders.find(f => f.id === selectedFolder)?.name || 'this folder' : 'your library'}
+          </p>
+        </div>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
           {ai.isReady
             ? <span className="tag success" title={`Provider: ${ai.config.provider} · Model: ${ai.config.model}`}>
@@ -1194,7 +1200,7 @@ export default function NotesView({
               )}
 
                 {!bulkMode && (
-                  <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                  <div className="note-card-actions">
                     <button className="btn btn-ghost btn-xs" onClick={() => startEdit(note)}>✏️ Edit</button>
                     <button className="btn btn-ghost btn-xs" title="Focus mode" onClick={() => enterFocusMode(note)}>🧘 Focus</button>
                     <button
@@ -1238,7 +1244,6 @@ export default function NotesView({
                       title="Set revisit reminder"
                       onClick={() => { setReminderNoteId(showReminderForm ? null : note.id); setReminderDate(''); }}
                     >⏰</button>
-                    <button className="btn btn-ghost btn-xs" title="Focus mode — distraction-free editing" onClick={() => enterFocusMode(note)}>🧘 Focus</button>
                     <button className="btn btn-ghost btn-xs" onClick={() => {
                       const opening = !isExpanded;
                       setExpandedNoteId(opening ? note.id : null);

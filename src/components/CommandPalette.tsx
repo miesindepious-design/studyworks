@@ -5,11 +5,12 @@
  * arrow keys to move, Enter to run, Esc to close. Closes on outside click.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 
 export interface Command {
   id: string;
   label: string;
-  icon: string;
+  icon: ReactNode;
   group: string;
   hint?: string;
   danger?: boolean;
@@ -106,8 +107,7 @@ export default function CommandPalette({ open, onClose, commands }: Props) {
             onChange={e => { setQuery(e.target.value); setActive(0); }}
           />
           <span className="cmdk-hint">ESC</span>
-        </div>
-        <div className="cmdk-list" ref={listRef}>
+        </div>        <div className="cmdk-list" ref={listRef}>
           {filtered.length === 0 && (
             <div className="cmdk-empty">No commands match “{query}”.</div>
           )}

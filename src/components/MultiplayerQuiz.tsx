@@ -287,12 +287,13 @@ export default function MultiplayerQuiz({ db, userId, userName, tier, setCurrent
   if (phase === 'lobby' && !connected) {
     return (
       <div className="animate-in" style={{ maxWidth: 720, margin: '0 auto' }}>
-        <div className="dash-hero" style={{ marginBottom: '1.25rem' }}>
-          <div>
-            <h2 className="dash-hero-title">Quiz Battle</h2>
-            <p className="text-muted">Host a room with your flashcards, share the code, and play live. Use power-ups, build streaks for bonus XP, and climb the leaderboard.</p>
+        <div className="sw-hero" style={{ marginBottom: '1.25rem' }}>
+          <div className="sw-hero-main">
+            <span className="sw-label">Create</span>
+            <h2 className="sw-hero-title" style={{ fontSize: '1.5rem', marginTop: 6 }}>Quiz Battle</h2>
+            <p className="sw-hero-sub">Host a room with your flashcards, share the code, and play live. Use power-ups, build streaks for bonus XP, and climb the leaderboard.</p>
           </div>
-          {tier !== 'pro' && <span className="tag" style={{ background: 'var(--accent-soft)', color: 'var(--accent-ink)' }}>Pro</span>}
+          {tier !== 'pro' && <span className="sw-chip accent">Pro</span>}
         </div>
 
         <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>

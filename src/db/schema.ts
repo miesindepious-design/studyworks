@@ -95,6 +95,21 @@ export interface StudyWorksDB extends DBSchema {
 // ── Singleton DB promise ───────────────────────────────────────────────────────
 let _db: IDBPDatabase<StudyWorksDB> | null = null;
 
+/**
+ * Create an object store only if it does not already exist.
+ *
+ * IndexedDB upgrade transactions abort entirely if `createObjectStore` throws
+ * on a name that already exists, which would leave the database stuck at its
+ * old version and break the app for that user permanently. A store can end
+ * up pre-existing if an earlier upgrade was interrupted, so every store
+ * creation below is guarded.
+ */
+function ensureStore(db: IDBPDatabase<any>, name: string, keyPath: string): void {
+  if (!db.objectStoreNames.contains(name)) {
+    db.createObjectStore(name, { keyPath });
+  }
+}
+
 export async function getDB(): Promise<IDBPDatabase<StudyWorksDB>> {
   if (_db) return _db;
 
@@ -103,51 +118,63 @@ export async function getDB(): Promise<IDBPDatabase<StudyWorksDB>> {
       // v0 → v1: create all stores
       if (oldVersion < 1) {
         // notes
-        const notesStore = db.createObjectStore('notes', { keyPath: 'id' });
-        notesStore.createIndex('by_folder',  'folderId', { unique: false });
-        notesStore.createIndex('by_type',    'type',     { unique: false });
-        notesStore.createIndex('by_updated', 'updatedAt',{ unique: false });
+        if (!db.objectStoreNames.contains('notes')) {
+          const notesStore = db.createObjectStore('notes', { keyPath: 'id' });
+          notesStore.createIndex('by_folder',  'folderId', { unique: false });
+          notesStore.createIndex('by_type',    'type',     { unique: false });
+          notesStore.createIndex('by_updated', 'updatedAt',{ unique: false });
+        }
 
         // contacts
-        const contactsStore = db.createObjectStore('contacts', { keyPath: 'id' });
-        contactsStore.createIndex('by_folder', 'folderId', { unique: false });
+        if (!db.objectStoreNames.contains('contacts')) {
+          const contactsStore = db.createObjectStore('contacts', { keyPath: 'id' });
+          contactsStore.createIndex('by_folder', 'folderId', { unique: false });
+        }
 
         // flashcards
-        const fcStore = db.createObjectStore('flashcards', { keyPath: 'id' });
-        fcStore.createIndex('by_folder',     'folderId',   { unique: false });
-        fcStore.createIndex('by_difficulty', 'difficulty', { unique: false });
-        fcStore.createIndex('by_next_review','nextReview', { unique: false });
+        if (!db.objectStoreNames.contains('flashcards')) {
+          const fcStore = db.createObjectStore('flashcards', { keyPath: 'id' });
+          fcStore.createIndex('by_folder',     'folderId',   { unique: false });
+          fcStore.createIndex('by_difficulty', 'difficulty', { unique: false });
+          fcStore.createIndex('by_next_review','nextReview', { unique: false });
+        }
 
         // folders
-        db.createObjectStore('folders', { keyPath: 'id' });
+        ensureStore(db, 'folders', 'id');
 
         // practice questions
-        const pqStore = db.createObjectStore('practice_questions', { keyPath: 'id' });
-        pqStore.createIndex('by_note', 'noteId', { unique: false });
+        if (!db.objectStoreNames.contains('practice_questions')) {
+          const pqStore = db.createObjectStore('practice_questions', { keyPath: 'id' });
+          pqStore.createIndex('by_note', 'noteId', { unique: false });
+        }
 
         // saved searches
-        db.createObjectStore('saved_searches', { keyPath: 'id' });
+        ensureStore(db, 'saved_searches', 'id');
 
         // settings (theme, tier, counters)
-        db.createObjectStore('settings', { keyPath: 'key' });
+        ensureStore(db, 'settings', 'key');
       }
       // v1 → v2: add streaks store
       if (oldVersion < 2) {
-        db.createObjectStore('streaks', { keyPath: 'id' });
+        ensureStore(db, 'streaks', 'id');
       }
       // v2 → v3: add note_versions, achievements, goals, sessions, study_groups
       if (oldVersion < 3) {
-        const nvStore = db.createObjectStore('note_versions', { keyPath: 'id' });
-        nvStore.createIndex('by_note', 'noteId', { unique: false });
-        db.createObjectStore('achievements', { keyPath: 'id' });
-        db.createObjectStore('study_goals', { keyPath: 'id' });
-        db.createObjectStore('study_sessions', { keyPath: 'id' });
-        db.createObjectStore('study_groups', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('note_versions')) {
+          const nvStore = db.createObjectStore('note_versions', { keyPath: 'id' });
+          nvStore.createIndex('by_note', 'noteId', { unique: false });
+        }
+        ensureStore(db, 'achievements', 'id');
+        ensureStore(db, 'study_goals', 'id');
+        ensureStore(db, 'study_sessions', 'id');
+        ensureStore(db, 'study_groups', 'id');
       }
       // v3 → v4: add flashcard_sessions store
       if (oldVersion < 4) {
-        const fsStore = db.createObjectStore('flashcard_sessions', { keyPath: 'id' });
-        fsStore.createIndex('by_date', 'date', { unique: false });
+        if (!db.objectStoreNames.contains('flashcard_sessions')) {
+          const fsStore = db.createObjectStore('flashcard_sessions', { keyPath: 'id' });
+          fsStore.createIndex('by_date', 'date', { unique: false });
+        }
       }
     },
   });

@@ -218,9 +218,15 @@ export default function ContactsView({ contacts, setContacts, addToast, tier, se
     <div>
       <div className="page-header">
         <div>
-          <h2>People & Reminders</h2>
-          {dueNow > 0 && <p className="text-sm" style={{ color: 'var(--danger)', marginTop: '0.2rem' }}>⏰ {dueNow} reminder{dueNow > 1 ? 's' : ''} overdue</p>}
-          {upcomingBirthdays.length > 0 && <p className="text-sm" style={{ color: 'var(--accent)', marginTop: '0.2rem' }}>🎂 {upcomingBirthdays.length} upcoming birthday(s) this month</p>}
+          <span className="sw-label">Study</span>
+          <h2>People &amp; Reminders</h2>
+          {dueNow > 0 && <p className="text-sm" style={{ color: 'var(--sw-danger)', marginTop: '0.2rem' }}>⏰ {dueNow} reminder{dueNow > 1 ? 's' : ''} overdue</p>}
+          {upcomingBirthdays.length > 0 && <p className="text-sm" style={{ color: 'var(--sw-accent)', marginTop: '0.2rem' }}>🎂 {upcomingBirthdays.length} upcoming birthday(s) this month</p>}
+          {dueNow === 0 && upcomingBirthdays.length === 0 && (
+            <p className="text-sm text-muted">
+              {contacts.length} {contacts.length === 1 ? 'person' : 'people'} · all caught up
+            </p>
+          )}
         </div>
         <button className="btn btn-primary" onClick={() => { if (!editingContact) setFormOpen(o => !o); }}>
           {formOpen ? '✕ Close' : '+ New Person'}

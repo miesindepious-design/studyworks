@@ -376,7 +376,14 @@ export default function FlashcardsView({
     <div>
       {/* Header */}
       <div className="page-header">
-        <h2>Flashcards</h2>
+        <div>
+          <span className="sw-label">Study</span>
+          <h2>Flashcards</h2>
+          <p className="text-sm text-muted">
+            {flashcards.length} card{flashcards.length === 1 ? '' : 's'}
+            {dueCards.length > 0 && ` · ${dueCards.length} due for review`}
+          </p>
+        </div>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           {tier === 'pro' && practiceQuestions.length > 0 && (
             <button className="btn btn-secondary" onClick={() => { setShowPractice(o => !o); setStudyMode('browse'); }}>

@@ -160,6 +160,7 @@ export default function StudyTimer() {
       {/* Header */}
       <div className="page-header">
         <div>
+          <span className="sw-label">Study</span>
           <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             ⏱️ Study Timer
           </h2>

@@ -386,13 +386,14 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
   // ── Idle / creating view ──────────────────────────────────────────────────
   return (
     <div className="animate-in" style={{ maxWidth: 720, margin: '0 auto' }}>
-      <div className="dash-hero" style={{ marginBottom: '1.25rem' }}>
-        <div>
-          <h2 className="dash-hero-title">Study Room</h2>
-          <p className="text-muted">Create a private room to study with friends. Talk via voice chat, run a Pomodoro timer together, and take shared notes.</p>
+      <div className="sw-hero" style={{ marginBottom: '1.25rem' }}>
+        <div className="sw-hero-main">
+          <span className="sw-label">Create</span>
+          <h2 className="sw-hero-title" style={{ fontSize: '1.5rem', marginTop: 6 }}>Study Room</h2>
+          <p className="sw-hero-sub">Create a private room to study with friends. Talk via voice chat, run a Pomodoro timer together, and take shared notes.</p>
         </div>
         {tier !== 'pro' && (
-          <span className="tag" style={{ background: 'var(--accent-soft)', color: 'var(--accent-ink)' }}>Pro</span>
+          <span className="sw-chip accent">Pro</span>
         )}
       </div>
 

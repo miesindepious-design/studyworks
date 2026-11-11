@@ -135,32 +135,24 @@ export default function PricingView({ currentTier, onDowngrade, onCheckoutResult
     : null;
 
   return (
-    <div style={{ maxWidth: '860px', margin: '0 auto' }}>
+    <div style={{ maxWidth: 980, margin: '0 auto' }}>
       {/* Header */}
-      <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-        <h2 style={{ fontSize: '2rem', fontWeight: 800, marginBottom: '0.5rem' }}>Simple, honest pricing</h2>
-        <p className="text-muted">Start free, upgrade when you're ready.</p>
+      <div className="page-header" style={{ flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: '1.5rem' }}>
+        <div>
+          <span className="sw-label">Account</span>
+          <h2>Simple, honest pricing</h2>
+          <p className="text-sm text-muted">Start free, upgrade when you're ready.</p>
+        </div>
       </div>
 
       {/* Billing toggle */}
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '2rem' }}>
-        <div style={{ display: 'inline-flex', background: 'var(--surface-2)', borderRadius: 'var(--radius-lg)', padding: '4px', gap: '2px' }}>
+        <div className="sw-tabs">
           {(['monthly', 'yearly'] as const).map(b => (
             <button
               key={b}
+              className={`sw-tab${billing === b ? ' active' : ''}`}
               onClick={() => setBilling(b)}
-              style={{
-                padding: '0.4rem 1.25rem',
-                borderRadius: 'var(--radius)',
-                border: 'none',
-                fontWeight: 600,
-                fontSize: '0.875rem',
-                cursor: 'pointer',
-                transition: 'all var(--transition)',
-                background: billing === b ? 'var(--surface-1)' : 'transparent',
-                color: billing === b ? 'var(--text)' : 'var(--text-3)',
-                boxShadow: billing === b ? 'var(--shadow-sm)' : 'none',
-              }}
             >
               {b === 'monthly' ? 'Monthly' : <>Yearly <span style={{ color: 'var(--success)', fontWeight: 700, fontSize: '0.75rem' }}>−52%</span></>}
             </button>
@@ -210,7 +202,7 @@ export default function PricingView({ currentTier, onDowngrade, onCheckoutResult
         {/* Pro card */}
         <div className="card elevated" style={{ border: '2px solid var(--accent)', position: 'relative', overflow: 'visible' }}>
           {/* Recommended pill */}
-          <div style={{ position: 'absolute', top: '-14px', left: '50%', transform: 'translateX(-50%)', background: 'linear-gradient(135deg, var(--accent), var(--accent-2))', color: '#fff', padding: '0.2rem 0.875rem', borderRadius: 'var(--radius-full)', fontSize: '0.75rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
+          <div style={{ position: 'absolute', top: '-13px', left: '50%', transform: 'translateX(-50%)', background: 'var(--sw-accent)', color: 'var(--sw-accent-ink)', padding: '3px 12px', borderRadius: 'var(--sw-r-full)', fontSize: '0.6875rem', fontWeight: 700, whiteSpace: 'nowrap', zIndex: 2, boxShadow: '0 2px 8px -2px color-mix(in srgb, var(--sw-accent) 55%, transparent)' }}>
             ⭐ Recommended
           </div>
           {currentTier === 'pro' && (

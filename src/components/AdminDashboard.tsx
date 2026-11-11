@@ -68,28 +68,31 @@ export default function AdminDashboard({ adminEmail, addToast }: Props) {
   };
 
   return (
-    <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '1.5rem 1rem' }}>
+    <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
 
       {/* Header */}
-      <div style={{ marginBottom: '1.5rem' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '0.25rem' }}>
-          🛡️ Admin Dashboard
-        </h1>
-        <p className="text-sm text-muted">Signed in as <strong>{adminEmail}</strong></p>
+      <div className="page-header">
+        <div>
+          <span className="sw-label">Admin</span>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, letterSpacing: '-0.025em', color: 'var(--sw-text)' }}>
+            🛡️ Admin Dashboard
+          </h1>
+          <p className="text-sm text-muted">Signed in as <strong>{adminEmail}</strong></p>
+        </div>
       </div>
 
       {/* Stats cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+      <div className="sw-grid sw-grid-3" style={{ marginBottom: '1.5rem' }}>
         {[
-          { label: 'Total Users',  value: stats?.total, color: 'var(--accent)' },
-          { label: 'Pro Users',    value: stats?.pro,   color: 'var(--success)' },
-          { label: 'Free Users',   value: stats?.free,  color: 'var(--text-muted)' },
+          { label: 'Total Users',  value: stats?.total, color: 'var(--sw-accent)' },
+          { label: 'Pro Users',    value: stats?.pro,   color: 'var(--sw-success)' },
+          { label: 'Free Users',   value: stats?.free,  color: 'var(--sw-text-3)' },
         ].map(card => (
-          <div key={card.label} className="card" style={{ padding: '1.25rem', textAlign: 'center' }}>
-            <div style={{ fontSize: '2rem', fontWeight: 800, color: card.color }}>
+          <div key={card.label} className="sw-stat" style={{ alignItems: 'center', textAlign: 'center', padding: '18px 15px' }}>
+            <div style={{ fontFamily: 'var(--sw-font-head)', fontSize: '2rem', fontWeight: 800, letterSpacing: '-0.03em', color: card.color }}>
               {stats === null ? '—' : card.value}
             </div>
-            <div className="text-sm text-muted" style={{ marginTop: '0.25rem' }}>{card.label}</div>
+            <div className="sw-stat-label" style={{ marginTop: 4 }}>{card.label}</div>
           </div>
         ))}
       </div>

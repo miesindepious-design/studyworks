@@ -359,7 +359,13 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
   return (
     <div className="animate-in">
       <div className="page-header">
-        <h2>AI Tutor</h2>
+        <div>
+          <span className="sw-label">Create</span>
+          <h2>AI Tutor</h2>
+          <p className="text-sm text-muted">
+            Ask anything about your coursework and get an explanation at your level.
+          </p>
+        </div>
         <span className="tag">{tier === 'pro' ? '⭐ Pro' : 'Free'}</span>
       </div>
 

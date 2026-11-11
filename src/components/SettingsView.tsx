@@ -354,6 +354,7 @@ export default function SettingsView({
         bannerClassName="settings-hero"
       >
         <div>
+          <span className="sw-label">Account</span>
           <h2 className="settings-hero-title">Your workspace</h2>
           <p className="text-muted" style={{ marginTop: '0.35rem', fontSize: '0.9375rem' }}>
             Profile, appearance, AI, reminders and data — make StudyWorks yours.

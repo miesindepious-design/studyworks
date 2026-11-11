@@ -1,12 +1,25 @@
+/**
+ * Dashboard — the student's daily workspace.
+ *
+ * Layout mirrors the design foundation: a greeting hero with the weekly-goal
+ * ring, three focus cards, the activity + achievements pair, a stat row,
+ * action strips, the Pro band, and finally the three-column bottom row.
+ *
+ * All data comes from props and local storage — the page is a read model of
+ * the workspace, so every card can be clicked through to the tool it
+ * describes.
+ */
 import { Note, Contact, Flashcard, Folder, PracticeQuestion } from '../types';
 import type { WeeklyInsights } from '../hooks/useAI';
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { getStreakData, last7Days, EMPTY_STREAK } from '../db/streaks';
 import type { StreakData } from '../db/schema';
 import { useCountUp } from '../hooks/useCountUp';
-import StreakRing from './StreakRing';
-import HeroDock from './HeroDock';
-import Reveal from './Reveal';
+import Ring from './Ring';
+import {
+  IconFlame, IconTarget, IconNotes, IconCards, IconTimer,
+  IconCrown, IconArrowRight, IconSparkles, IconLock, IconCheck,
+} from './icons';
 
 type Tier = 'free' | 'pro';
 
@@ -167,9 +180,15 @@ function getTodayMinutes(): number {
   return 0;
 }
 
-// ── Dashboard ───────────────────────────────────────────────────────────────
-export default function Dashboard({ userName, trialDaysLeft = 0, notes, contacts, flashcards, tier, totalItems, aiSummariesThisMonth, folders, practiceQuestions, setCurrentView, aiReady, aiProvider, onGenerateInsights, weeklyInsights, insightsLoading }: DashboardProps) {
-  // Personalized, time-aware greeting — "Good morning, Ada 👋"
+// Indexed by Date.getDay() (0 = Sunday).
+const WEEKDAY_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+// ── Dashboard ────────────────────────────────────────────────────────────────
+export default function Dashboard({
+  userName, trialDaysLeft = 0, notes, contacts, flashcards, tier, totalItems,
+  aiSummariesThisMonth, folders, practiceQuestions, setCurrentView, aiReady,
+  aiProvider, onGenerateInsights, weeklyInsights, insightsLoading,
+}: DashboardProps) {
   const greeting = (() => {
     const h = new Date().getHours();
     if (h < 12) return 'Good morning';
@@ -178,15 +197,12 @@ export default function Dashboard({ userName, trialDaysLeft = 0, notes, contacts
   })();
   const displayName = (userName || '').trim();
 
-  const stats = [
-    { icon: '📝', label: 'Notes',       value: notes.length,           color: 'indigo',  view: 'notes',      items: notes as { updatedAt: Date }[] },
-    { icon: '👥', label: 'People',      value: contacts.length,        color: 'violet',  view: 'contacts',   items: contacts as { updatedAt: Date }[] },
-    { icon: '💡', label: 'Flashcards',  value: flashcards.length,      color: 'amber',   view: 'flashcards', items: flashcards as { updatedAt: Date }[] },
-    { icon: '📁', label: 'Folders',     value: folders.length,         color: 'emerald', view: 'notes',      items: [] as { updatedAt: Date }[] },
-    { icon: '❓', label: 'Practice Qs', value: practiceQuestions.length, color: 'rose',   view: 'flashcards', items: practiceQuestions as { updatedAt: Date }[] },
-  ];
-
-  const recentNotes = [...notes].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 3);
+  const recentNotes = useMemo(
+    () => [...notes]
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      .slice(0, 4),
+    [notes]
+  );
   const overdueContacts = contacts.filter(c => c.nextReminder && new Date(c.nextReminder) < new Date()).length;
   const dueFlashcards = flashcards.filter(c => !c.nextReview || new Date(c.nextReview) <= new Date()).length;
 
@@ -241,13 +257,10 @@ export default function Dashboard({ userName, trialDaysLeft = 0, notes, contacts
   const [timerMode, setTimerMode] = useState<'work' | 'break'>('work');
   const [timerRunning, setTimerRunning] = useState(false);
   const [timerSeconds, setTimerSeconds] = useState(WORK_SECONDS);
-  const [, setCompletedSessions] = useState(() => {
+  const [completedSessions, setCompletedSessions] = useState(() => {
     try { return parseInt(localStorage.getItem(SESSIONS_KEY) || '0', 10); } catch { return 0; }
   });
   const [todaysStudyMinutes, setTodaysStudyMinutes] = useState(getTodayMinutes);
-
-  const dailyStudyLogRef = useRef(todaysStudyMinutes);
-  dailyStudyLogRef.current = todaysStudyMinutes;
 
   const todayKey = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
@@ -257,7 +270,7 @@ export default function Dashboard({ userName, trialDaysLeft = 0, notes, contacts
       setTimerSeconds(prev => {
         if (prev <= 1) {
           if (timerMode === 'work') {
-            const nextMinutes = dailyStudyLogRef.current + 25;
+            const nextMinutes = todaysStudyMinutes + 25;
             setTodaysStudyMinutes(nextMinutes);
             localStorage.setItem(STUDY_LOG_KEY, JSON.stringify({ date: todayKey, minutes: nextMinutes }));
             setCompletedSessions(c => {
@@ -277,7 +290,7 @@ export default function Dashboard({ userName, trialDaysLeft = 0, notes, contacts
       });
     }, 1000);
     return () => clearInterval(id);
-  }, [timerRunning, timerMode, todayKey]);
+  }, [timerRunning, timerMode, todayKey, todaysStudyMinutes]);
 
   const toggleTimer = useCallback(() => setTimerRunning(r => !r), []);
   const resetTimer = useCallback(() => {
@@ -292,148 +305,202 @@ export default function Dashboard({ userName, trialDaysLeft = 0, notes, contacts
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  // ── Activity Heatmap data (last 12 weeks) ─────────────────────────────────
-  const heatmapDays = useMemo(() => {
-    const days: { date: string; count: number; dayOfWeek: number; weekIndex: number }[] = [];
+  // ── Activity heatmap (last 14 weeks) ──────────────────────────────────────
+  const WEEKS = 14;
+  const heatmapWeeks = useMemo(() => {
+    const weeks: { key: string; label: string; days: { date: string; count: number; dow: number }[] }[] = [];
     const now = new Date();
-    for (let i = 83; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - i);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      days.push({
-        date: key,
-        count: streak.dailyCounts[key] || 0,
-        dayOfWeek: d.getDay(),
-        weekIndex: Math.floor((83 - i) / 7),
+    // Start from the Monday of the current week, then walk backwards.
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+
+    for (let w = WEEKS - 1; w >= 0; w--) {
+      const weekStart = new Date(monday);
+      weekStart.setDate(monday.getDate() - w * 7);
+      const days = Array.from({ length: 7 }, (_, dow) => {
+        const d = new Date(weekStart);
+        d.setDate(weekStart.getDate() + dow);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        return { date: key, count: streak.dailyCounts[key] || 0, dow };
+      });
+      const first = new Date(weekStart);
+      weeks.push({
+        key: first.toISOString().slice(0, 10),
+        label: first.toLocaleDateString(undefined, { month: 'short' }),
+        days,
       });
     }
-    return days;
+    return weeks;
   }, [streak.dailyCounts]);
+
+  // Month labels appear only when the month changes between weeks.
+  const heatmapMonths = useMemo(() => {
+    const out: { label: string; span: number }[] = [];
+    heatmapWeeks.forEach(w => {
+      const last = out[out.length - 1];
+      if (last && last.label === w.label) last.span += 1;
+      else out.push({ label: w.label, span: 1 });
+    });
+    return out;
+  }, [heatmapWeeks]);
 
   // ── Goal progress ─────────────────────────────────────────────────────────
   const todayReviews = streak.dailyCounts[todayKey] || 0;
   const todayNotes = notes.filter(n => n.createdAt && new Date(n.createdAt).toISOString().slice(0, 10) === todayKey).length;
 
-  // ── Stat trends ───────────────────────────────────────────────────────────
-  const trends = useMemo(() => stats.map(s => ({
-    ...s,
-    trend: getTrend(countUpdatedThisWeek(s.items), countUpdatedLastWeek(s.items)),
-  })), [stats]);
+  const goalRows = useMemo(() => ([
+    { key: 'dailyStudyMinutes' as const, label: `Study ${goals.dailyStudyMinutes}m`,  current: todaysStudyMinutes, goal: goals.dailyStudyMinutes },
+    { key: 'dailyFlashcards'   as const, label: `Revise ${goals.dailyFlashcards} cards`, current: todayReviews, goal: goals.dailyFlashcards },
+    { key: 'dailyNotes'        as const, label: `Review ${goals.dailyNotes} notes`,  current: todayNotes, goal: goals.dailyNotes },
+  ]), [goals, todaysStudyMinutes, todayReviews, todayNotes]);
 
-  // ── Dynamic Quick Tips ────────────────────────────────────────────────────
-  const quickTips = useMemo(() => {
-    const tips: { icon: string; text: string; action?: () => void }[] = [];
-    if (notes.length === 0) tips.push({ icon: '📝', text: 'Create your first note to start building your knowledge base', action: () => setCurrentView('notes') });
-    if (contacts.length === 0) tips.push({ icon: '👥', text: 'Add people and set reminders to stay connected', action: () => setCurrentView('contacts') });
-    if (flashcards.length === 0) tips.push({ icon: '💡', text: 'Make flashcards for active recall — the most effective study technique', action: () => setCurrentView('flashcards') });
-    if (!aiReady) tips.push({ icon: '🤖', text: 'Set up AI in Settings for summaries, Q&A, and smart insights', action: () => setCurrentView('settings') });
-    if (streak.currentStreak === 0 && streak.totalReviews > 0) tips.push({ icon: '🔥', text: 'Your streak broke! Review a card today to restart it', action: () => setCurrentView('flashcards') });
-    if (folders.length <= 1) tips.push({ icon: '📁', text: 'Organize with folders — create topic folders to group related items', action: () => setCurrentView('notes') });
-    if (practiceQuestions.length === 0) tips.push({ icon: '❓', text: 'Practice questions test your knowledge under exam conditions', action: () => setCurrentView('flashcards') });
-    if (tier === 'free' && totalItems > 30) tips.push({ icon: '💎', text: 'Upgrade to Pro for unlimited items, AI, and spaced repetition', action: () => setCurrentView('pricing') });
-    if (tier === 'free' && totalItems <= 30) tips.push({ icon: '💎', text: 'Try Pro free — unlimited items, AI summaries, and more', action: () => setCurrentView('pricing') });
-    if (streak.currentStreak >= 7 && streak.currentStreak < 30) tips.push({ icon: '🏆', text: 'Great streak! Keep it going to unlock the 30-day badge', action: () => setCurrentView('flashcards') });
-    if (tips.length === 0) {
-      tips.push({ icon: '🧠', text: 'Use Spaced Review daily for long-term retention' });
-      tips.push({ icon: '⏰', text: 'Set revisit reminders on notes to reinforce learning' });
-      tips.push({ icon: '📊', text: 'Check your weekly insights for personalised study guidance' });
+  const weeklyGoalPct = useMemo(() => {
+    const done = goalRows.reduce((sum, g) => sum + Math.min(1, g.current / g.goal), 0);
+    return Math.round((done / goalRows.length) * 100);
+  }, [goalRows]);
+
+  // ── Stat tiles ────────────────────────────────────────────────────────────
+  // Streak delta compares study days in the last 7 days against the 7 before,
+  // which is what a learner actually feels week over week.
+  const streakDelta = useMemo(() => {
+    const now = Date.now();
+    const day = 86400000;
+    let thisWeek = 0, lastWeek = 0;
+    Object.entries(streak.dailyCounts).forEach(([key, count]) => {
+      if (!count) return;
+      const ts = new Date(`${key}T00:00:00`).getTime();
+      if (ts >= now - day * 7) thisWeek += 1;
+      else if (ts >= now - day * 14) lastWeek += 1;
+    });
+    return getTrend(thisWeek, lastWeek);
+  }, [streak.dailyCounts]);
+
+  const statRows = useMemo(() => [
+    { icon: <IconFlame size={16} />, label: 'day streak', value: streak.currentStreak, view: 'flashcards', delta: streakDelta },
+    { icon: <IconNotes size={16} />, label: 'notes', value: notes.length, view: 'notes',
+      delta: getTrend(countUpdatedThisWeek(notes as { updatedAt: Date }[]), countUpdatedLastWeek(notes as { updatedAt: Date }[])) },
+    { icon: <IconCards size={16} />, label: 'cards', value: flashcards.length, view: 'flashcards',
+      delta: getTrend(countUpdatedThisWeek(flashcards as { updatedAt: Date }[]), countUpdatedLastWeek(flashcards as { updatedAt: Date }[])) },
+    { icon: <IconTimer size={16} />, label: 'focused', value: `${todaysStudyMinutes}m`, view: 'timer',
+      delta: { direction: 'neutral' as const, percent: 0 } },
+  ], [streak, streakDelta, notes, flashcards, todaysStudyMinutes]);
+
+  // ── Weekly insights chart ──────────────────────────────────────────────────
+  const weekDays = useMemo(() => last7Days(streak), [streak]);
+  const weekPeak = Math.max(...weekDays, 1);
+  // Index of the busiest day — the chart highlights the real peak, not simply
+  // the last column, which would light up whichever day happened to be today.
+  const weekPeakIndex = useMemo(() => {
+    let best = 0;
+    weekDays.forEach((c, i) => { if (c > weekDays[best]) best = i; });
+    return weekDays[best] > 0 ? best : -1;
+  }, [weekDays]);
+
+  // Monday-first labels for the last 7 days (oldest → newest).
+  const weekLabels = useMemo(() => {
+    const out: string[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      out.push(WEEKDAY_INITIALS[d.getDay()]);
     }
-    return tips.slice(0, 5);
-  }, [notes.length, contacts.length, flashcards.length, aiReady, streak.currentStreak, streak.totalReviews, folders.length, practiceQuestions.length, tier, totalItems, setCurrentView]);
+    return out;
+  }, []);
 
-  // ── Heatmap rows (7 days × 12 weeks) ──────────────────────────────────────
-  const heatmapRows = useMemo(() => {
-    return Array.from({ length: 7 }, (_, dayOfWeek) =>
-      Array.from({ length: 12 }, (_, weekIndex) =>
-        heatmapDays.find(d => d.weekIndex === weekIndex && d.dayOfWeek === dayOfWeek)
-      )
-    );
-  }, [heatmapDays]);
+  // ── Quick tips ────────────────────────────────────────────────────────────
+  const quickTips = useMemo(() => {
+    const tips: { icon: string; title: string; body: string; action?: () => void }[] = [];
+    if (notes.length === 0) tips.push({ icon: '📝', title: 'Make it a small start', body: 'Create your first note — a single line is enough to begin.', action: () => setCurrentView('notes') });
+    if (contacts.length === 0) tips.push({ icon: '👥', title: 'Recall, then review', body: 'Active recall beats re-reading every time.', action: () => setCurrentView('contacts') });
+    if (flashcards.length === 0) tips.push({ icon: '💡', title: 'Turn notes into cards', body: 'Cards surface knowledge right before you forget it.', action: () => setCurrentView('flashcards') });
+    if (!aiReady) tips.push({ icon: '🤖', title: 'Set up AI once', body: 'Summaries, Q&A and smart insights in a single click.', action: () => setCurrentView('settings') });
+    if (streak.currentStreak === 0 && streak.totalReviews > 0) tips.push({ icon: '🔥', title: 'Restart the streak', body: 'One focused session today brings it back.', action: () => setCurrentView('flashcards') });
+    if (streak.currentStreak >= 7 && streak.currentStreak < 30) tips.push({ icon: '🏆', title: 'Keep the run alive', body: 'You are close to the 30-day badge — don’t break the chain.', action: () => setCurrentView('flashcards') });
+    if (tier === 'free') tips.push({ icon: '💎', title: 'Unlock more room', body: 'Pro removes the item cap and unlocks AI.', action: () => setCurrentView('pricing') });
+    if (tips.length === 0) {
+      tips.push({ icon: '🧠', title: 'Spaced review wins', body: 'Come back tomorrow — the gap is what builds memory.' });
+      tips.push({ icon: '⏰', title: 'Set revisit reminders', body: 'Small nudges keep material warm.' });
+      tips.push({ icon: '📊', title: 'Check your insights', body: 'Your weekly digest shows where to aim next.' });
+    }
+    return tips.slice(0, 3);
+  }, [notes.length, contacts.length, flashcards.length, aiReady, streak.currentStreak, streak.totalReviews, tier, setCurrentView]);
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  const now = new Date();
+  const todayLabel = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+
   return (
-    <div className="animate-in">
-      {/* Hero — sits in the normal flow on arrival, then flies up and parks
-          itself in the top-left corner as you scroll down. */}
-      <HeroDock
-        side="left"
-        chipIcon={(displayName.trim()[0] || '👋').toUpperCase()}
-        chipLabel={greeting}
-        chipMeta={displayName || undefined}
-        chipBadge={trialDaysLeft > 0 ? {
-          text: `🎁 ${trialDaysLeft}d`,
-          title: `Free Pro trial — ${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} left`,
-        } : null}
-        chipTitle="Back to top"
-      >
-        <div>
-          <h2 className="dash-hero-title">
-            {displayName ? `${greeting}, ${displayName} 👋` : `${greeting} 👋`}
-          </h2>
-          <p className="text-muted" style={{ marginTop: '0.35rem', fontSize: '0.9375rem', display: 'flex', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>
-            <span>Here's what's happening in your study workspace</span>
-            {trialDaysLeft > 0 && (
-              <span
-                className="tag primary"
-                title={`Your free Pro trial ends in ${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'}`}
-                style={{ fontSize: '0.75rem' }}
-              >
-                🎁 Trial · {trialDaysLeft} day{trialDaysLeft === 1 ? '' : 's'} left
-              </span>
-            )}
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <button className="btn btn-primary" onClick={() => setCurrentView('flashcards')}>
-            💡 Start Review
-          </button>
-          <button className="btn btn-secondary" onClick={toggleTimer}>
-            ⏱️ {timerRunning ? 'Pause' : 'Start'} Focus Timer
-          </button>
-          {tier === 'free' && (
-            <button className="btn btn-primary" onClick={() => setCurrentView('pricing')}>
-              💎 Upgrade to Pro
-            </button>
-          )}
-        </div>
-      </HeroDock>
+    <div className="sw-stack animate-in">
 
-      {/* Study Goals — slides in from the right right after the hero */}
-      <Reveal>
-        <div className="card" style={{ marginBottom: '1.5rem' }}>
-          <div className="card-header">
-            <span className="card-title">🎯 Daily Goals</span>
-            <button className="btn btn-ghost btn-sm" onClick={() => setShowGoalEditor(!showGoalEditor)}>
-              {showGoalEditor ? 'Done' : 'Edit'}
-            </button>
+      {/* ── Hero ───────────────────────────────────────────────────────── */}
+      <section className="sw-hero">
+        <div className="sw-hero-main">
+          <p className="sw-label">Your daily workspace</p>
+          <h1 className="sw-hero-title">
+            {displayName ? `${greeting}, ${displayName}` : greeting}
+          </h1>
+          <p className="sw-hero-sub">Here&rsquo;s what&rsquo;s happening in your study workspace</p>
+          <div className="sw-hero-chips">
+            {trialDaysLeft > 0 && (
+              <span className="sw-chip accent">Trial · {trialDaysLeft} day{trialDaysLeft === 1 ? '' : 's'} left</span>
+            )}
+            <span className="sw-chip">{tier === 'pro' ? 'Pro plan' : 'Free plan'}</span>
+            <span className="sw-chip">{totalItems} items</span>
           </div>
-          <div className="goals-grid">
-            {[
-              { key: 'flashcards', label: 'Flashcards', current: todayReviews, goal: goals.dailyFlashcards, icon: '💡', unit: 'reviews' },
-              { key: 'notes',      label: 'Notes',      current: todayNotes,      goal: goals.dailyNotes,      icon: '📝', unit: 'new' },
-              { key: 'minutes',    label: 'Study Time', current: todaysStudyMinutes, goal: goals.dailyStudyMinutes, icon: '⏱️', unit: 'min' },
-            ].map(g => {
-              const progress = Math.min(1, g.current / g.goal);
-              const circumference = 2 * Math.PI * 18;
-              const offset = circumference * (1 - progress);
+        </div>
+        <div className="sw-hero-ring">
+          <Ring value={weeklyGoalPct} size={128} thickness={9} label={`${weeklyGoalPct}%`} caption="weekly goal" />
+        </div>
+      </section>
+
+      {/* ── Focus row: goals · timer · streak ──────────────────────────── */}
+      <section className="sw-grid sw-grid-3">
+
+        {/* Daily Goals */}
+        <div className="sw-panel">
+          <div className="sw-panel-head">
+            <div>
+              <div className="sw-panel-title">Daily Goals</div>
+              <div className="sw-panel-sub">{todayLabel}</div>
+            </div>
+            <div className="sw-panel-actions">
+              <span className="sw-chip accent">{weeklyGoalPct}%</span>
+              <button
+                type="button"
+                className="sw-btn ghost sm"
+                onClick={() => setShowGoalEditor(v => !v)}
+              >
+                {showGoalEditor ? 'Done' : 'Edit'}
+              </button>
+            </div>
+          </div>
+          <div className="sw-stack" style={{ gap: 13 }}>
+            {goalRows.map(g => {
+              const pct = Math.min(100, Math.round((g.current / g.goal) * 100));
               return (
-                <div key={g.key} className="goal-item">
-                  <div className="goal-ring">
-                    <svg viewBox="0 0 40 40" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
-                      <circle cx="20" cy="20" r="18" fill="none" stroke="var(--surface-3)" strokeWidth="3" />
-                      <circle cx="20" cy="20" r="18" fill="none" stroke="var(--accent)" strokeWidth="3" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={offset} style={{ transition: 'stroke-dashoffset 0.5s ease' }} />
-                    </svg>
-                    <div className="goal-ring-text">{Math.round(progress * 100)}%</div>
+                <div className="sw-goal" key={g.key}>
+                  <div className="sw-goal-top">
+                    <span className="sw-goal-name">{g.label}</span>
+                    <span className="sw-goal-pct">{pct}%</span>
                   </div>
-                  <div style={{ textAlign: 'center', marginTop: '0.5rem' }}>
-                    <div style={{ fontWeight: 700, fontSize: '0.875rem' }}>{g.icon} {g.label}</div>
-                    <div className="text-xs text-muted">{g.current} / {g.goal} {g.unit}</div>
+                  <div className="sw-meter">
+                    <div
+                      className={`sw-meter-fill${pct >= 100 ? ' success' : ''}`}
+                      style={{ width: `${pct}%` }}
+                    />
                   </div>
                   {showGoalEditor && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.5rem' }}>
-                      <button className="btn btn-ghost btn-xs" onClick={() => updateGoal(g.key as keyof StudyGoals, Math.max(1, g.goal - 5))}>−</button>
-                      <span className="text-sm" style={{ minWidth: '2rem', textAlign: 'center' }}>{g.goal}</span>
-                      <button className="btn btn-ghost btn-xs" onClick={() => updateGoal(g.key as keyof StudyGoals, g.goal + 5)}>+</button>
+                    <div className="sw-row" style={{ gap: 6 }}>
+                      <button
+                        type="button"
+                        className="sw-btn secondary sm"
+                        onClick={() => updateGoal(g.key, Math.max(1, g.goal - 5))}
+                      >−</button>
+                      <span className="sw-goal-pct">{g.goal}</span>
+                      <button
+                        type="button"
+                        className="sw-btn secondary sm"
+                        onClick={() => updateGoal(g.key, g.goal + 5)}
+                      >+</button>
                     </div>
                   )}
                 </div>
@@ -441,413 +508,511 @@ export default function Dashboard({ userName, trialDaysLeft = 0, notes, contacts
             })}
           </div>
         </div>
-      </Reveal>
 
-      {/* Study Timer */}
-      {(timerRunning || timerSeconds < WORK_SECONDS) && (
-        <Reveal>
-          <div className="card study-timer-card" style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
-          <div className="study-timer-ring">
-            <svg viewBox="0 0 100 100" style={{ transform: 'rotate(-90deg)', width: '100%', height: '100%' }}>
-              <circle cx="50" cy="50" r="42" fill="none" stroke="var(--surface-3)" strokeWidth="6" />
-              <circle
-                cx="50" cy="50" r="42" fill="none"
-                stroke={timerMode === 'work' ? 'var(--accent)' : 'var(--success)'}
-                strokeWidth="6" strokeLinecap="round"
-                strokeDasharray={2 * Math.PI * 42}
-                strokeDashoffset={2 * Math.PI * 42 * (1 - timerSeconds / (timerMode === 'work' ? WORK_SECONDS : BREAK_SECONDS))}
-                style={{ transition: 'stroke-dashoffset 0.5s ease' }}
-              />
-            </svg>
-            <div className="study-timer-time">{formatTime(timerSeconds)}</div>
+        {/* Study Timer */}
+        <div className="sw-panel">
+          <div className="sw-panel-head">
+            <div className="sw-panel-title">Study Timer</div>
+            <span className="sw-chip">{completedSessions} session{completedSessions === 1 ? '' : 's'} today</span>
           </div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: '0.9375rem' }}>{timerMode === 'work' ? '🎯 Focus Time' : '☕ Break Time'}</div>
-            <div className="text-sm text-muted">{timerMode === 'work' ? 'Stay focused — you\'ve got this!' : 'Rest your mind, recharge for the next round'}</div>
+          <div className="sw-row" style={{ gap: 16, alignItems: 'center' }}>
+            <Ring
+              value={(timerSeconds / (timerMode === 'work' ? WORK_SECONDS : BREAK_SECONDS)) * 100}
+              size={86}
+              thickness={6}
+              color={timerMode === 'work' ? 'var(--sw-accent)' : 'var(--sw-success)'}
+            >
+              <span
+                style={{
+                  fontFamily: 'var(--sw-font-mono)',
+                  fontSize: '0.9375rem',
+                  fontWeight: 500,
+                  color: 'var(--sw-text)',
+                }}
+              >
+                {formatTime(timerSeconds)}
+              </span>
+            </Ring>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <p className="sw-label">
+                {timerMode === 'work' ? 'Focus session' : 'Break time'}
+              </p>
+              <p className="sw-tip-title" style={{ marginTop: 3 }}>
+                {timerMode === 'work' ? 'Revise your chapter' : 'Recharge'}
+              </p>
+              <p className="sw-tip-body">
+                {timerMode === 'work' ? 'Calculus · 25 min session' : 'Step away for a moment'}
+              </p>
+            </div>
           </div>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
-            <button className="btn btn-ghost btn-sm" onClick={resetTimer}>Reset</button>
-            <button className="btn btn-primary btn-sm" onClick={toggleTimer}>{timerRunning ? 'Pause' : 'Resume'}</button>
+          <div className="sw-row" style={{ marginTop: 'auto', paddingTop: 14, gap: 8 }}>
+            <button type="button" className="sw-btn secondary" onClick={resetTimer}>Reset</button>
+            <button type="button" className="sw-btn primary" onClick={toggleTimer} style={{ flex: 1 }}>
+              {timerRunning ? 'Pause' : 'Start'}
+            </button>
           </div>
-          </div>
-        </Reveal>
-      )}
-
-      {/* Streak widget */}
-      <Reveal>
-        <StreakWidget streak={streak} dueFlashcards={dueFlashcards} setCurrentView={setCurrentView} />
-      </Reveal>
-
-      {/* Activity Heatmap */}
-      <Reveal>
-      <div className="card" style={{ marginBottom: '1.5rem' }}>
-        <div className="card-header">
-          <span className="card-title">📈 Activity</span>
-          <span className="text-xs text-muted">Last 12 weeks</span>
+          <p className="sw-panel-sub" style={{ textAlign: 'center', marginTop: 8 }}>
+            Find your flow.
+          </p>
         </div>
-        <div style={{ overflowX: 'auto', paddingBottom: '0.25rem' }}>
-          <div className="heatmap-grid">
-            {heatmapRows.map((weekDays, dow) => (
-              <div key={dow} className="heatmap-row">
-                {dow === 1 && <span className="heatmap-label">Mon</span>}
-                {dow === 3 && <span className="heatmap-label">Wed</span>}
-                {dow === 5 && <span className="heatmap-label">Fri</span>}
-                {(dow === 0 || dow === 2 || dow === 4 || dow === 6) && <span className="heatmap-label-spacer" />}
-                {weekDays.map((day, wi) => {
-                  if (!day) return <div key={wi} className="heatmap-cell level-0" />;
-                  const level = day.count === 0 ? 0 : day.count <= 2 ? 1 : day.count <= 5 ? 2 : day.count <= 10 ? 3 : 4;
-                  return (
-                    <div
-                      key={day.date}
-                      className={`heatmap-cell level-${level}`}
-                      title={`${day.date}: ${day.count} review${day.count === 1 ? '' : 's'}`}
-                    />
-                  );
-                })}
+
+        {/* Keep it going */}
+        <div className="sw-panel">
+          <div className="sw-panel-head">
+            <div className="sw-panel-title">Keep it going</div>
+            <IconFlame size={16} style={{ color: 'var(--sw-accent)' }} />
+          </div>
+          <div className="sw-row" style={{ gap: 16 }}>
+            <Ring
+              value={Math.min(100, (streak.currentStreak / 30) * 100)}
+              size={86}
+              thickness={6}
+            >
+              <div>
+                <div className="sw-ring-value" style={{ fontSize: '1.375rem' }}>{streak.currentStreak}</div>
+                <div className="sw-ring-caption">days</div>
               </div>
-            ))}
+            </Ring>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <p className="sw-tip-title">Current streak</p>
+              <p className="sw-tip-body">A little, every day.</p>
+            </div>
+          </div>
+          <div style={{ marginTop: 'auto', paddingTop: 14 }}>
+            <div className="sw-days">
+              {weekDays.map((count, i) => (
+                <div
+                  key={i}
+                  className={`sw-day${count > 0 ? ' done' : ''}${i === 6 ? ' today' : ''}`}
+                  title={`${count} review${count === 1 ? '' : 's'}`}
+                >
+                  {weekLabels[i]}
+                </div>
+              ))}
+            </div>
+            <p className="sw-panel-sub" style={{ marginTop: 10 }}>
+              Best: {streak.longestStreak} days
+            </p>
           </div>
         </div>
-        <div className="heatmap-legend">
-          <span className="text-xs text-muted">Less</span>
-          {[0, 1, 2, 3, 4].map(l => (
-            <div key={l} className={`heatmap-cell level-${l}`} />
-          ))}
-          <span className="text-xs text-muted">More</span>
-        </div>
-      </div>
-      </Reveal>
+      </section>
 
-      {/* Achievements */}
-      <Reveal>
-      <div className="card" style={{ marginBottom: '1.5rem' }}>
-        <div className="card-header">
-          <span className="card-title">🏅 Achievements</span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span className="text-xs text-muted">{unlockedCount} / {achievements.length}</span>
+      {/* ── Activity + Achievements ────────────────────────────────────── */}
+      <section className="sw-grid sw-grid-main-side">
+
+        {/* Activity */}
+        <div className="sw-panel">
+          <div className="sw-panel-head">
+            <div>
+              <div className="sw-panel-title">Activity</div>
+              <div className="sw-panel-sub">Last 14 weeks</div>
+            </div>
+          </div>
+          <div className="sw-row" style={{ gap: 18, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 300px', minWidth: 0 }}>
+              <div className="sw-heat">
+                <div style={{ display: 'flex', gap: 3 }}>
+                  {/* Day-of-week gutter */}
+                  <div style={{ display: 'grid', gridTemplateRows: 'repeat(7, 11px)', gap: 3, paddingTop: 16 }}>
+                    {['M', 'W', 'F'].map((d, i) => (
+                      <span
+                        key={d}
+                        style={{
+                          fontSize: '0.5625rem',
+                          color: 'var(--sw-text-faint)',
+                          height: 11,
+                          lineHeight: '11px',
+                          gridRow: i * 2 + 1,
+                        }}
+                      >
+                        {d}
+                      </span>
+                    ))}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    {/* Month labels */}
+                    <div className="sw-heat-months" style={{ gap: 3, height: 12 }}>
+                      {heatmapMonths.map((m, i) => (
+                        <span key={`${m.label}-${i}`} style={{ width: m.span * 14 - 3, lineHeight: '12px' }}>
+                          {m.span > 1 || i === 0 ? m.label : ''}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="sw-heat-body">
+                      {heatmapWeeks.map(week => (
+                        <div key={week.key} style={{ display: 'grid', gridTemplateRows: 'repeat(7, 11px)', gap: 3 }}>
+                          {week.days.map(day => {
+                            const level = day.count === 0 ? 0 : day.count <= 2 ? 1 : day.count <= 5 ? 2 : day.count <= 10 ? 3 : 4;
+                            return (
+                              <div
+                                key={day.date}
+                                className={`sw-heat-cell l${level}`}
+                                title={`${day.date}: ${day.count} review${day.count === 1 ? '' : 's'}`}
+                              />
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="sw-heat-legend">
+                <span>Less</span>
+                {[0, 1, 2, 3, 4].map(l => <div key={l} className={`sw-heat-cell l${l}`} />)}
+                <span>More</span>
+              </div>
+            </div>
+
+            <div style={{ minWidth: 132, paddingLeft: 18, borderLeft: '1px solid var(--sw-line-soft)' }}>
+              <div style={{ fontFamily: 'var(--sw-font-head)', fontSize: '1.875rem', fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--sw-text)', lineHeight: 1 }}>
+                {formatFocus(todaysStudyMinutes)}
+              </div>
+              <p className="sw-panel-sub" style={{ marginTop: 4 }}>focused today</p>
+              {streak.totalReviews > 0 && (
+                <p className="sw-delta" style={{ marginTop: 10 }}>
+                  {streak.totalReviews} reviews
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Achievements */}
+        <div className="sw-panel">
+          <div className="sw-panel-head">
+            <div>
+              <div className="sw-panel-title">Achievements</div>
+              <div className="sw-panel-sub">{unlockedCount} of {achievements.length} unlocked</div>
+            </div>
             <button
               type="button"
-              className="btn btn-ghost btn-xs"
+              className="sw-btn ghost sm"
               onClick={toggleAchievementsCollapsed}
-              aria-label={achievementsCollapsed ? 'Show achievements' : 'Hide achievements'}
-              title={achievementsCollapsed ? 'Show achievements' : 'Hide achievements'}
-              style={{ lineHeight: 1 }}
             >
-              {achievementsCollapsed ? '▸' : '▾'}
+              {achievementsCollapsed ? 'Show all' : 'View all'}
             </button>
-          </span>
-        </div>
-        {!achievementsCollapsed && (
-        <div className="achievements-grid" style={{ maxHeight: '340px', overflowY: 'auto', paddingRight: '0.25rem' }}>
-          {achievements.slice(0, 8).map(a => (
-            <div key={a.id} className={`achievement-item ${a.unlocked ? 'unlocked' : 'locked'}`}>
-              <div className="achievement-icon">{a.unlocked ? a.icon : '🔒'}</div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontWeight: 700, fontSize: '0.8125rem' }}>{a.title}</div>
-                <div className="text-xs text-muted">{a.description}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-        )}
-      </div>
-      </Reveal>
-
-      {/* Stats grid — with trend arrows and click-to-filter */}
-      <Reveal>
-        <div className="grid-stats stagger">
-          {trends.map(s => (
-            <TrendStatCard key={s.label} {...s} setCurrentView={setCurrentView} />
-          ))}
-        </div>
-      </Reveal>
-
-      {/* Alert row */}
-      {(!aiReady || overdueContacts > 0 || dueFlashcards > 0) && (
-        <Reveal>
-        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
-          {!aiReady && (
-            <button
-              className="card"
-              onClick={() => setCurrentView('settings')}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.875rem 1.125rem', cursor: 'pointer', border: '1px dashed var(--accent)', background: 'var(--accent-soft)', flex: '1 1 220px', textAlign: 'left' }}
-            >
-              <span style={{ fontSize: '1.5rem' }}>🤖</span>
-              <div>
-                <p style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--accent)' }}>Set up AI</p>
-                <p className="text-xs text-muted">Gemini is free — enable AI summaries, flashcards &amp; Q&amp;A</p>
-              </div>
-              <span style={{ marginLeft: 'auto', color: 'var(--accent)' }}>→</span>
-            </button>
-          )}
-          {aiReady && (
-            <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.875rem 1.125rem', flex: '1 1 220px', background: 'var(--success-soft)', border: '1px solid rgb(52 211 153 / .3)' }}>
-              <span style={{ fontSize: '1.5rem' }}>🤖</span>
-              <div>
-                <p style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--success)' }}>AI active</p>
-                <p className="text-xs text-muted">{aiProvider === 'gemini' ? 'Gemini' : 'OpenAI'} connected</p>
-              </div>
-            </div>
-          )}
-          {overdueContacts > 0 && (
-            <button
-              className="card"
-              onClick={() => setCurrentView('contacts')}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.875rem 1.125rem', cursor: 'pointer', background: 'var(--danger-soft)', border: '1px solid rgb(251 113 133 / .3)', flex: '1 1 220px', textAlign: 'left' }}
-            >
-              <span style={{ fontSize: '1.5rem' }}>👥</span>
-              <div>
-                <p style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--danger)' }}>{overdueContacts} overdue reminder{overdueContacts > 1 ? 's' : ''}</p>
-                <p className="text-xs text-muted">People you need to follow up with</p>
-              </div>
-              <span style={{ marginLeft: 'auto', color: 'var(--danger)' }}>→</span>
-            </button>
-          )}
-          {dueFlashcards > 0 && (
-            <button
-              className="card"
-              onClick={() => setCurrentView('flashcards')}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.875rem 1.125rem', cursor: 'pointer', background: 'var(--warning-soft)', border: '1px solid rgb(251 191 36 / .3)', flex: '1 1 220px', textAlign: 'left' }}
-            >
-              <span style={{ fontSize: '1.5rem' }}>💡</span>
-              <div>
-                <p style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--warning)' }}>{dueFlashcards} card{dueFlashcards > 1 ? 's' : ''} due for review</p>
-                <p className="text-xs text-muted">Start your spaced repetition session</p>
-              </div>
-              <span style={{ marginLeft: 'auto', color: 'var(--warning)' }}>→</span>
-            </button>
-          )}
-        </div>
-        </Reveal>
-      )}
-
-      {/* Pro banner */}
-      {tier === 'free' && (
-        <Reveal>
-        <div className="pro-banner" style={{ marginBottom: '1.75rem' }}>
-          <span className="pro-banner-icon">💎</span>
-          <div className="pro-banner-text">
-            <p>Unlock Pro Features</p>
-            <p>You've used {totalItems}/50 items · {aiSummariesThisMonth}/20 AI summaries this month</p>
           </div>
-          <ul style={{ listStyle: 'none', fontSize: '0.8125rem', color: 'var(--text-2)', display: 'flex', flexWrap: 'wrap', gap: '0.375rem 1rem' }}>
-            <li>✅ Unlimited items</li>
-            <li>✅ Unlimited AI</li>
-            <li>✅ File uploads</li>
-            <li>✅ Spaced repetition</li>
-            <li>✅ Smart Q&amp;A</li>
-          </ul>
-          <button className="btn btn-primary" onClick={() => setCurrentView('pricing')}>See plans</button>
-        </div>
-        </Reveal>
-      )}
-
-      <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))' }}>
-        {/* Recent notes */}
-        <Reveal fill>
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">📝 Recent Notes</span>
-            <button className="btn btn-ghost btn-sm" onClick={() => setCurrentView('notes')}>View all →</button>
-          </div>
-          {recentNotes.length === 0 ? (
-            <div className="empty-state" style={{ padding: '1.5rem' }}>
-              <div className="empty-state-icon">📝</div>
-              <h3>No notes yet</h3>
-              <p>Start capturing your knowledge</p>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {recentNotes.map(n => (
-              <div key={n.id} className="score-row" style={{ cursor: 'pointer' }} onClick={() => setCurrentView('notes')}>
-                <span style={{ fontSize: '1.1rem' }}>{n.type === 'article' ? '📰' : n.type === 'idea' ? '💡' : n.type === 'project' ? '🗂️' : '📄'}</span>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <p style={{ fontWeight: 600, fontSize: '0.875rem' }} className="truncate">{n.title}</p>
-                  <p className="text-xs text-muted" style={{ marginTop: '0.125rem' }}>{new Date(n.updatedAt).toLocaleDateString()}</p>
+          <div
+            className="sw-grid"
+            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(88px, 1fr))', gap: 14 }}
+          >
+            {(achievementsCollapsed ? achievements.slice(0, 4) : achievements.slice(0, 6)).map(a => (
+              <div key={a.id} className={`sw-ach${a.unlocked ? '' : ' locked'}`}>
+                <div className="sw-ach-icon">
+                  {a.unlocked ? a.icon : <IconLock size={15} />}
                 </div>
-                <span className="badge badge-primary" style={{ marginLeft: 'auto', flexShrink: 0 }}>{n.type}</span>
+                <div className="sw-ach-name">{a.unlocked ? a.title : 'Locked'}</div>
+                {!a.unlocked && <div className="sw-ach-note">{a.description}</div>}
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* ── Stat tiles ─────────────────────────────────────────────────── */}
+      <section className="sw-grid sw-grid-4">
+        {statRows.map(s => (
+          <StatTile
+            key={s.label}
+            icon={s.icon}
+            label={s.label}
+            value={s.value}
+            delta={s.delta}
+            onClick={() => setCurrentView(s.view)}
+          />
+        ))}
+      </section>
+
+      {/* ── Action strips ──────────────────────────────────────────────── */}
+      <section className="sw-grid sw-grid-2">
+        {dueFlashcards > 0 && (
+          <button type="button" className="sw-alert" onClick={() => setCurrentView('flashcards')}>
+            <span className="sw-alert-icon"><IconTarget size={16} /></span>
+            <span className="sw-alert-body">
+              <span className="sw-alert-title">{dueFlashcards} card{dueFlashcards > 1 ? 's are' : ' is'} due for review</span>
+              <span className="sw-alert-sub">Keep your spaced repetition streak alive</span>
+            </span>
+            <span className="sw-alert-action">Review <IconArrowRight size={12} /></span>
+          </button>
+        )}
+        {overdueContacts > 0 ? (
+          <button type="button" className="sw-alert" onClick={() => setCurrentView('contacts')}>
+            <span className="sw-alert-icon" style={{ background: 'var(--sw-danger-soft)', color: 'var(--sw-danger)' }}>
+              <IconNotes size={16} />
+            </span>
+            <span className="sw-alert-body">
+              <span className="sw-alert-title">{overdueContacts} reminder{overdueContacts > 1 ? 's are' : ' is'} overdue</span>
+              <span className="sw-alert-sub">People you said you would follow up with</span>
+            </span>
+            <span className="sw-alert-action">Open <IconArrowRight size={12} /></span>
+          </button>
+        ) : aiReady ? (
+          <button type="button" className="sw-alert info" onClick={() => setCurrentView('tutor')}>
+            <span className="sw-alert-icon"><IconSparkles size={16} /></span>
+            <span className="sw-alert-body">
+              <span className="sw-alert-title">Your AI tutor has new suggestions</span>
+              <span className="sw-alert-sub">{aiProvider === 'gemini' ? 'Gemini' : 'OpenAI'} is ready when you are</span>
+            </span>
+            <span className="sw-alert-action">Explore <IconArrowRight size={12} /></span>
+          </button>
+        ) : (
+          <button type="button" className="sw-alert info" onClick={() => setCurrentView('settings')}>
+            <span className="sw-alert-icon"><IconSparkles size={16} /></span>
+            <span className="sw-alert-body">
+              <span className="sw-alert-title">Connect an AI provider</span>
+              <span className="sw-alert-sub">Summaries, Q&amp;A and smart insights in one click</span>
+            </span>
+            <span className="sw-alert-action">Set up <IconArrowRight size={12} /></span>
+          </button>
+        )}
+      </section>
+
+      {/* ── Pro band ───────────────────────────────────────────────────── */}
+      {tier === 'free' ? (
+        <section className="sw-promo">
+          <span className="sw-promo-icon"><IconCrown size={18} /></span>
+          <div className="sw-promo-body">
+            <p className="sw-promo-title">Get 3 months of Pro free for students</p>
+            <p className="sw-promo-sub">
+              More room for your notes. More ways to learn. Verify your student status.
+            </p>
+          </div>
+          <div className="sw-promo-actions">
+            <button type="button" className="sw-promo-link" onClick={() => setCurrentView('pricing')}>
+              Learn more
+            </button>
+            <button type="button" className="sw-btn primary" onClick={() => setCurrentView('pricing')}>
+              Upgrade
+            </button>
+          </div>
+        </section>
+      ) : (
+        <section className="sw-promo">
+          <span className="sw-promo-icon"><IconCrown size={18} /></span>
+          <div className="sw-promo-body">
+            <p className="sw-promo-title">
+              {trialDaysLeft > 0
+                ? `You have ${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} left on your Pro trial`
+                : 'Pro plan active'}
+            </p>
+            <p className="sw-promo-sub">
+              {trialDaysLeft > 0
+                ? 'Keep every feature unlocked while your trial runs.'
+                : 'Unlimited items, AI insights and spaced repetition.'}
+            </p>
+          </div>
+          <div className="sw-promo-actions">
+            <button type="button" className="sw-promo-link" onClick={() => setCurrentView('pricing')}>
+              Manage plan
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* ── Bottom row ─────────────────────────────────────────────────── */}
+      <section className="sw-grid sw-grid-3">
+
+        {/* Recent Notes */}
+        <div className="sw-panel">
+          <div className="sw-panel-head">
+            <div className="sw-panel-title">Recent Notes</div>
+            <button type="button" className="sw-btn ghost sm" onClick={() => setCurrentView('notes')}>
+              View all
+            </button>
+          </div>
+          {recentNotes.length === 0 ? (
+            <div className="sw-empty">
+              <div className="sw-empty-icon"><IconNotes size={20} /></div>
+              <div className="sw-empty-title">No notes yet</div>
+              <div className="sw-empty-sub">Start capturing your knowledge</div>
+            </div>
+          ) : (
+            <div className="sw-list">
+              {recentNotes.map(n => (
+                <div
+                  key={n.id}
+                  className="sw-list-row"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setCurrentView('notes')}
+                >
+                  <span
+                    className="sw-list-dot"
+                    style={{ background: NOTE_DOT_COLORS[n.type] || 'var(--sw-accent)' }}
+                  />
+                  <div className="sw-list-text">
+                    <div className="sw-list-title">{n.title}</div>
+                    <div className="sw-list-meta">{relativeTime(n.updatedAt)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
-        </Reveal>
 
-        {/* Weekly AI Insights */}
-        <Reveal fill delay={90}>
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">🧠 Weekly Insights</span>
+        {/* Weekly Insights */}
+        <div className="sw-panel">
+          <div className="sw-panel-head">
+            <div className="sw-panel-title">Weekly Insights</div>
             {aiReady && (
-              <button className="btn btn-ghost btn-sm" onClick={onGenerateInsights} disabled={insightsLoading}>
-                {insightsLoading ? '⏳ Generating…' : '↺ Generate'}
+              <button
+                type="button"
+                className="sw-btn ghost sm"
+                onClick={onGenerateInsights}
+                disabled={insightsLoading}
+              >
+                {insightsLoading ? 'Generating…' : 'Generate'}
               </button>
             )}
           </div>
           {!aiReady ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <p className="text-sm text-muted">Connect an AI provider in Settings to get personalised weekly study insights.</p>
-              <button className="btn btn-secondary btn-sm" style={{ alignSelf: 'flex-start' }} onClick={() => setCurrentView('settings')}>Set up AI →</button>
-            </div>
-          ) : !weeklyInsights ? (
-            <div className="empty-state" style={{ padding: '1.5rem' }}>
-              <div className="empty-state-icon">🧠</div>
-              <h3>No insights yet</h3>
-              <p>Click Generate to get your weekly study digest</p>
+            <div className="sw-empty">
+              <div className="sw-empty-icon"><IconSparkles size={20} /></div>
+              <div className="sw-empty-title">Connect AI for insights</div>
+              <div className="sw-empty-sub">A weekly digest of what to study next</div>
+              <button
+                type="button"
+                className="sw-btn secondary sm"
+                style={{ marginTop: 12 }}
+                onClick={() => setCurrentView('settings')}
+              >
+                Set up AI
+              </button>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <div style={{ display: 'flex', gap: '0.625rem', padding: '0.75rem', background: 'var(--surface-2)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
-                <span style={{ fontSize: '1.1rem', flexShrink: 0 }}>📊</span>
-                <p className="text-sm">{weeklyInsights.summary}</p>
+            <>
+              <div className="sw-row" style={{ gap: 10, alignItems: 'baseline' }}>
+                <span
+                  style={{
+                    fontFamily: 'var(--sw-font-head)',
+                    fontSize: '1.5rem',
+                    fontWeight: 800,
+                    letterSpacing: '-0.03em',
+                    color: 'var(--sw-text)',
+                  }}
+                >
+                  {formatFocus(todaysStudyMinutes)}
+                </span>
+                {streak.totalReviews > 0 && (
+                  <span className="sw-delta">
+                    <IconCheck size={11} strokeWidth={2.6} />
+                    {streak.totalReviews} reviews
+                  </span>
+                )}
               </div>
-              {weeklyInsights.topTopics.length > 0 && (
-                <div style={{ display: 'flex', gap: '0.625rem', padding: '0.75rem', background: 'var(--surface-2)', borderRadius: 'var(--radius)', border: '1px solid var(--border)', flexWrap: 'wrap', alignItems: 'center' }}>
-                  <span style={{ fontSize: '1.1rem', flexShrink: 0 }}>🏷️</span>
-                  <p className="text-sm font-bold" style={{ marginRight: '0.25rem' }}>Top topics:</p>
-                  {weeklyInsights.topTopics.map(t => <span key={t} className="tag primary">{t}</span>)}
-                </div>
+              <div className="sw-chart" style={{ marginTop: 14 }}>
+                {weekDays.map((count, i) => {
+                  const height = Math.max(6, (count / weekPeak) * 100);
+                  return (
+                    <div className={`sw-chart-col${i === weekPeakIndex ? ' peak' : ''}`} key={i}>
+                      <div className="sw-chart-bar" style={{ height: `${height}%` }} />
+                      <div className="sw-chart-day">{weekLabels[i]}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              {weeklyInsights && (
+                <p className="sw-tip-body" style={{ marginTop: 12 }}>{weeklyInsights.summary}</p>
               )}
-              <div style={{ display: 'flex', gap: '0.625rem', padding: '0.75rem', background: 'var(--surface-2)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
-                <span style={{ fontSize: '1.1rem', flexShrink: 0 }}>💡</span>
-                <div>
-                  <p style={{ fontWeight: 700, fontSize: '0.875rem', marginBottom: '0.2rem' }}>Focus this week</p>
-                  <p className="text-sm text-muted">{weeklyInsights.suggestedFocus}</p>
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: '0.625rem', padding: '0.75rem', background: 'var(--surface-2)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
-                <span style={{ fontSize: '1.1rem', flexShrink: 0 }}>📚</span>
-                <div>
-                  <p style={{ fontWeight: 700, fontSize: '0.875rem', marginBottom: '0.2rem' }}>Review reminder</p>
-                  <p className="text-sm text-muted">{weeklyInsights.reviewReminder}</p>
-                </div>
-              </div>
-            </div>
+            </>
           )}
         </div>
-        </Reveal>
 
-        {/* Quick Tips — dynamic */}
-        <Reveal fill delay={180}>
-        <div className="card">
-          <div className="card-header"><span className="card-title">🚀 Quick Tips</span></div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {quickTips.map(tip => (
+        {/* Quick Tips */}
+        <div className="sw-panel">
+          <div className="sw-panel-head">
+            <div className="sw-panel-title">Quick Tips</div>
+          </div>
+          <div>
+            {quickTips.map((tip, i) => (
               <div
-                key={tip.text}
-                style={{ display: 'flex', gap: '0.625rem', alignItems: 'flex-start', cursor: tip.action ? 'pointer' : 'default' }}
+                key={tip.title}
+                className="sw-tip"
                 onClick={tip.action}
+                style={{ cursor: tip.action ? 'pointer' : 'default' }}
               >
-                <span style={{ fontSize: '1rem', marginTop: '0.1rem' }}>{tip.icon}</span>
-                <p className="text-sm text-muted">{tip.text}</p>
+                <span className="sw-tip-num">{i + 1}</span>
+                <div>
+                  <div className="sw-tip-title">{tip.title}</div>
+                  <div className="sw-tip-body">{tip.body}</div>
+                </div>
               </div>
             ))}
           </div>
         </div>
-        </Reveal>
-      </div>
+      </section>
     </div>
   );
 }
 
-// ── StreakWidget (unchanged) ───────────────────────────────────────────────
-function StreakWidget({ streak, dueFlashcards, setCurrentView }: { streak: StreakData; dueFlashcards: number; setCurrentView: (v: string) => void }) {
-  const days = last7Days(streak);
-  const todayCount = days[6] ?? 0;
-  const maxDay = Math.max(...days, 1);
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-  const dayLabel = (offset: number) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (6 - offset));
-    return 'SMTWTFS'[d.getDay()];
-  };
+const NOTE_DOT_COLORS: Record<string, string> = {
+  note:    'var(--sw-accent)',
+  article: 'var(--sw-info)',
+  idea:    'var(--sw-success)',
+  project: 'var(--sw-warning)',
+};
 
-  const tier = streak.currentStreak >= 30 ? 'gold' : streak.currentStreak >= 7 ? 'silver' : streak.currentStreak >= 1 ? 'bronze' : 'none';
-  const tierColor = tier === 'gold' ? '#f59e0b' : tier === 'silver' ? '#8A7D65' : tier === 'bronze' ? '#ea580c' : 'var(--muted)';
-  const tierEmoji = tier === 'gold' ? '🏆' : tier === 'silver' ? '⚡' : tier === 'bronze' ? '🔥' : '💤';
-
-  return (
-    <div className="card" style={{ padding: '1.25rem 1.5rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
-      <StreakRing
-        value={streak.currentStreak}
-        progress={Math.min(1, streak.currentStreak / 30)}
-        emoji={tierEmoji}
-        color={tierColor}
-      />
-      <div style={{ minWidth: 150 }}>
-        <div className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
-          Day streak
-        </div>
-        <div className="text-sm" style={{ marginTop: '0.15rem' }}>
-          {streak.currentStreak === 0
-            ? 'Start one today 💤'
-            : <>best <span style={{ fontWeight: 700, color: 'var(--text)' }}>{streak.longestStreak}</span></>}
-        </div>
-      </div>
-
-      <div style={{ flex: 1, minWidth: 200 }}>
-        <div className="text-sm" style={{ marginBottom: '0.5rem' }}>
-          <span style={{ fontWeight: 700 }}>{todayCount}</span>
-          <span className="text-muted"> review{todayCount === 1 ? '' : 's'} today</span>
-          {dueFlashcards > 0 && (
-            <>
-              <span className="text-muted"> · </span>
-              <span style={{ color: 'var(--danger)', fontWeight: 600 }}>{dueFlashcards} due now</span>
-            </>
-          )}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.375rem', height: 40 }}>
-          {days.map((count, i) => (
-            <div key={i} title={`${count} review${count === 1 ? '' : 's'}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem' }}>
-              <div style={{
-                width: '100%',
-                height: `${Math.max(4, (count / maxDay) * 36)}px`,
-                background: i === 6 ? 'var(--accent)' : (count > 0 ? 'var(--accent-soft)' : 'var(--surface-2)'),
-                borderRadius: 4,
-                transition: 'height 200ms ease',
-              }} />
-              <div className="text-xs text-muted" style={{ fontSize: '0.625rem' }}>{dayLabel(i)}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {dueFlashcards > 0 && (
-        <button className="btn btn-primary" onClick={() => setCurrentView('flashcards')}>
-          Start review →
-        </button>
-      )}
-    </div>
-  );
+/** "1h 24m" / "45m" — a compact focus-duration label. */
+function formatFocus(minutes: number): string {
+  if (!minutes) return '0m';
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-// ── TrendStatCard ──────────────────────────────────────────────────────────
+/** "12 min ago" / "Yesterday" — a compact relative timestamp. */
+function relativeTime(value: Date | string): string {
+  const then = new Date(value).getTime();
+  const diff = Date.now() - then;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days} days ago`;
+  return new Date(value).toLocaleDateString();
+}
+
+// ── StatTile ─────────────────────────────────────────────────────────────────
 // Extracted to avoid calling useCountUp inside .map() (Rules of Hooks).
-function TrendStatCard({ icon, label, value, color, view, trend, setCurrentView }: {
-  icon: string; label: string; value: number; color: string;
-  view: string; trend: { direction: 'up' | 'down' | 'neutral'; percent: number };
-  setCurrentView: (v: string) => void;
+function StatTile({
+  icon, label, value, delta, onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number | string;
+  delta: { direction: 'up' | 'down' | 'neutral'; percent: number };
+  onClick: () => void;
 }) {
-  const animated = useCountUp(value);
+  const numeric = typeof value === 'number' ? value : 0;
+  const animated = useCountUp(numeric);
+  const shown = typeof value === 'number' ? animated : value;
+
   return (
     <div
-      className="stat-card"
-      onClick={() => view && setCurrentView(view)}
+      className="sw-stat"
+      onClick={onClick}
       role="button"
       tabIndex={0}
-      title={`View ${label}`}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
+      style={{ cursor: 'pointer' }}
     >
-      <div className={`stat-icon ${color}`}>{icon}</div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="stat-value">{animated}</div>
-        <div className="stat-label">{label}</div>
-        {trend.direction !== 'neutral' && (
-          <div className={`trend-indicator trend-${trend.direction}`}>
-            {trend.direction === 'up' ? '↑' : '↓'} {trend.percent}%
-          </div>
+      <div className="sw-stat-top">
+        <span className="sw-stat-value">{shown}</span>
+        <span className="sw-stat-icon">{icon}</span>
+      </div>
+      <div className="sw-row" style={{ gap: 8, marginTop: 2 }}>
+        <span className="sw-stat-label">{label}</span>
+        {delta.direction !== 'neutral' && (
+          <span className={`sw-delta${delta.direction === 'down' ? ' down' : ''}`}>
+            {delta.direction === 'up' ? '+' : '−'}{delta.percent}%
+          </span>
         )}
       </div>
-      <span className="text-xs text-muted" style={{ fontSize: '0.625rem' }}>vs last week</span>
     </div>
   );
 }

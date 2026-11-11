@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import './App.css';
+import './compat.css';
+import './design.css';
 import { productProfile } from './config/product';
+import AppShell from './components/AppShell';
 import Dashboard from './components/Dashboard';
 import NotesView from './components/NotesView';
 import ContactsView from './components/ContactsView';
@@ -37,6 +40,9 @@ import { getAccent, accentCssVars, accentGlow } from './config/accents';
 import Achievements from './components/Achievements';
 import AdminDashboard from './components/AdminDashboard';
 import { NAV_ITEMS, PAGE_TITLES, type View } from './config/nav';
+import { fetchStudentProfile } from './api/ai';
+import { describeProfile } from './config/studentProfile';
+import { IconDownload, IconUpload, IconSpinner } from './components/icons';
 
 type Theme = 'light' | 'dark' | 'system';
 type Tier  = 'free' | 'pro';
@@ -188,16 +194,6 @@ export default function App() {
     []
   );
   const [currentView, setCurrentView] = useState<View>('dashboard');
-  // Mobile nav drawer (sidebar slides in from the left; hidden by default)
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  // Close the drawer on Escape
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [menuOpen]);
 
   // ── Theme (apply immediately from IDB value once loaded) ──────────────────
   const theme = (db.theme as Theme) || 'system';
@@ -295,6 +291,27 @@ export default function App() {
   // ── Weekly insights ───────────────────────────────────────────────────────
   const [weeklyInsights, setWeeklyInsights] = useState<import('./hooks/useAI').WeeklyInsights | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
+
+  // ── Student profile (shown under the name in the sidebar) ────────────────
+  const [profileSummary, setProfileSummary] = useState<string>('');
+  useEffect(() => {
+    if (session.status !== 'authenticated') return;
+    let alive = true;
+    fetchStudentProfile()
+      .then(res => {
+        if (!alive || !res) return;
+        const u = res.user;
+        const summary = describeProfile({
+          schoolStage: u.schoolStage ?? null,
+          schoolClass: u.schoolClass ?? null,
+          universityYear: u.universityYear ?? null,
+          department: u.department ?? null,
+        });
+        setProfileSummary(summary === 'Not set yet' ? '' : summary);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [session.status]);
 
   const handleGenerateInsights = useCallback(async () => {
     if (!ai.isReady) { addToast('Configure AI in Settings first.', 'info'); return; }
@@ -440,13 +457,16 @@ export default function App() {
   // between the auth/loading render and the authenticated render and React
   // throws "change in the order of Hooks" → blank screen.
   const commands = useMemo<Command[]>(() => ([
-    ...NAV_ITEMS.map(item => ({
-      id: `nav-${item.view}`,
-      label: `Go to ${item.label}`,
-      icon: item.icon,
-      group: 'Navigate',
-      run: () => setCurrentView(item.view),
-    })),
+    ...NAV_ITEMS.map(item => {
+      const Icon = item.icon;
+      return {
+        id: `nav-${item.view}`,
+        label: `Go to ${item.label}`,
+        icon: <Icon size={16} />,
+        group: 'Navigate',
+        run: () => setCurrentView(item.view),
+      };
+    }),
     { id: 'action-new-note', label: 'New note', icon: '📝', group: 'Actions', hint: 'N', run: () => { setCurrentView('notes'); setTimeout(() => document.querySelector<HTMLButtonElement>('button.btn-primary')?.click(), 50); } },
     { id: 'action-review', label: 'Start flashcard review', icon: '🎯', group: 'Actions', run: () => setCurrentView('flashcards') },
     { id: 'action-theme', label: `Toggle theme (${THEME_LABEL[theme]})`, icon: THEME_ICON[theme], group: 'Actions', run: () => cycleTheme() },
@@ -469,290 +489,210 @@ export default function App() {
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
+  const isAdmin = !!(session.user && import.meta.env.VITE_ADMIN_EMAIL &&
+    session.user.email.toLowerCase() === (import.meta.env.VITE_ADMIN_EMAIL as string).toLowerCase());
+
   return (
     <div className="app">
-      <div className="app-shell">
-
-        {/* Mobile scrim — tap outside the drawer to close it */}
-        {menuOpen && (
-          <div className="sidebar-scrim" onClick={() => setMenuOpen(false)} aria-hidden="true" />
+      <AppShell
+        currentView={currentView}
+        onNavigate={navigateTo}
+        pageTitle={PAGE_TITLES[currentView]}
+        userName={userName}
+        userEmail={session.user?.email}
+        userSub={profileSummary || undefined}
+        tier={tier}
+        trialDaysLeft={trialDaysLeft}
+        totalItems={totalItems}
+        notesCount={notesUR.state.length}
+        dueFlashcards={dueFlashcards}
+        accentId={accentId}
+        onAccentChange={db.setAccent}
+        onOpenCommandPalette={() => setCmdkOpen(true)}
+        onOpenPricing={() => setCurrentView('pricing')}
+        onSignOut={handleSignOut}
+        isAdmin={isAdmin}
+        topbarExtra={(
+          <>
+            {syncing && (
+              <span className="sw-chip" title="Syncing with the server">
+                <IconSpinner /> Syncing
+              </span>
+            )}
+            <Achievements />
+          </>
         )}
-
-        {/* ── Sidebar (desktop) / slide-in drawer (mobile) ── */}
-        <aside className={`sidebar${menuOpen ? ' open' : ''}`}>
-          <div className="sidebar-logo">
-            <img className="logo-mark" src="/logo.svg" alt="StudyWorks" />
-            <h1>{productProfile.name}</h1>
+        sidebarExtra={(
+          <div className="sw-row-wrap" style={{ gap: 6, padding: '0 8px' }}>
             <button
               type="button"
-              className="icon-btn sidebar-close"
-              onClick={() => setMenuOpen(false)}
-              aria-label="Close menu"
-              title="Close menu"
-            >✕</button>
-          </div>
-
-
-          <div className="nav-group">
-            <p className="nav-group-label">Menu</p>
-            {NAV_ITEMS.map(item => (
-              <button
-                key={item.view}
-                className={`nav-item${currentView === item.view ? ' active' : ''}`}
-                onClick={() => { setCurrentView(item.view); setMenuOpen(false); }}
-              >
-                <span className="nav-item-icon">{item.icon}</span>
-                {item.label}
-                {item.view === 'flashcards' && dueFlashcards > 0 && tier === 'pro' && (
-                  <span className="badge">{dueFlashcards}</span>
-                )}
-                {item.view === 'settings' && notif.permission === 'default' && notif.supported && (
-                  <span className="badge" style={{ background: 'var(--accent)' }}>!</span>
-                )}
-              </button>
-            ))}
-            {/* Admin nav — only visible when signed in as the ADMIN_EMAIL account */}
-            {session.user && import.meta.env.VITE_ADMIN_EMAIL &&
-              session.user.email.toLowerCase() === (import.meta.env.VITE_ADMIN_EMAIL as string).toLowerCase() && (
-              <button
-                className={`nav-item${currentView === 'admin' ? ' active' : ''}`}
-                onClick={() => { setCurrentView('admin'); setMenuOpen(false); }}
-                style={{ color: currentView === 'admin' ? undefined : 'var(--accent)' }}
-              >
-                <span className="nav-item-icon">🛡️</span>
-                Admin
-              </button>
+              className="sw-btn secondary sm"
+              onClick={cycleTheme}
+              title={`Theme: ${THEME_LABEL[theme]} — click to cycle`}
+              style={{ flex: 1 }}
+            >
+              {THEME_ICON[theme]} {THEME_LABEL[theme]}
+            </button>
+            <button type="button" className="sw-btn secondary sm" onClick={exportData} title="Export JSON">
+              <IconDownload size={14} />
+            </button>
+            {tier === 'pro' && (
+              <label className="sw-btn secondary sm" style={{ cursor: 'pointer' }} title="Import data (JSON export file)">
+                <IconUpload size={14} />
+                <input type="file" accept=".json" onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleImportFile(file);
+                  e.target.value = ''; // allow re-selecting the same file
+                }} style={{ display: 'none' }} />
+              </label>
             )}
-          </div>
-
-          <div className="sidebar-footer">
-            {/* User info */}
-            {session.user && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', padding: '0.5rem 0.75rem', marginBottom: '0.25rem' }}>
-                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent), var(--accent-2))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-ink)', fontWeight: 700, fontSize: '0.875rem', flexShrink: 0 }}>
-                  {(session.user.name || session.user.email).charAt(0).toUpperCase()}
-                </div>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <p style={{ fontSize: '0.8125rem', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{session.user.name || 'User'}</p>
-                  <p className="text-xs text-muted" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{session.user.email}</p>
-                </div>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={handleSignOut}
-                  title="Sign out"
-                  style={{ flexShrink: 0, color: 'var(--text-2)' }}
-                >
-                  ↪ Sign out
-                </button>
-              </div>
-            )}
-            {syncing && <p className="text-xs text-muted" style={{ padding: '0 0.75rem', marginBottom: '0.25rem' }}>☁️ Syncing…</p>}
-            <div className={`tier-badge${tier === 'pro' ? ' pro' : ''}`}>
-              {tier === 'pro'
-                ? (trialDaysLeft > 0
-                    ? <>⭐ Trial · {trialDaysLeft} day{trialDaysLeft === 1 ? '' : 's'} left</>
-                    : <>⭐ Pro plan</>)
-                : <>🆓 Free plan</>}
-            </div>
-            {tier === 'free' && (
-              <div>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-3)', marginBottom: '0.25rem' }}>{totalItems}/50 items</p>
-                <div className="usage-bar">
-                  <div className="usage-bar-fill" style={{ width: `${Math.min(100, (totalItems / 50) * 100)}%` }} />
-                </div>
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: '0.375rem' }}>
-              <button
-                className="icon-btn"
-                onClick={cycleTheme}
-                title={`Theme: ${THEME_LABEL[theme]} — click to cycle`}
-                style={{ flex: 1, gap: '0.35rem', fontSize: '0.8rem', width: 'auto', paddingInline: '0.5rem' }}
-              >
-                {THEME_ICON[theme]} <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{THEME_LABEL[theme]}</span>
-              </button>
-              <button className="icon-btn" onClick={exportData} title="Export JSON" style={{ flex: 1 }}>📤</button>
-              {tier === 'pro' && (
-                <label className="icon-btn" style={{ flex: 1, cursor: 'pointer' }} title="Import data (JSON export file)">
-                  📥<input type="file" accept=".json" onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleImportFile(file);
-                    e.target.value = ''; // allow re-selecting the same file
-                  }} style={{ display: 'none' }} />
-                </label>
-              )}
-            </div>
-            <button className="nav-item" onClick={() => setShowShortcuts(true)} style={{ marginTop: '0.25rem' }}>
-              <span className="nav-item-icon">⌨️</span>Shortcuts
+            <button
+              type="button"
+              className="sw-btn ghost sm"
+              onClick={() => setShowShortcuts(true)}
+              style={{ flex: 1 }}
+            >
+              Shortcuts
             </button>
           </div>
-        </aside>
+        )}
+      >
 
-        {/* ── Main ── */}
-        <div className="main-content">
-          {/* Top bar */}
-          <div className="topbar">
-            <button
-              type="button"
-              className="icon-btn hamburger"
-              onClick={() => setMenuOpen(true)}
-              aria-label="Open menu"
-              title="Open menu"
-            >☰</button>
-            <span className="topbar-title">{PAGE_TITLES[currentView]}</span>
-            <div className="topbar-actions">
-              <button className="icon-btn" onClick={() => setCmdkOpen(true)} title="Command palette (⌘K)" style={{ fontSize: '1rem', position: 'relative' }}>
-                ⌘K
-                <span className="logo-mark" style={{ position: 'absolute', top: -4, right: -4, width: 8, height: 8, padding: 0, fontSize: 0, boxShadow: 'none', background: 'var(--accent)', borderRadius: '50%' }} />
-              </button>
-              <button className="icon-btn" onClick={() => { notesUR.undo(); contactsUR.undo(); flashcardsUR.undo(); addToast('Undone', 'info'); }} disabled={!notesUR.canUndo && !contactsUR.canUndo && !flashcardsUR.canUndo} title="Undo (⌘Z)" style={{ fontSize: '1rem' }}>↩</button>
-              <button className="icon-btn" onClick={() => { notesUR.redo(); contactsUR.redo(); flashcardsUR.redo(); addToast('Redone', 'info'); }} disabled={!notesUR.canRedo && !contactsUR.canRedo && !flashcardsUR.canRedo} title="Redo (⌘⇧Z)" style={{ fontSize: '1rem' }}>↪</button>
-              {tier === 'pro'  && (
-                <span className="tag primary" style={{ fontSize: '0.75rem' }}>
-                  {trialDaysLeft > 0 ? `⭐ Trial · ${trialDaysLeft}d` : '⭐ Pro'}
-                </span>
-              )}
-              {tier === 'free' && <button className="btn btn-primary btn-sm" onClick={() => setCurrentView('pricing')}>Upgrade</button>}
-              <Achievements />
-            </div>
-          </div>
-
-          {/* Pages — keyed wrapper animates on view switch */}
-          <div className="page-content view-enter" key={currentView}>
-            {/* Notification permission nudge — shows once until granted or
-                dismissed. Hidden on Settings, which owns a full Notifications
-                card, so the two don't compete. */}
-            {notif.supported && notif.permission === 'default' && currentView !== 'settings' && (
-              <NotifBanner onEnable={async () => {
-                const result = await notif.request();
-                if (result === 'granted') addToast('🔔 Reminders enabled! You\'ll get notified when items are due.', 'success');
-              }} />
-            )}
-            {currentView === 'dashboard' && (
-              <Dashboard
-                userName={userName}
-                trialDaysLeft={trialDaysLeft}
-                notes={notesUR.state} contacts={contactsUR.state} flashcards={flashcardsUR.state}
-                tier={tier} totalItems={totalItems}
-                aiSummariesThisMonth={db.aiSummariesThisMonth} qaQueriesThisMonth={db.qaQueriesThisMonth}
-                folders={db.folders} practiceQuestions={db.practiceQuestions}
-                setCurrentView={navigateTo}
-                aiReady={ai.isReady} aiProvider={ai.config.provider}
-                onGenerateInsights={handleGenerateInsights}
-                weeklyInsights={weeklyInsights}
-                insightsLoading={insightsLoading}
-              />
-            )}
-            {currentView === 'notes' && (
-              <NotesView
-                notes={notesUR.state} setNotes={notesUR.set}
-                flashcards={flashcardsUR.state} setFlashcards={flashcardsUR.set}
-                tier={tier} setCurrentView={navigateTo} addToast={addToast}
-                totalItems={totalItems}
-                incrementAiSummaries={incrementAiSummaries} aiSummariesThisMonth={db.aiSummariesThisMonth}
-                folders={db.folders} setFolders={db.setFolders}
-                practiceQuestions={db.practiceQuestions} setPracticeQuestions={db.setPracticeQuestions}
-                incrementQaQueries={incrementQaQueries} qaQueriesThisMonth={db.qaQueriesThisMonth}
-                savedSearches={db.savedSearches} setSavedSearches={db.setSavedSearches}
-                ai={ai}
-                loadStarterPack={db.loadStarterPack}
-              />
-            )}
-            {currentView === 'contacts' && (
-              <ContactsView
-                contacts={contactsUR.state} setContacts={contactsUR.set}
-                addToast={addToast} tier={tier} setCurrentView={navigateTo}
-                totalItems={totalItems} folders={db.folders} setFolders={db.setFolders}
-              />
-            )}
-            {currentView === 'flashcards' && (
-              <FlashcardsView
-                flashcards={flashcardsUR.state} setFlashcards={flashcardsUR.set}
-                addToast={addToast} tier={tier} setCurrentView={navigateTo}
-                totalItems={totalItems} folders={db.folders} setFolders={db.setFolders}
-                practiceQuestions={db.practiceQuestions} setPracticeQuestions={db.setPracticeQuestions}
-              />
-            )}
-            {currentView === 'pricing' && (
-              <PricingView
-                currentTier={tier}
-                onDowngrade={handleDowngradeRequest}
-                onCheckoutResult={handleCheckoutResult}
-                addToast={addToast}
-              />
-            )}
-            {currentView === 'studyRoom' && (
-              <StudyRoom
-                userId={session.user!.id}
-                userName={session.user!.name || session.user!.email.split('@')[0]}
-                tier={tier}
-                setCurrentView={navigateTo}
-                addToast={addToast}
-                signalingUrl={typeof import.meta.env.VITE_VOICE_SIGNALING_URL === 'string' && import.meta.env.VITE_VOICE_SIGNALING_URL ? import.meta.env.VITE_VOICE_SIGNALING_URL : window.location.origin}
-              />
-            )}
-            {currentView === 'tutor' && (
-              <TutorView
-                tier={tier}
-                setCurrentView={navigateTo}
-                addToast={addToast}
-                notes={notesUR.state}
-                onSaveNote={(note) => {
-                  notesUR.set([{
-                    id: crypto.randomUUID(),
-                    title: note.title,
-                    content: note.content,
-                    tags: note.tags || [],
-                    type: 'note',
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                    files: [],
-                    highlights: [],
-                    personalNotes: [],
-                  }, ...notesUR.state]);
-                }}
-              />
-            )}
-            {currentView === 'settings' && (
-              <SettingsView
-                notif={notif} tier={tier} onAddToast={addToast}
-                onShowShortcuts={() => setShowShortcuts(true)}
-                onAISaved={ai.reloadConfig}
-                folders={db.folders}
-                theme={theme} onThemeChange={db.setTheme}
-                accent={db.accent} onAccentChange={db.setAccent}
-                data={{
-                  notes:             notesUR.state,
-                  contacts:          contactsUR.state,
-                  flashcards:        flashcardsUR.state,
-                  practiceQuestions: db.practiceQuestions,
-                  savedSearches:     db.savedSearches,
-                }}
-                displayName={userName}
-              />
-            )}
-            {currentView === 'multiplayer' && (
-              <MultiplayerQuiz
-                db={db}
-                userId={session.user!.id}
-                userName={session.user!.name || session.user!.email.split('@')[0]}
-                tier={tier}
-                setCurrentView={navigateTo}
-                addToast={addToast}
-              />
-            )}
-            {currentView === 'timer' && (
-              <StudyTimer />
-            )}
-            {currentView === 'admin' && (
-              <AdminDashboard
-                adminEmail={session.user!.email}
-                addToast={addToast}
-              />
-            )}
-          </div>
+        {/* Pages — keyed wrapper animates on view switch */}
+        <div className="page-content view-enter" key={currentView}>
+          {/* Notification permission nudge — shows once until granted or
+              dismissed. Hidden on Settings, which owns a full Notifications
+              card, so the two don't compete. */}
+          {notif.supported && notif.permission === 'default' && currentView !== 'settings' && (
+            <NotifBanner onEnable={async () => {
+              const result = await notif.request();
+              if (result === 'granted') addToast('🔔 Reminders enabled! You\'ll get notified when items are due.', 'success');
+            }} />
+          )}
+          {currentView === 'dashboard' && (
+            <Dashboard
+              userName={userName}
+              trialDaysLeft={trialDaysLeft}
+              notes={notesUR.state} contacts={contactsUR.state} flashcards={flashcardsUR.state}
+              tier={tier} totalItems={totalItems}
+              aiSummariesThisMonth={db.aiSummariesThisMonth} qaQueriesThisMonth={db.qaQueriesThisMonth}
+              folders={db.folders} practiceQuestions={db.practiceQuestions}
+              setCurrentView={navigateTo}
+              aiReady={ai.isReady} aiProvider={ai.config.provider}
+              onGenerateInsights={handleGenerateInsights}
+              weeklyInsights={weeklyInsights}
+              insightsLoading={insightsLoading}
+            />
+          )}
+          {currentView === 'notes' && (
+            <NotesView
+              notes={notesUR.state} setNotes={notesUR.set}
+              flashcards={flashcardsUR.state} setFlashcards={flashcardsUR.set}
+              tier={tier} setCurrentView={navigateTo} addToast={addToast}
+              totalItems={totalItems}
+              incrementAiSummaries={incrementAiSummaries} aiSummariesThisMonth={db.aiSummariesThisMonth}
+              folders={db.folders} setFolders={db.setFolders}
+              practiceQuestions={db.practiceQuestions} setPracticeQuestions={db.setPracticeQuestions}
+              incrementQaQueries={incrementQaQueries} qaQueriesThisMonth={db.qaQueriesThisMonth}
+              savedSearches={db.savedSearches} setSavedSearches={db.setSavedSearches}
+              ai={ai}
+              loadStarterPack={db.loadStarterPack}
+            />
+          )}
+          {currentView === 'contacts' && (
+            <ContactsView
+              contacts={contactsUR.state} setContacts={contactsUR.set}
+              addToast={addToast} tier={tier} setCurrentView={navigateTo}
+              totalItems={totalItems} folders={db.folders} setFolders={db.setFolders}
+            />
+          )}
+          {currentView === 'flashcards' && (
+            <FlashcardsView
+              flashcards={flashcardsUR.state} setFlashcards={flashcardsUR.set}
+              addToast={addToast} tier={tier} setCurrentView={navigateTo}
+              totalItems={totalItems} folders={db.folders} setFolders={db.setFolders}
+              practiceQuestions={db.practiceQuestions} setPracticeQuestions={db.setPracticeQuestions}
+            />
+          )}
+          {currentView === 'pricing' && (
+            <PricingView
+              currentTier={tier}
+              onDowngrade={handleDowngradeRequest}
+              onCheckoutResult={handleCheckoutResult}
+              addToast={addToast}
+            />
+          )}
+          {currentView === 'studyRoom' && (
+            <StudyRoom
+              userId={session.user!.id}
+              userName={session.user!.name || session.user!.email.split('@')[0]}
+              tier={tier}
+              setCurrentView={navigateTo}
+              addToast={addToast}
+              signalingUrl={typeof import.meta.env.VITE_VOICE_SIGNALING_URL === 'string' && import.meta.env.VITE_VOICE_SIGNALING_URL ? import.meta.env.VITE_VOICE_SIGNALING_URL : window.location.origin}
+            />
+          )}
+          {currentView === 'tutor' && (
+            <TutorView
+              tier={tier}
+              setCurrentView={navigateTo}
+              addToast={addToast}
+              notes={notesUR.state}
+              onSaveNote={(note) => {
+                notesUR.set([{
+                  id: crypto.randomUUID(),
+                  title: note.title,
+                  content: note.content,
+                  tags: note.tags || [],
+                  type: 'note',
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                  files: [],
+                  highlights: [],
+                  personalNotes: [],
+                }, ...notesUR.state]);
+              }}
+            />
+          )}
+          {currentView === 'settings' && (
+            <SettingsView
+              notif={notif} tier={tier} onAddToast={addToast}
+              onShowShortcuts={() => setShowShortcuts(true)}
+              onAISaved={ai.reloadConfig}
+              folders={db.folders}
+              theme={theme} onThemeChange={db.setTheme}
+              accent={db.accent} onAccentChange={db.setAccent}
+              data={{
+                notes:             notesUR.state,
+                contacts:          contactsUR.state,
+                flashcards:        flashcardsUR.state,
+                practiceQuestions: db.practiceQuestions,
+                savedSearches:     db.savedSearches,
+              }}
+              displayName={userName}
+            />
+          )}
+          {currentView === 'multiplayer' && (
+            <MultiplayerQuiz
+              db={db}
+              userId={session.user!.id}
+              userName={session.user!.name || session.user!.email.split('@')[0]}
+              tier={tier}
+              setCurrentView={navigateTo}
+              addToast={addToast}
+            />
+          )}
+          {currentView === 'timer' && (
+            <StudyTimer />
+          )}
+          {currentView === 'admin' && (
+            <AdminDashboard
+              adminEmail={session.user!.email}
+              addToast={addToast}
+            />
+          )}
         </div>
-      </div>
+      </AppShell>
 
       {/* Toasts */}
       <div className="toast-stack">
