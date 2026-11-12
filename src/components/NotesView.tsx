@@ -802,7 +802,7 @@ export default function NotesView({
           <button className="btn btn-secondary" onClick={() => setFocusMode(f => !f)} title={focusMode ? 'Exit focus mode' : 'Enter focus mode — distraction-free editing'}>{focusMode ? '✕ Exit Focus' : '🧘 Focus Mode'}</button>
           <input ref={importInputRef} type="file" accept=".pdf,.pptx,image/*,audio/*" onChange={handleImport} style={{ display: 'none' }} />
           <div style={{ position: 'relative' }}>
-            <button className="btn btn-primary" onClick={() => { if (!editingNote) setFormOpen(o => !o); }}>
+            <button className="btn btn-primary" data-copilot="new-note" onClick={() => { if (!editingNote) setFormOpen(o => !o); }}>
               {formOpen ? '✕ Close' : '+ New Note'}
             </button>
             <button

@@ -32,6 +32,8 @@ import { useReminderScheduler } from './hooks/useReminderScheduler';
 import { useAI } from './hooks/useAI';
 import { signOut } from './api/auth';
 import CommandPalette, { type Command } from './components/CommandPalette';
+import Copilot from './components/Copilot';
+import type { CopilotActionId } from './config/copilot';
 import { pullSync, pushSync } from './api/sync';
 import { syncStreak } from './db/streaks';
 import { mergeByLWW, mergeTier } from './utils/merge';
@@ -106,6 +108,7 @@ export default function App() {
   const [toasts, setToasts]   = useState<ToastMessage[]>([]);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [cmdkOpen, setCmdkOpen] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
 
   // Custom keyboard-shortcut overrides (rebound in Settings).
   const { overrides } = useShortcutOverrides();
@@ -385,6 +388,7 @@ export default function App() {
     bind('nav.settings',   () => setCurrentView('settings'));
     bind('general.help',   () => setShowShortcuts(s => !s));
     bind('general.escape', () => setShowShortcuts(false));
+    bind('general.copilot', () => setCopilotOpen(o => !o));
 
     return map;
     // `notesUR.undo` etc. are stable callbacks — depending on them instead of
@@ -449,6 +453,55 @@ export default function App() {
       savedSearches:     db.savedSearches,
     }));
     addToast('Data exported!', 'success');
+  };
+
+  // ── Copilot actions ───────────────────────────────────────────────────────
+  // The Copilot can run a task on the user's behalf, not just point at a page.
+  // Tasks that need a control on another page click it after the view has
+  // switched — the page wrapper is keyed by view, so the button is remounted
+  // and only exists once React has painted the new page.
+  const handleCopilotAction = (action: CopilotActionId) => {
+    const clickOn = (selector: string) =>
+      setTimeout(() => document.querySelector<HTMLElement>(selector)?.click(), 140);
+
+    switch (action) {
+      case 'new-note':
+        setCurrentView('notes');
+        clickOn('[data-copilot="new-note"]');
+        break;
+      case 'start-review':
+        setCurrentView('flashcards');
+        clickOn('[data-copilot="start-review"]');
+        break;
+      case 'start-timer':
+        setCurrentView('timer');
+        break;
+      case 'ask-tutor':
+        setCurrentView('tutor');
+        break;
+      case 'toggle-theme':
+        cycleTheme();
+        break;
+      case 'export-data':
+        exportData();
+        break;
+      case 'show-shortcuts':
+        setShowShortcuts(true);
+        break;
+      case 'command-palette':
+        setCmdkOpen(true);
+        break;
+      case 'sync-now':
+        doPullSync();
+        break;
+      default: {
+        // Exhaustiveness guard: adding an action to COPILOT_ACTION_IDS without
+        // handling it here fails the type-check instead of silently doing
+        // nothing when the user clicks it.
+        const unhandled: never = action;
+        void unhandled;
+      }
+    }
   };
 
   // ── Loading / error / auth gate ──────────────────────────────────────────
@@ -720,6 +773,16 @@ export default function App() {
         open={cmdkOpen}
         onClose={() => setCmdkOpen(false)}
         commands={commands}
+      />
+
+      {/* Copilot — the in-app guide */}
+      <Copilot
+        open={copilotOpen}
+        onOpen={() => setCopilotOpen(true)}
+        onClose={() => setCopilotOpen(false)}
+        currentView={currentView}
+        onNavigate={navigateTo}
+        onAction={handleCopilotAction}
       />
     </div>
   );

@@ -391,7 +391,7 @@ export default function FlashcardsView({
             </button>
           )}
           {tier === 'pro' && flashcards.length > 0 && studyMode === 'browse' && (
-            <button className="btn btn-secondary" onClick={startReview}>
+            <button className="btn btn-secondary" data-copilot="start-review" onClick={startReview}>
               🧠 Spaced Review
               {dueCards.length > 0 && <span className="badge badge-danger" style={{ marginLeft: 4 }}>{dueCards.length}</span>}
             </button>

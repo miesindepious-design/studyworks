@@ -41,6 +41,7 @@ export const SHORTCUT_DEFS: ShortcutDef[] = [
 
   // ── General ──
   { id: 'general.palette', combo: 'mod+k',    label: 'Command palette',         group: 'General' },
+  { id: 'general.copilot', combo: 'mod+/',    label: 'Open Copilot',            group: 'General' },
   { id: 'general.help',    combo: '?',        label: 'Show keyboard shortcuts', group: 'General' },
   { id: 'general.escape',  combo: 'escape',   label: 'Close modal / panel',     group: 'General' },
 ];
