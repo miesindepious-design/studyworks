@@ -344,10 +344,10 @@ export default function SettingsView({
 
   return (
     <div className="animate-in">
-      {/* Hero — flies into the top-left corner on scroll, exactly like the
+      {/* Hero — flies into the top-right corner on scroll, exactly like the
           dashboard welcome banner. */}
       <HeroDock
-        side="left"
+        side="right"
         chipIcon="⚙️"
         chipLabel="Settings"
         chipMeta={displayName || undefined}

@@ -122,9 +122,9 @@ describe('Settings page — no feature repeats itself', () => {
 describe('Settings page — scroll cascade', () => {
   const html = renderSettings();
 
-  it('parks the hero in the top-left corner', () => {
-    expect(html).toContain('hero-dock-slot-left');
-    expect(html).not.toContain('hero-dock-slot-right');
+  it('parks the hero in the top-right corner', () => {
+    expect(html).toContain('hero-dock-slot-right');
+    expect(html).not.toContain('hero-dock-slot-left');
   });
 
   it('slides panels in from the left edge', () => {

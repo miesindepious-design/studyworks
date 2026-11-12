@@ -53,9 +53,9 @@ function count(html: string, needle: string) {
 describe('Dashboard — scroll cascade', () => {
   const html = renderDashboard();
 
-  it('parks the hero in the top-left corner', () => {
-    expect(html).toContain('hero-dock-slot-left');
-    expect(html).not.toContain('hero-dock-slot-right');
+  it('parks the hero in the top-right corner', () => {
+    expect(html).toContain('hero-dock-slot-right');
+    expect(html).not.toContain('hero-dock-slot-left');
   });
 
   it('slides panels in from the left edge, never the right', () => {

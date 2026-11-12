@@ -435,10 +435,10 @@ export default function Dashboard({
 
       {/* ── Hero ───────────────────────────────────────────────────────── */}
       {/* Sits in the normal flow on arrival, then flies up and sideways and
-          parks itself in the top-left corner as a compact chip — the same
+          parks itself in the top-right corner as a compact chip — the same
           behaviour as the Settings hero. */}
       <HeroDock
-        side="left"
+        side="right"
         bannerClassName="sw-hero"
         chipIcon={(displayName.trim()[0] || 'A').toUpperCase()}
         chipLabel={greeting}
