@@ -20,7 +20,7 @@
  * purged in activate().
  */
 
-const CACHE_NAME = 'studyworks-v2';
+const CACHE_NAME = 'studyworks-v3'; // v3: new sprout app icons (PNG set) replaces v2's emoji SVGs
 const APP_SHELL  = ['/', '/index.html'];
 
 // ── Install: cache app shell ─────────────────────────────────────────────────
