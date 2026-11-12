@@ -103,8 +103,8 @@ self.addEventListener('push', event => {
   event.waitUntil(
     self.registration.showNotification(payload.title, {
       body:  payload.body,
-      icon:  '/icon-192.svg',
-      badge: '/icon-192.svg',
+      icon:  '/icon-192.png',
+      badge: '/icon-192.png',
       tag:   payload.tag,
       data:  payload.data,
       actions: [
@@ -142,8 +142,8 @@ async function checkReminders() {
       notifications.push(
         self.registration.showNotification(`📝 Revisit: ${note.title}`, {
           body:  `You set a reminder to revisit this ${note.type}.`,
-          icon:  '/icon-192.svg',
-          badge: '/icon-192.svg',
+          icon:  '/icon-192.png',
+          badge: '/icon-192.png',
           tag:   `note-${note.id}-${due.getTime()}`,
           data:  { type: 'note', id: note.id },
           actions: [
@@ -162,8 +162,8 @@ async function checkReminders() {
       notifications.push(
         self.registration.showNotification(`👥 Follow up: ${contact.name}`, {
           body:  `Reminder to reach out to ${contact.name} (${contact.role}).`,
-          icon:  '/icon-192.svg',
-          badge: '/icon-192.svg',
+          icon:  '/icon-192.png',
+          badge: '/icon-192.png',
           tag:   `contact-${contact.id}-${due.getTime()}`,
           data:  { type: 'contact', id: contact.id },
           actions: [

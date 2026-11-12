@@ -1,13 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="120 96 272 330">
   <defs>
-    <linearGradient id="sparkGrad" x1="0%" y1="100%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#FF5136"/>
-      <stop offset="100%" stop-color="#FFC531"/>
+    <linearGradient id="sparkGrad" x1="0.15" y1="1" x2="0.85" y2="0">
+      <stop offset="0" stop-color="#FF5136"/>
+      <stop offset="1" stop-color="#FFC531"/>
     </linearGradient>
   </defs>
-  <g fill="none" fill-rule="evenodd">
-    <path d="M128 24c0 0-56 40-56 88s28 72 56 104c28-32 56-60 56-104s-56-88-56-88z" fill="url(#sparkGrad)"/>
-    <path d="M128 48c0 0-32 24-32 56s16 48 32 72c16-24 32-44 32-72s-32-56-32-56z" fill="#211D16" fill-opacity="0.18"/>
+  <g fill="none" stroke="url(#sparkGrad)" stroke-linecap="round">
+    <path d="M256 386 C 256 336 250 286 256 218" stroke-width="32"/>
+  </g>
+  <g fill="url(#sparkGrad)">
+    <path d="M254 262 C 208 266 168 238 158 180 C 220 176 249 214 254 262 Z"/>
+    <path d="M258 216 C 304 220 344 192 354 134 C 292 130 263 168 258 216 Z"/>
   </g>
 </svg>
