@@ -20,7 +20,7 @@
  * purged in activate().
  */
 
-const CACHE_NAME = 'studyworks-v3'; // v3: new sprout app icons (PNG set) replaces v2's emoji SVGs
+const CACHE_NAME = 'studyworks-v4'; // v4: versioned manifest icon URLs (?v=2) so Chrome refetches icons on reinstall
 const APP_SHELL  = ['/', '/index.html'];
 
 // ── Install: cache app shell ─────────────────────────────────────────────────
