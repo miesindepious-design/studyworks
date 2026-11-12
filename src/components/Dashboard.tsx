@@ -16,6 +16,8 @@ import { getStreakData, last7Days, EMPTY_STREAK } from '../db/streaks';
 import type { StreakData } from '../db/schema';
 import { useCountUp } from '../hooks/useCountUp';
 import Ring from './Ring';
+import Reveal from './Reveal';
+import HeroDock from './HeroDock';
 import {
   IconFlame, IconTarget, IconNotes, IconCards, IconTimer,
   IconCrown, IconArrowRight, IconSparkles, IconLock, IconCheck,
@@ -432,7 +434,21 @@ export default function Dashboard({
     <div className="sw-stack animate-in">
 
       {/* ── Hero ───────────────────────────────────────────────────────── */}
-      <section className="sw-hero">
+      {/* Sits in the normal flow on arrival, then flies up and sideways and
+          parks itself in the top-left corner as a compact chip — the same
+          behaviour as the Settings hero. */}
+      <HeroDock
+        side="left"
+        bannerClassName="sw-hero"
+        chipIcon={(displayName.trim()[0] || 'A').toUpperCase()}
+        chipLabel={greeting}
+        chipMeta={displayName || undefined}
+        chipBadge={trialDaysLeft > 0 ? {
+          text: `${trialDaysLeft}d`,
+          title: `Free Pro trial — ${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} left`,
+        } : null}
+        chipTitle="Back to top"
+      >
         <div className="sw-hero-main">
           <p className="sw-label">Your daily workspace</p>
           <h1 className="sw-hero-title">
@@ -450,496 +466,519 @@ export default function Dashboard({
         <div className="sw-hero-ring">
           <Ring value={weeklyGoalPct} size={128} thickness={9} label={`${weeklyGoalPct}%`} caption="weekly goal" />
         </div>
-      </section>
+      </HeroDock>
 
       {/* ── Focus row: goals · timer · streak ──────────────────────────── */}
       <section className="sw-grid sw-grid-3">
 
         {/* Daily Goals */}
-        <div className="sw-panel">
-          <div className="sw-panel-head">
-            <div>
-              <div className="sw-panel-title">Daily Goals</div>
-              <div className="sw-panel-sub">{todayLabel}</div>
+        <Reveal fill delay={0}>
+          <div className="sw-panel">
+            <div className="sw-panel-head">
+              <div>
+                <div className="sw-panel-title">Daily Goals</div>
+                <div className="sw-panel-sub">{todayLabel}</div>
+              </div>
+              <div className="sw-panel-actions">
+                <span className="sw-chip accent">{weeklyGoalPct}%</span>
+                <button
+                  type="button"
+                  className="sw-btn ghost sm"
+                  onClick={() => setShowGoalEditor(v => !v)}
+                >
+                  {showGoalEditor ? 'Done' : 'Edit'}
+                </button>
+              </div>
             </div>
-            <div className="sw-panel-actions">
-              <span className="sw-chip accent">{weeklyGoalPct}%</span>
-              <button
-                type="button"
-                className="sw-btn ghost sm"
-                onClick={() => setShowGoalEditor(v => !v)}
-              >
-                {showGoalEditor ? 'Done' : 'Edit'}
-              </button>
-            </div>
-          </div>
-          <div className="sw-stack" style={{ gap: 13 }}>
-            {goalRows.map(g => {
-              const pct = Math.min(100, Math.round((g.current / g.goal) * 100));
-              return (
-                <div className="sw-goal" key={g.key}>
-                  <div className="sw-goal-top">
-                    <span className="sw-goal-name">{g.label}</span>
-                    <span className="sw-goal-pct">{pct}%</span>
-                  </div>
-                  <div className="sw-meter">
-                    <div
-                      className={`sw-meter-fill${pct >= 100 ? ' success' : ''}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  {showGoalEditor && (
-                    <div className="sw-row" style={{ gap: 6 }}>
-                      <button
-                        type="button"
-                        className="sw-btn secondary sm"
-                        onClick={() => updateGoal(g.key, Math.max(1, g.goal - 5))}
-                      >−</button>
-                      <span className="sw-goal-pct">{g.goal}</span>
-                      <button
-                        type="button"
-                        className="sw-btn secondary sm"
-                        onClick={() => updateGoal(g.key, g.goal + 5)}
-                      >+</button>
+            <div className="sw-stack" style={{ gap: 13 }}>
+              {goalRows.map(g => {
+                const pct = Math.min(100, Math.round((g.current / g.goal) * 100));
+                return (
+                  <div className="sw-goal" key={g.key}>
+                    <div className="sw-goal-top">
+                      <span className="sw-goal-name">{g.label}</span>
+                      <span className="sw-goal-pct">{pct}%</span>
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                    <div className="sw-meter">
+                      <div
+                        className={`sw-meter-fill${pct >= 100 ? ' success' : ''}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    {showGoalEditor && (
+                      <div className="sw-row" style={{ gap: 6 }}>
+                        <button
+                          type="button"
+                          className="sw-btn secondary sm"
+                          onClick={() => updateGoal(g.key, Math.max(1, g.goal - 5))}
+                        >−</button>
+                        <span className="sw-goal-pct">{g.goal}</span>
+                        <button
+                          type="button"
+                          className="sw-btn secondary sm"
+                          onClick={() => updateGoal(g.key, g.goal + 5)}
+                        >+</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        </Reveal>
 
         {/* Study Timer */}
-        <div className="sw-panel">
-          <div className="sw-panel-head">
-            <div className="sw-panel-title">Study Timer</div>
-            <span className="sw-chip">{completedSessions} session{completedSessions === 1 ? '' : 's'} today</span>
-          </div>
-          <div className="sw-row" style={{ gap: 16, alignItems: 'center' }}>
-            <Ring
-              value={(timerSeconds / (timerMode === 'work' ? WORK_SECONDS : BREAK_SECONDS)) * 100}
-              size={86}
-              thickness={6}
-              color={timerMode === 'work' ? 'var(--sw-accent)' : 'var(--sw-success)'}
-            >
-              <span
-                style={{
-                  fontFamily: 'var(--sw-font-mono)',
-                  fontSize: '0.9375rem',
-                  fontWeight: 500,
-                  color: 'var(--sw-text)',
-                }}
+        <Reveal fill delay={70}>
+          <div className="sw-panel">
+            <div className="sw-panel-head">
+              <div className="sw-panel-title">Study Timer</div>
+              <span className="sw-chip">{completedSessions} session{completedSessions === 1 ? '' : 's'} today</span>
+            </div>
+            <div className="sw-row" style={{ gap: 16, alignItems: 'center' }}>
+              <Ring
+                value={(timerSeconds / (timerMode === 'work' ? WORK_SECONDS : BREAK_SECONDS)) * 100}
+                size={86}
+                thickness={6}
+                color={timerMode === 'work' ? 'var(--sw-accent)' : 'var(--sw-success)'}
               >
-                {formatTime(timerSeconds)}
-              </span>
-            </Ring>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <p className="sw-label">
-                {timerMode === 'work' ? 'Focus session' : 'Break time'}
-              </p>
-              <p className="sw-tip-title" style={{ marginTop: 3 }}>
-                {timerMode === 'work' ? 'Revise your chapter' : 'Recharge'}
-              </p>
-              <p className="sw-tip-body">
-                {timerMode === 'work' ? 'Calculus · 25 min session' : 'Step away for a moment'}
-              </p>
-            </div>
-          </div>
-          <div className="sw-row" style={{ marginTop: 'auto', paddingTop: 14, gap: 8 }}>
-            <button type="button" className="sw-btn secondary" onClick={resetTimer}>Reset</button>
-            <button type="button" className="sw-btn primary" onClick={toggleTimer} style={{ flex: 1 }}>
-              {timerRunning ? 'Pause' : 'Start'}
-            </button>
-          </div>
-          <p className="sw-panel-sub" style={{ textAlign: 'center', marginTop: 8 }}>
-            Find your flow.
-          </p>
-        </div>
-
-        {/* Keep it going */}
-        <div className="sw-panel">
-          <div className="sw-panel-head">
-            <div className="sw-panel-title">Keep it going</div>
-            <IconFlame size={16} style={{ color: 'var(--sw-accent)' }} />
-          </div>
-          <div className="sw-row" style={{ gap: 16 }}>
-            <Ring
-              value={Math.min(100, (streak.currentStreak / 30) * 100)}
-              size={86}
-              thickness={6}
-            >
-              <div>
-                <div className="sw-ring-value" style={{ fontSize: '1.375rem' }}>{streak.currentStreak}</div>
-                <div className="sw-ring-caption">days</div>
-              </div>
-            </Ring>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <p className="sw-tip-title">Current streak</p>
-              <p className="sw-tip-body">A little, every day.</p>
-            </div>
-          </div>
-          <div style={{ marginTop: 'auto', paddingTop: 14 }}>
-            <div className="sw-days">
-              {weekDays.map((count, i) => (
-                <div
-                  key={i}
-                  className={`sw-day${count > 0 ? ' done' : ''}${i === 6 ? ' today' : ''}`}
-                  title={`${count} review${count === 1 ? '' : 's'}`}
+                <span
+                  style={{
+                    fontFamily: 'var(--sw-font-mono)',
+                    fontSize: '0.9375rem',
+                    fontWeight: 500,
+                    color: 'var(--sw-text)',
+                  }}
                 >
-                  {weekLabels[i]}
-                </div>
-              ))}
+                  {formatTime(timerSeconds)}
+                </span>
+              </Ring>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <p className="sw-label">
+                  {timerMode === 'work' ? 'Focus session' : 'Break time'}
+                </p>
+                <p className="sw-tip-title" style={{ marginTop: 3 }}>
+                  {timerMode === 'work' ? 'Revise your chapter' : 'Recharge'}
+                </p>
+                <p className="sw-tip-body">
+                  {timerMode === 'work' ? 'Calculus · 25 min session' : 'Step away for a moment'}
+                </p>
+              </div>
             </div>
-            <p className="sw-panel-sub" style={{ marginTop: 10 }}>
-              Best: {streak.longestStreak} days
+            <div className="sw-row" style={{ marginTop: 'auto', paddingTop: 14, gap: 8 }}>
+              <button type="button" className="sw-btn secondary" onClick={resetTimer}>Reset</button>
+              <button type="button" className="sw-btn primary" onClick={toggleTimer} style={{ flex: 1 }}>
+                {timerRunning ? 'Pause' : 'Start'}
+              </button>
+            </div>
+            <p className="sw-panel-sub" style={{ textAlign: 'center', marginTop: 8 }}>
+              Find your flow.
             </p>
           </div>
-        </div>
+        </Reveal>
+
+        {/* Keep it going */}
+        <Reveal fill delay={140}>
+          <div className="sw-panel">
+            <div className="sw-panel-head">
+              <div className="sw-panel-title">Keep it going</div>
+              <IconFlame size={16} style={{ color: 'var(--sw-accent)' }} />
+            </div>
+            <div className="sw-row" style={{ gap: 16 }}>
+              <Ring
+                value={Math.min(100, (streak.currentStreak / 30) * 100)}
+                size={86}
+                thickness={6}
+              >
+                <div>
+                  <div className="sw-ring-value" style={{ fontSize: '1.375rem' }}>{streak.currentStreak}</div>
+                  <div className="sw-ring-caption">days</div>
+                </div>
+              </Ring>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <p className="sw-tip-title">Current streak</p>
+                <p className="sw-tip-body">A little, every day.</p>
+              </div>
+            </div>
+            <div style={{ marginTop: 'auto', paddingTop: 14 }}>
+              <div className="sw-days">
+                {weekDays.map((count, i) => (
+                  <div
+                    key={i}
+                    className={`sw-day${count > 0 ? ' done' : ''}${i === 6 ? ' today' : ''}`}
+                    title={`${count} review${count === 1 ? '' : 's'}`}
+                  >
+                    {weekLabels[i]}
+                  </div>
+                ))}
+              </div>
+              <p className="sw-panel-sub" style={{ marginTop: 10 }}>
+                Best: {streak.longestStreak} days
+              </p>
+            </div>
+          </div>
+        </Reveal>
       </section>
 
       {/* ── Activity + Achievements ────────────────────────────────────── */}
       <section className="sw-grid sw-grid-main-side">
 
         {/* Activity */}
-        <div className="sw-panel">
-          <div className="sw-panel-head">
-            <div>
-              <div className="sw-panel-title">Activity</div>
-              <div className="sw-panel-sub">Last 14 weeks</div>
+        <Reveal fill delay={0}>
+          <div className="sw-panel">
+            <div className="sw-panel-head">
+              <div>
+                <div className="sw-panel-title">Activity</div>
+                <div className="sw-panel-sub">Last 14 weeks</div>
+              </div>
             </div>
-          </div>
-          <div className="sw-row" style={{ gap: 18, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-            <div style={{ flex: '1 1 300px', minWidth: 0 }}>
-              <div className="sw-heat">
-                <div style={{ display: 'flex', gap: 3 }}>
-                  {/* Day-of-week gutter */}
-                  <div style={{ display: 'grid', gridTemplateRows: 'repeat(7, 11px)', gap: 3, paddingTop: 16 }}>
-                    {['M', 'W', 'F'].map((d, i) => (
-                      <span
-                        key={d}
-                        style={{
-                          fontSize: '0.5625rem',
-                          color: 'var(--sw-text-faint)',
-                          height: 11,
-                          lineHeight: '11px',
-                          gridRow: i * 2 + 1,
-                        }}
-                      >
-                        {d}
-                      </span>
-                    ))}
-                  </div>
-                  <div style={{ minWidth: 0 }}>
-                    {/* Month labels */}
-                    <div className="sw-heat-months" style={{ gap: 3, height: 12 }}>
-                      {heatmapMonths.map((m, i) => (
-                        <span key={`${m.label}-${i}`} style={{ width: m.span * 14 - 3, lineHeight: '12px' }}>
-                          {m.span > 1 || i === 0 ? m.label : ''}
+            <div className="sw-row" style={{ gap: 18, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 300px', minWidth: 0 }}>
+                <div className="sw-heat">
+                  <div style={{ display: 'flex', gap: 3 }}>
+                    {/* Day-of-week gutter */}
+                    <div style={{ display: 'grid', gridTemplateRows: 'repeat(7, 11px)', gap: 3, paddingTop: 16 }}>
+                      {['M', 'W', 'F'].map((d, i) => (
+                        <span
+                          key={d}
+                          style={{
+                            fontSize: '0.5625rem',
+                            color: 'var(--sw-text-faint)',
+                            height: 11,
+                            lineHeight: '11px',
+                            gridRow: i * 2 + 1,
+                          }}
+                        >
+                          {d}
                         </span>
                       ))}
                     </div>
-                    <div className="sw-heat-body">
-                      {heatmapWeeks.map(week => (
-                        <div key={week.key} style={{ display: 'grid', gridTemplateRows: 'repeat(7, 11px)', gap: 3 }}>
-                          {week.days.map(day => {
-                            const level = day.count === 0 ? 0 : day.count <= 2 ? 1 : day.count <= 5 ? 2 : day.count <= 10 ? 3 : 4;
-                            return (
-                              <div
-                                key={day.date}
-                                className={`sw-heat-cell l${level}`}
-                                title={`${day.date}: ${day.count} review${day.count === 1 ? '' : 's'}`}
-                              />
-                            );
-                          })}
-                        </div>
-                      ))}
+                    <div style={{ minWidth: 0 }}>
+                      {/* Month labels */}
+                      <div className="sw-heat-months" style={{ gap: 3, height: 12 }}>
+                        {heatmapMonths.map((m, i) => (
+                          <span key={`${m.label}-${i}`} style={{ width: m.span * 14 - 3, lineHeight: '12px' }}>
+                            {m.span > 1 || i === 0 ? m.label : ''}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="sw-heat-body">
+                        {heatmapWeeks.map(week => (
+                          <div key={week.key} style={{ display: 'grid', gridTemplateRows: 'repeat(7, 11px)', gap: 3 }}>
+                            {week.days.map(day => {
+                              const level = day.count === 0 ? 0 : day.count <= 2 ? 1 : day.count <= 5 ? 2 : day.count <= 10 ? 3 : 4;
+                              return (
+                                <div
+                                  key={day.date}
+                                  className={`sw-heat-cell l${level}`}
+                                  title={`${day.date}: ${day.count} review${day.count === 1 ? '' : 's'}`}
+                                />
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
+                <div className="sw-heat-legend">
+                  <span>Less</span>
+                  {[0, 1, 2, 3, 4].map(l => <div key={l} className={`sw-heat-cell l${l}`} />)}
+                  <span>More</span>
+                </div>
               </div>
-              <div className="sw-heat-legend">
-                <span>Less</span>
-                {[0, 1, 2, 3, 4].map(l => <div key={l} className={`sw-heat-cell l${l}`} />)}
-                <span>More</span>
-              </div>
-            </div>
 
-            <div style={{ minWidth: 132, paddingLeft: 18, borderLeft: '1px solid var(--sw-line-soft)' }}>
-              <div style={{ fontFamily: 'var(--sw-font-head)', fontSize: '1.875rem', fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--sw-text)', lineHeight: 1 }}>
-                {formatFocus(todaysStudyMinutes)}
+              <div style={{ minWidth: 132, paddingLeft: 18, borderLeft: '1px solid var(--sw-line-soft)' }}>
+                <div style={{ fontFamily: 'var(--sw-font-head)', fontSize: '1.875rem', fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--sw-text)', lineHeight: 1 }}>
+                  {formatFocus(todaysStudyMinutes)}
+                </div>
+                <p className="sw-panel-sub" style={{ marginTop: 4 }}>focused today</p>
+                {streak.totalReviews > 0 && (
+                  <p className="sw-delta" style={{ marginTop: 10 }}>
+                    {streak.totalReviews} reviews
+                  </p>
+                )}
               </div>
-              <p className="sw-panel-sub" style={{ marginTop: 4 }}>focused today</p>
-              {streak.totalReviews > 0 && (
-                <p className="sw-delta" style={{ marginTop: 10 }}>
-                  {streak.totalReviews} reviews
-                </p>
-              )}
             </div>
           </div>
-        </div>
+        </Reveal>
 
         {/* Achievements */}
-        <div className="sw-panel">
-          <div className="sw-panel-head">
-            <div>
-              <div className="sw-panel-title">Achievements</div>
-              <div className="sw-panel-sub">{unlockedCount} of {achievements.length} unlocked</div>
-            </div>
-            <button
-              type="button"
-              className="sw-btn ghost sm"
-              onClick={toggleAchievementsCollapsed}
-            >
-              {achievementsCollapsed ? 'Show all' : 'View all'}
-            </button>
-          </div>
-          <div
-            className="sw-grid"
-            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(88px, 1fr))', gap: 14 }}
-          >
-            {(achievementsCollapsed ? achievements.slice(0, 4) : achievements.slice(0, 6)).map(a => (
-              <div key={a.id} className={`sw-ach${a.unlocked ? '' : ' locked'}`}>
-                <div className="sw-ach-icon">
-                  {a.unlocked ? a.icon : <IconLock size={15} />}
-                </div>
-                <div className="sw-ach-name">{a.unlocked ? a.title : 'Locked'}</div>
-                {!a.unlocked && <div className="sw-ach-note">{a.description}</div>}
+        <Reveal fill delay={70}>
+          <div className="sw-panel">
+            <div className="sw-panel-head">
+              <div>
+                <div className="sw-panel-title">Achievements</div>
+                <div className="sw-panel-sub">{unlockedCount} of {achievements.length} unlocked</div>
               </div>
-            ))}
+              <button
+                type="button"
+                className="sw-btn ghost sm"
+                onClick={toggleAchievementsCollapsed}
+              >
+                {achievementsCollapsed ? 'Show all' : 'View all'}
+              </button>
+            </div>
+            <div
+              className="sw-grid"
+              style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(88px, 1fr))', gap: 14 }}
+            >
+              {(achievementsCollapsed ? achievements.slice(0, 4) : achievements.slice(0, 6)).map(a => (
+                <div key={a.id} className={`sw-ach${a.unlocked ? '' : ' locked'}`}>
+                  <div className="sw-ach-icon">
+                    {a.unlocked ? a.icon : <IconLock size={15} />}
+                  </div>
+                  <div className="sw-ach-name">{a.unlocked ? a.title : 'Locked'}</div>
+                  {!a.unlocked && <div className="sw-ach-note">{a.description}</div>}
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        </Reveal>
       </section>
 
       {/* ── Stat tiles ─────────────────────────────────────────────────── */}
       <section className="sw-grid sw-grid-4">
-        {statRows.map(s => (
-          <StatTile
-            key={s.label}
-            icon={s.icon}
-            label={s.label}
-            value={s.value}
-            delta={s.delta}
-            onClick={() => setCurrentView(s.view)}
-          />
+        {statRows.map((s, i) => (
+          <Reveal key={s.label} fill delay={i * 60}>
+            <StatTile
+              icon={s.icon}
+              label={s.label}
+              value={s.value}
+              delta={s.delta}
+              onClick={() => setCurrentView(s.view)}
+            />
+          </Reveal>
         ))}
       </section>
 
       {/* ── Action strips ──────────────────────────────────────────────── */}
-      <section className="sw-grid sw-grid-2">
-        {dueFlashcards > 0 && (
-          <button type="button" className="sw-alert" onClick={() => setCurrentView('flashcards')}>
-            <span className="sw-alert-icon"><IconTarget size={16} /></span>
-            <span className="sw-alert-body">
-              <span className="sw-alert-title">{dueFlashcards} card{dueFlashcards > 1 ? 's are' : ' is'} due for review</span>
-              <span className="sw-alert-sub">Keep your spaced repetition streak alive</span>
-            </span>
-            <span className="sw-alert-action">Review <IconArrowRight size={12} /></span>
-          </button>
-        )}
-        {overdueContacts > 0 ? (
-          <button type="button" className="sw-alert" onClick={() => setCurrentView('contacts')}>
-            <span className="sw-alert-icon" style={{ background: 'var(--sw-danger-soft)', color: 'var(--sw-danger)' }}>
-              <IconNotes size={16} />
-            </span>
-            <span className="sw-alert-body">
-              <span className="sw-alert-title">{overdueContacts} reminder{overdueContacts > 1 ? 's are' : ' is'} overdue</span>
-              <span className="sw-alert-sub">People you said you would follow up with</span>
-            </span>
-            <span className="sw-alert-action">Open <IconArrowRight size={12} /></span>
-          </button>
-        ) : aiReady ? (
-          <button type="button" className="sw-alert info" onClick={() => setCurrentView('tutor')}>
-            <span className="sw-alert-icon"><IconSparkles size={16} /></span>
-            <span className="sw-alert-body">
-              <span className="sw-alert-title">Your AI tutor has new suggestions</span>
-              <span className="sw-alert-sub">{aiProvider === 'gemini' ? 'Gemini' : 'OpenAI'} is ready when you are</span>
-            </span>
-            <span className="sw-alert-action">Explore <IconArrowRight size={12} /></span>
-          </button>
-        ) : (
-          <button type="button" className="sw-alert info" onClick={() => setCurrentView('settings')}>
-            <span className="sw-alert-icon"><IconSparkles size={16} /></span>
-            <span className="sw-alert-body">
-              <span className="sw-alert-title">Connect an AI provider</span>
-              <span className="sw-alert-sub">Summaries, Q&amp;A and smart insights in one click</span>
-            </span>
-            <span className="sw-alert-action">Set up <IconArrowRight size={12} /></span>
-          </button>
-        )}
-      </section>
-
-      {/* ── Pro band ───────────────────────────────────────────────────── */}
-      {tier === 'free' ? (
-        <section className="sw-promo">
-          <span className="sw-promo-icon"><IconCrown size={18} /></span>
-          <div className="sw-promo-body">
-            <p className="sw-promo-title">Get 3 months of Pro free for students</p>
-            <p className="sw-promo-sub">
-              More room for your notes. More ways to learn. Verify your student status.
-            </p>
-          </div>
-          <div className="sw-promo-actions">
-            <button type="button" className="sw-promo-link" onClick={() => setCurrentView('pricing')}>
-              Learn more
+      <Reveal>
+        <section className="sw-grid sw-grid-2">
+          {dueFlashcards > 0 && (
+            <button type="button" className="sw-alert" onClick={() => setCurrentView('flashcards')}>
+              <span className="sw-alert-icon"><IconTarget size={16} /></span>
+              <span className="sw-alert-body">
+                <span className="sw-alert-title">{dueFlashcards} card{dueFlashcards > 1 ? 's are' : ' is'} due for review</span>
+                <span className="sw-alert-sub">Keep your spaced repetition streak alive</span>
+              </span>
+              <span className="sw-alert-action">Review <IconArrowRight size={12} /></span>
             </button>
-            <button type="button" className="sw-btn primary" onClick={() => setCurrentView('pricing')}>
-              Upgrade
-            </button>
-          </div>
-        </section>
-      ) : (
-        <section className="sw-promo">
-          <span className="sw-promo-icon"><IconCrown size={18} /></span>
-          <div className="sw-promo-body">
-            <p className="sw-promo-title">
-              {trialDaysLeft > 0
-                ? `You have ${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} left on your Pro trial`
-                : 'Pro plan active'}
-            </p>
-            <p className="sw-promo-sub">
-              {trialDaysLeft > 0
-                ? 'Keep every feature unlocked while your trial runs.'
-                : 'Unlimited items, AI insights and spaced repetition.'}
-            </p>
-          </div>
-          <div className="sw-promo-actions">
-            <button type="button" className="sw-promo-link" onClick={() => setCurrentView('pricing')}>
-              Manage plan
-            </button>
-          </div>
-        </section>
-      )}
-
-      {/* ── Bottom row ─────────────────────────────────────────────────── */}
-      <section className="sw-grid sw-grid-3">
-
-        {/* Recent Notes */}
-        <div className="sw-panel">
-          <div className="sw-panel-head">
-            <div className="sw-panel-title">Recent Notes</div>
-            <button type="button" className="sw-btn ghost sm" onClick={() => setCurrentView('notes')}>
-              View all
-            </button>
-          </div>
-          {recentNotes.length === 0 ? (
-            <div className="sw-empty">
-              <div className="sw-empty-icon"><IconNotes size={20} /></div>
-              <div className="sw-empty-title">No notes yet</div>
-              <div className="sw-empty-sub">Start capturing your knowledge</div>
-            </div>
-          ) : (
-            <div className="sw-list">
-              {recentNotes.map(n => (
-                <div
-                  key={n.id}
-                  className="sw-list-row"
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => setCurrentView('notes')}
-                >
-                  <span
-                    className="sw-list-dot"
-                    style={{ background: NOTE_DOT_COLORS[n.type] || 'var(--sw-accent)' }}
-                  />
-                  <div className="sw-list-text">
-                    <div className="sw-list-title">{n.title}</div>
-                    <div className="sw-list-meta">{relativeTime(n.updatedAt)}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
           )}
-        </div>
-
-        {/* Weekly Insights */}
-        <div className="sw-panel">
-          <div className="sw-panel-head">
-            <div className="sw-panel-title">Weekly Insights</div>
-            {aiReady && (
-              <button
-                type="button"
-                className="sw-btn ghost sm"
-                onClick={onGenerateInsights}
-                disabled={insightsLoading}
-              >
-                {insightsLoading ? 'Generating…' : 'Generate'}
-              </button>
-            )}
-          </div>
-          {!aiReady ? (
-            <div className="sw-empty">
-              <div className="sw-empty-icon"><IconSparkles size={20} /></div>
-              <div className="sw-empty-title">Connect AI for insights</div>
-              <div className="sw-empty-sub">A weekly digest of what to study next</div>
-              <button
-                type="button"
-                className="sw-btn secondary sm"
-                style={{ marginTop: 12 }}
-                onClick={() => setCurrentView('settings')}
-              >
-                Set up AI
-              </button>
-            </div>
+          {overdueContacts > 0 ? (
+            <button type="button" className="sw-alert" onClick={() => setCurrentView('contacts')}>
+              <span className="sw-alert-icon" style={{ background: 'var(--sw-danger-soft)', color: 'var(--sw-danger)' }}>
+                <IconNotes size={16} />
+              </span>
+              <span className="sw-alert-body">
+                <span className="sw-alert-title">{overdueContacts} reminder{overdueContacts > 1 ? 's are' : ' is'} overdue</span>
+                <span className="sw-alert-sub">People you said you would follow up with</span>
+              </span>
+              <span className="sw-alert-action">Open <IconArrowRight size={12} /></span>
+            </button>
+          ) : aiReady ? (
+            <button type="button" className="sw-alert info" onClick={() => setCurrentView('tutor')}>
+              <span className="sw-alert-icon"><IconSparkles size={16} /></span>
+              <span className="sw-alert-body">
+                <span className="sw-alert-title">Your AI tutor has new suggestions</span>
+                <span className="sw-alert-sub">{aiProvider === 'gemini' ? 'Gemini' : 'OpenAI'} is ready when you are</span>
+              </span>
+              <span className="sw-alert-action">Explore <IconArrowRight size={12} /></span>
+            </button>
           ) : (
-            <>
-              <div className="sw-row" style={{ gap: 10, alignItems: 'baseline' }}>
-                <span
-                  style={{
-                    fontFamily: 'var(--sw-font-head)',
-                    fontSize: '1.5rem',
-                    fontWeight: 800,
-                    letterSpacing: '-0.03em',
-                    color: 'var(--sw-text)',
-                  }}
-                >
-                  {formatFocus(todaysStudyMinutes)}
-                </span>
-                {streak.totalReviews > 0 && (
-                  <span className="sw-delta">
-                    <IconCheck size={11} strokeWidth={2.6} />
-                    {streak.totalReviews} reviews
-                  </span>
+            <button type="button" className="sw-alert info" onClick={() => setCurrentView('settings')}>
+              <span className="sw-alert-icon"><IconSparkles size={16} /></span>
+              <span className="sw-alert-body">
+                <span className="sw-alert-title">Connect an AI provider</span>
+                <span className="sw-alert-sub">Summaries, Q&amp;A and smart insights in one click</span>
+              </span>
+              <span className="sw-alert-action">Set up <IconArrowRight size={12} /></span>
+            </button>
+          )}
+          </section>
+        </Reveal>
+
+        {/* ── Pro band ───────────────────────────────────────────────────── */}
+        {tier === 'free' ? (
+          <Reveal>
+            <section className="sw-promo">
+              <span className="sw-promo-icon"><IconCrown size={18} /></span>
+              <div className="sw-promo-body">
+                <p className="sw-promo-title">Get 3 months of Pro free for students</p>
+                <p className="sw-promo-sub">
+                  More room for your notes. More ways to learn. Verify your student status.
+                </p>
+              </div>
+              <div className="sw-promo-actions">
+                <button type="button" className="sw-promo-link" onClick={() => setCurrentView('pricing')}>
+                  Learn more
+                </button>
+                <button type="button" className="sw-btn primary" onClick={() => setCurrentView('pricing')}>
+                  Upgrade
+                </button>
+              </div>
+            </section>
+          </Reveal>
+        ) : (
+          <Reveal>
+            <section className="sw-promo">
+              <span className="sw-promo-icon"><IconCrown size={18} /></span>
+              <div className="sw-promo-body">
+                <p className="sw-promo-title">
+                  {trialDaysLeft > 0
+                    ? `You have ${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} left on your Pro trial`
+                    : 'Pro plan active'}
+                </p>
+                <p className="sw-promo-sub">
+                  {trialDaysLeft > 0
+                    ? 'Keep every feature unlocked while your trial runs.'
+                    : 'Unlimited items, AI insights and spaced repetition.'}
+                </p>
+              </div>
+              <div className="sw-promo-actions">
+                <button type="button" className="sw-promo-link" onClick={() => setCurrentView('pricing')}>
+                  Manage plan
+                </button>
+              </div>
+            </section>
+          </Reveal>
+        )}
+
+        {/* ── Bottom row ─────────────────────────────────────────────────── */}
+        <section className="sw-grid sw-grid-3">
+
+          {/* Recent Notes */}
+          <Reveal fill delay={0}>
+            <div className="sw-panel">
+              <div className="sw-panel-head">
+                <div className="sw-panel-title">Recent Notes</div>
+                <button type="button" className="sw-btn ghost sm" onClick={() => setCurrentView('notes')}>
+                  View all
+                </button>
+              </div>
+              {recentNotes.length === 0 ? (
+                <div className="sw-empty">
+                  <div className="sw-empty-icon"><IconNotes size={20} /></div>
+                  <div className="sw-empty-title">No notes yet</div>
+                  <div className="sw-empty-sub">Start capturing your knowledge</div>
+                </div>
+              ) : (
+                <div className="sw-list">
+                  {recentNotes.map(n => (
+                    <div
+                      key={n.id}
+                      className="sw-list-row"
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => setCurrentView('notes')}
+                    >
+                      <span
+                        className="sw-list-dot"
+                        style={{ background: NOTE_DOT_COLORS[n.type] || 'var(--sw-accent)' }}
+                      />
+                      <div className="sw-list-text">
+                        <div className="sw-list-title">{n.title}</div>
+                        <div className="sw-list-meta">{relativeTime(n.updatedAt)}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Reveal>
+
+          {/* Weekly Insights */}
+          <Reveal fill delay={70}>
+            <div className="sw-panel">
+              <div className="sw-panel-head">
+                <div className="sw-panel-title">Weekly Insights</div>
+                {aiReady && (
+                  <button
+                    type="button"
+                    className="sw-btn ghost sm"
+                    onClick={onGenerateInsights}
+                    disabled={insightsLoading}
+                  >
+                    {insightsLoading ? 'Generating…' : 'Generate'}
+                  </button>
                 )}
               </div>
-              <div className="sw-chart" style={{ marginTop: 14 }}>
-                {weekDays.map((count, i) => {
-                  const height = Math.max(6, (count / weekPeak) * 100);
-                  return (
-                    <div className={`sw-chart-col${i === weekPeakIndex ? ' peak' : ''}`} key={i}>
-                      <div className="sw-chart-bar" style={{ height: `${height}%` }} />
-                      <div className="sw-chart-day">{weekLabels[i]}</div>
-                    </div>
-                  );
-                })}
-              </div>
-              {weeklyInsights && (
-                <p className="sw-tip-body" style={{ marginTop: 12 }}>{weeklyInsights.summary}</p>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* Quick Tips */}
-        <div className="sw-panel">
-          <div className="sw-panel-head">
-            <div className="sw-panel-title">Quick Tips</div>
-          </div>
-          <div>
-            {quickTips.map((tip, i) => (
-              <div
-                key={tip.title}
-                className="sw-tip"
-                onClick={tip.action}
-                style={{ cursor: tip.action ? 'pointer' : 'default' }}
-              >
-                <span className="sw-tip-num">{i + 1}</span>
-                <div>
-                  <div className="sw-tip-title">{tip.title}</div>
-                  <div className="sw-tip-body">{tip.body}</div>
+              {!aiReady ? (
+                <div className="sw-empty">
+                  <div className="sw-empty-icon"><IconSparkles size={20} /></div>
+                  <div className="sw-empty-title">Connect AI for insights</div>
+                  <div className="sw-empty-sub">A weekly digest of what to study next</div>
+                  <button
+                    type="button"
+                    className="sw-btn secondary sm"
+                    style={{ marginTop: 12 }}
+                    onClick={() => setCurrentView('settings')}
+                  >
+                    Set up AI
+                  </button>
                 </div>
+              ) : (
+                <>
+                  <div className="sw-row" style={{ gap: 10, alignItems: 'baseline' }}>
+                    <span
+                      style={{
+                        fontFamily: 'var(--sw-font-head)',
+                        fontSize: '1.5rem',
+                        fontWeight: 800,
+                        letterSpacing: '-0.03em',
+                        color: 'var(--sw-text)',
+                      }}
+                    >
+                      {formatFocus(todaysStudyMinutes)}
+                    </span>
+                    {streak.totalReviews > 0 && (
+                      <span className="sw-delta">
+                        <IconCheck size={11} strokeWidth={2.6} />
+                        {streak.totalReviews} reviews
+                      </span>
+                    )}
+                  </div>
+                  <div className="sw-chart" style={{ marginTop: 14 }}>
+                    {weekDays.map((count, i) => {
+                      const height = Math.max(6, (count / weekPeak) * 100);
+                      return (
+                        <div className={`sw-chart-col${i === weekPeakIndex ? ' peak' : ''}`} key={i}>
+                          <div className="sw-chart-bar" style={{ height: `${height}%` }} />
+                          <div className="sw-chart-day">{weekLabels[i]}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {weeklyInsights && (
+                    <p className="sw-tip-body" style={{ marginTop: 12 }}>{weeklyInsights.summary}</p>
+                  )}
+                </>
+              )}
+            </div>
+          </Reveal>
+
+          {/* Quick Tips */}
+          <Reveal fill delay={140}>
+            <div className="sw-panel">
+              <div className="sw-panel-head">
+                <div className="sw-panel-title">Quick Tips</div>
               </div>
-            ))}
-          </div>
-        </div>
+              <div>
+                {quickTips.map((tip, i) => (
+                  <div
+                    key={tip.title}
+                    className="sw-tip"
+                    onClick={tip.action}
+                    style={{ cursor: tip.action ? 'pointer' : 'default' }}
+                  >
+                    <span className="sw-tip-num">{i + 1}</span>
+                    <div>
+                      <div className="sw-tip-title">{tip.title}</div>
+                      <div className="sw-tip-body">{tip.body}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Reveal>
       </section>
     </div>
   );

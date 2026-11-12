@@ -2153,7 +2153,10 @@ input:-webkit-autofill:focus {
 .hero-dock-chip {
   position: fixed;
   top: 72px;
-  z-index: 26;
+  /* Must clear the app shell's sidebar (z-index 40) and topbar (30) — the
+     chip is portalled to <body>, so it needs to outrank them to stay
+     visible while it parks in the corner. */
+  z-index: 45;
   display: flex;
   align-items: center;
   gap: 0.55rem;
@@ -2321,6 +2324,9 @@ input:-webkit-autofill:focus {
     top: 62px;
     max-width: min(240px, calc(100vw - 1.5rem));
     font-size: 0.75rem;
+    /* Below the off-canvas drawer (40) so an open nav menu covers the chip
+       instead of the chip floating on top of the menu. */
+    z-index: 35;
   }
   .hero-dock-chip-left  { left: 12px; }
   .hero-dock-chip-right { right: 12px; }
