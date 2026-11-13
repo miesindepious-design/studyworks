@@ -64,9 +64,15 @@ describe('Dashboard — scroll cascade', () => {
   });
 
   it('wraps every dashboard panel in a reveal wrapper', () => {
-    // Focus row (3) + activity/achievements (2) + stat tiles (4) + action
-    // strips (1) + pro band (1) + bottom row (3) = 14 revealed blocks.
-    expect(count(html, 'reveal-wrap')).toBeGreaterThanOrEqual(14);
+    // Every panel and stat tile on the page sits inside a reveal wrapper, so
+    // nothing skips the cascade. Counting the wrappers against the panels is
+    // the invariant; the exact number of panels changes as the layout does.
+    const panels = count(html, 'class="sw-panel"') + count(html, 'class="sw-stat"');
+    expect(count(html, 'reveal-wrap')).toBeGreaterThanOrEqual(panels);
+
+    // The first panel must render after the first reveal wrapper — a panel
+    // that appears before the cascade starts would never animate in.
+    expect(html.indexOf('class="sw-panel"')).toBeGreaterThan(html.indexOf('reveal-wrap'));
   });
 
   it('staggers the cascade so panels arrive one after another', () => {

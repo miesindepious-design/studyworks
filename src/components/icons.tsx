@@ -233,6 +233,41 @@ export function IconLock(p: IconProps) {
   );
 }
 
+export function IconPlay(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M8 5.5v13l10-6.5-10-6.5Z" />
+    </Svg>
+  );
+}
+
+export function IconPause(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M9 5v14M15 5v14" />
+    </Svg>
+  );
+}
+
+export function IconDots(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <circle cx="6" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="18" cy="12" r="1" fill="currentColor" stroke="none" />
+    </Svg>
+  );
+}
+
+export function IconArrowUpRight(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M7 17 17 7" />
+      <path d="M9 7h8v8" />
+    </Svg>
+  );
+}
+
 export function IconUpload(p: IconProps) {
   return (
     <Svg {...p}>

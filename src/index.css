@@ -14,21 +14,21 @@
   color-scheme: light;
 
   /* ── Palette ── */
-  --background:        #FAF3E7;
-  --foreground:        #211D16;
-  --border:            #E7DAC0;
+  --background:        #F7F5EF;
+  --foreground:        #1C1A16;
+  --border:            #E4E1D6;
   --border-soft:       var(--border);
   --input:             #FFFFFF;
   --primary:           #FF5136;
   --primary-foreground:#FFFFFF;
   --secondary:         #21312A;
   --secondary-foreground: #FAF3E7;
-  --muted:             #EEE3CB;
-  --muted-foreground:  #8A7D65;
-  --card:              #FFFDF6;
-  --card-foreground:   #211D16;
-  --ink:               #211D16;
-  --cream:             #FAF3E7;
+  --muted:             #EFEDE4;
+  --muted-foreground:  #87837A;
+  --card:              #FFFFFF;
+  --card-foreground:   #1C1A16;
+  --ink:               #1C1A16;
+  --cream:             #F7F5EF;
   --mustard:           #FFC531;
   --mustard-foreground:#211D16;
   --mint:              #1FA97A;
@@ -77,18 +77,18 @@
   --accent-glow: rgba(255, 81, 54, .32);
 
   /* ── Depth ── */
-  --shadow-sm:  0 1px 2px rgba(33, 29, 22, .06);
-  --shadow:     0 2px 10px rgba(33, 29, 22, .07), 0 1px 2px rgba(33, 29, 22, .05);
-  --shadow-md:  0 10px 30px rgba(33, 29, 22, .10), 0 3px 8px rgba(33, 29, 22, .06);
-  --shadow-lg:  0 30px 70px rgba(33, 29, 22, .16), 0 10px 24px rgba(33, 29, 22, .10);
+  --shadow-sm:  0 1px 2px rgba(28, 26, 22, .05), 0 4px 12px -4px rgba(28, 26, 22, .07);
+  --shadow:     0 2px 4px rgba(28, 26, 22, .04), 0 12px 28px -10px rgba(28, 26, 22, .12);
+  --shadow-md:  0 4px 12px rgba(28, 26, 22, .06), 0 24px 48px -18px rgba(28, 26, 22, .16);
+  --shadow-lg:  0 12px 28px rgba(28, 26, 22, .08), 0 40px 80px -28px rgba(28, 26, 22, .20);
   --shadow-glow:0 12px 44px rgba(255, 81, 54, .16);
 
   /* ── Radii ── */
   --r-xs:   0.375rem;
-  --r-sm:   0.5rem;
-  --r:      0.75rem;
-  --r-lg:   1.125rem;
-  --r-xl:   1.5rem;
+  --r-sm:   0.625rem;
+  --r:      0.875rem;
+  --r-lg:   1.5rem;
+  --r-xl:   1.75rem;
   --r-full: 9999px;
 
   /* ── Type ── */
@@ -107,21 +107,21 @@
 [data-theme="dark"] {
   color-scheme: dark;
 
-  --background:        #1a1612;
-  --foreground:        #f0e6d6;
-  --border:            #3d3529;
+  --background:        #121110;
+  --foreground:        #F3EFE6;
+  --border:            #2C2A26;
   --border-soft:       var(--border);
-  --input:             #2a241c;
+  --input:             #201E1B;
   --primary:           #FF6B4A;
   --primary-foreground:#211D16;
   --secondary:         #E2E8DF;
   --secondary-foreground:#21312A;
-  --muted:             #2a241c;
-  --muted-foreground:  #a89a82;
-  --card:              #241f18;
-  --card-foreground:   #f0e6d6;
-  --ink:               #f0e6d6;
-  --cream:             #1a1612;
+  --muted:             #171614;
+  --muted-foreground:  #8B857A;
+  --card:              #1A1917;
+  --card-foreground:   #F3EFE6;
+  --ink:               #F3EFE6;
+  --cream:             #121110;
   --mustard:           #FFC531;
   --mustard-foreground:#211D16;
   --mint:              #34d399;
@@ -170,7 +170,14 @@
   --shadow-glow:0 10px 40px rgba(255, 107, 74, .18);
 }
 
-html { scroll-behavior: smooth; }
+html {
+  scroll-behavior: smooth;
+  /* The docked hero chip parks itself off the right edge while it waits to
+     fly in, which would otherwise let the page scroll sideways into empty
+     space. `clip` contains it without turning the root into a scroll
+     container, so sticky positioning keeps working. */
+  overflow-x: clip;
+}
 
 body {
   font-family: var(--font-sans);

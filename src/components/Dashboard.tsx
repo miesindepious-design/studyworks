@@ -1,13 +1,15 @@
 /**
  * Dashboard — the student's daily workspace.
  *
- * Layout mirrors the design foundation: a greeting hero with the weekly-goal
- * ring, three focus cards, the activity + achievements pair, a stat row,
- * action strips, the Pro band, and finally the three-column bottom row.
+ * The page opens with an editorial masthead and a focus room (a live Pomodoro
+ * dial), then a weekly rhythm card, subject cards and today's plan. Below
+ * that sits everything the dashboard has always carried: daily goals, the
+ * streak card, activity heatmap, achievements, stat tiles, action strips, the
+ * Pro band, recent notes, weekly insights and quick tips.
  *
- * All data comes from props and local storage — the page is a read model of
- * the workspace, so every card can be clicked through to the tool it
- * describes.
+ * Every number on the page comes from real workspace data — props, the
+ * streak store or local storage — so the layout can be redesigned without
+ * inventing anything the student did not actually do.
  */
 import { Note, Contact, Flashcard, Folder, PracticeQuestion } from '../types';
 import type { WeeklyInsights } from '../hooks/useAI';
@@ -18,9 +20,11 @@ import { useCountUp } from '../hooks/useCountUp';
 import Ring from './Ring';
 import Reveal from './Reveal';
 import HeroDock from './HeroDock';
+import FocusDial from './FocusDial';
 import {
   IconFlame, IconTarget, IconNotes, IconCards, IconTimer,
   IconCrown, IconArrowRight, IconSparkles, IconLock, IconCheck,
+  IconPlay, IconPause, IconDots, IconPlus, IconArrowUpRight,
 } from './icons';
 
 type Tier = 'free' | 'pro';
@@ -62,6 +66,7 @@ const GOALS_KEY = 'studyworks-goals';
 const STUDY_LOG_KEY = 'studyworks-study-log';
 const SESSIONS_KEY = 'studyworks-sessions';
 const ACHIEVEMENTS_KEY = 'studyworks-achievements';
+const PLAN_KEY = 'studyworks-plan-done';
 
 function loadGoals(): StudyGoals {
   try {
@@ -184,6 +189,33 @@ function getTodayMinutes(): number {
 
 // Indexed by Date.getDay() (0 = Sunday).
 const WEEKDAY_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+// ── Subject model ────────────────────────────────────────────────────────────
+interface SubjectCard {
+  id: string;
+  code: string;
+  name: string;
+  notes: number;
+  cards: number;
+  mastery: number;
+  folderId?: string;
+}
+
+/** "Cognitive psychology" → "CP"; "Linear algebra" → "LA". */
+function subjectCode(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return 'SUB';
+  if (words.length === 1) return words[0].slice(0, 3).toUpperCase();
+  return words.slice(0, 3).map(w => w[0]).join('').toUpperCase();
+}
+
+/** "09:30" for a reminder, "Now" for everything else. */
+function formatClock(value?: Date | string): string {
+  if (!value) return 'Now';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return 'Now';
+  return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
 
 // ── Dashboard ────────────────────────────────────────────────────────────────
 export default function Dashboard({
@@ -409,6 +441,179 @@ export default function Dashboard({
     return out;
   }, []);
 
+  // ── Weekly rhythm totals ──────────────────────────────────────────────────
+  // Reviews completed this week versus the week before, from the streak store.
+  const weekTotals = useMemo(() => {
+    const now = Date.now();
+    const day = 86400000;
+    let thisWeek = 0, lastWeek = 0;
+    Object.entries(streak.dailyCounts).forEach(([key, count]) => {
+      if (!count) return;
+      const ts = new Date(`${key}T00:00:00`).getTime();
+      if (ts >= now - day * 7) thisWeek += count;
+      else if (ts >= now - day * 14) lastWeek += count;
+    });
+    return { thisWeek, lastWeek, change: getTrend(thisWeek, lastWeek) };
+  }, [streak.dailyCounts]);
+
+  const bestDayLabel = useMemo(() => {
+    if (weekPeakIndex < 0) return 'No reviews yet';
+    const full = new Date();
+    full.setDate(full.getDate() - (6 - weekPeakIndex));
+    return full.toLocaleDateString(undefined, { weekday: 'short' });
+  }, [weekPeakIndex]);
+
+  // ── Subject cards ─────────────────────────────────────────────────────────
+  // Subjects are the student's own folders. With no folders yet we fall back
+  // to note types so the section is never empty for no reason.
+  const subjectCards = useMemo<SubjectCard[]>(() => {
+    const out: SubjectCard[] = [];
+
+    for (const folder of folders) {
+      const fNotes = notes.filter(n => n.folderId === folder.id);
+      const fCards = flashcards.filter(c => c.folderId === folder.id);
+      if (fNotes.length === 0 && fCards.length === 0) continue;
+
+      const reviewed = fCards.filter(c => (c.repetitions ?? 0) > 0).length;
+      const revisited = fNotes.filter(n => n.lastRevisited).length;
+      const mastery = fCards.length
+        ? Math.round((reviewed / fCards.length) * 100)
+        : fNotes.length
+          ? Math.round((revisited / fNotes.length) * 100)
+          : 0;
+
+      out.push({
+        id: folder.id,
+        folderId: folder.id,
+        code: subjectCode(folder.name),
+        name: folder.name,
+        notes: fNotes.length,
+        cards: fCards.length,
+        mastery,
+      });
+    }
+
+    if (out.length === 0) {
+      const types: { key: Note['type']; label: string; code: string }[] = [
+        { key: 'note',    label: 'Notes',    code: 'NOT' },
+        { key: 'article', label: 'Articles', code: 'ART' },
+        { key: 'idea',    label: 'Ideas',    code: 'IDE' },
+        { key: 'project', label: 'Projects', code: 'PRJ' },
+      ];
+      for (const t of types) {
+        const count = notes.filter(n => n.type === t.key).length;
+        if (!count) continue;
+        out.push({ id: t.key, code: t.code, name: t.label, notes: count, cards: 0, mastery: 0 });
+      }
+    }
+
+    return out
+      .sort((a, b) => (b.notes + b.cards) - (a.notes + a.cards))
+      .slice(0, 3);
+  }, [folders, notes, flashcards]);
+
+  // ── Focus subject ─────────────────────────────────────────────────────────
+  const [focusSubjectId, setFocusSubjectId] = useState<string>('');
+  const focusedSubject = subjectCards.find(s => s.id === focusSubjectId) ?? subjectCards[0];
+
+  const subjectDueCards = useMemo(() => {
+    if (!focusedSubject?.folderId) return dueFlashcards;
+    return flashcards.filter(c =>
+      c.folderId === focusedSubject.folderId &&
+      (!c.nextReview || new Date(c.nextReview) <= new Date())
+    ).length;
+  }, [focusedSubject, flashcards, dueFlashcards]);
+
+  // ── Today's plan ──────────────────────────────────────────────────────────
+  // Real, actionable items pulled from the workspace — nothing is invented.
+  const planItems = useMemo(() => {
+    const items: { id: string; title: string; sub: string; time: string; view: string }[] = [];
+
+    if (dueFlashcards > 0) {
+      items.push({
+        id: 'cards',
+        title: `Review ${dueFlashcards} flashcard${dueFlashcards === 1 ? '' : 's'}`,
+        sub: 'Spaced repetition is due now',
+        time: 'Now',
+        view: 'flashcards',
+      });
+    }
+
+    const overdueContact = contacts.find(c => c.nextReminder && new Date(c.nextReminder) < new Date());
+    if (overdueContact) {
+      items.push({
+        id: 'reminders',
+        title: `Follow up with ${overdueContact.name}`,
+        sub: overdueContact.role || 'Reminder overdue',
+        time: formatClock(overdueContact.nextReminder),
+        view: 'contacts',
+      });
+    } else if (overdueContacts > 0) {
+      items.push({
+        id: 'reminders',
+        title: `Clear ${overdueContacts} overdue reminder${overdueContacts === 1 ? '' : 's'}`,
+        sub: 'People you meant to follow up with',
+        time: 'Now',
+        view: 'contacts',
+      });
+    }
+
+    if (notes.length > 0) {
+      items.push({
+        id: 'notes',
+        title: `Revisit ${Math.min(notes.length, 3)} note${notes.length === 1 ? '' : 's'}`,
+        sub: 'Spaced repetition keeps material warm',
+        time: 'Later',
+        view: 'notes',
+      });
+    }
+
+    if (aiReady) {
+      items.push({
+        id: 'ai',
+        title: 'Ask the AI tutor',
+        sub: `${aiProvider === 'gemini' ? 'Gemini' : 'OpenAI'} is ready when you are`,
+        time: 'Now',
+        view: 'tutor',
+      });
+    }
+
+    if (items.length < 2) {
+      items.push({
+        id: 'focus',
+        title: 'Start a focus session',
+        sub: '25 minutes of one thing at a time',
+        time: 'Now',
+        view: 'timer',
+      });
+      items.push({
+        id: 'room',
+        title: 'Open the study room',
+        sub: 'Learn alongside other students',
+        time: 'Later',
+        view: 'studyRoom',
+      });
+    }
+
+    return items.slice(0, 4);
+  }, [dueFlashcards, contacts, overdueContacts, notes.length, aiReady, aiProvider]);
+
+  const [planDone, setPlanDone] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(`${PLAN_KEY}-${todayKey}`);
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  });
+  const togglePlanDone = useCallback((id: string) => {
+    setPlanDone(prev => {
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+      try { localStorage.setItem(`${PLAN_KEY}-${todayKey}`, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [todayKey]);
+
+  const planDoneCount = planItems.filter(i => planDone.includes(i.id)).length;
+
   // ── Quick tips ────────────────────────────────────────────────────────────
   const quickTips = useMemo(() => {
     const tips: { icon: string; title: string; body: string; action?: () => void }[] = [];
@@ -430,16 +635,18 @@ export default function Dashboard({
   const now = new Date();
   const todayLabel = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
 
+  const reviewMinutes = Math.max(1, Math.round((dueFlashcards || subjectDueCards) * 0.5));
+
   return (
     <div className="sw-stack animate-in">
 
-      {/* ── Hero ───────────────────────────────────────────────────────── */}
+      {/* ── Masthead ───────────────────────────────────────────────────── */}
       {/* Sits in the normal flow on arrival, then flies up and sideways and
           parks itself in the top-right corner as a compact chip — the same
           behaviour as the Settings hero. */}
       <HeroDock
         side="right"
-        bannerClassName="sw-hero"
+        bannerClassName="sw-masthead"
         chipIcon={(displayName.trim()[0] || 'A').toUpperCase()}
         chipLabel={greeting}
         chipMeta={displayName || undefined}
@@ -449,27 +656,270 @@ export default function Dashboard({
         } : null}
         chipTitle="Back to top"
       >
-        <div className="sw-hero-main">
-          <p className="sw-label">Your daily workspace</p>
-          <h1 className="sw-hero-title">
-            {displayName ? `${greeting}, ${displayName}` : greeting}
+        <div className="sw-masthead-text">
+          <p className="sw-masthead-date">{todayLabel.toUpperCase()}</p>
+          <h1 className="sw-masthead-title">
+            Less noise.<span className="sw-masthead-em"> More knowledge.</span>
           </h1>
-          <p className="sw-hero-sub">Here&rsquo;s what&rsquo;s happening in your study workspace</p>
-          <div className="sw-hero-chips">
-            {trialDaysLeft > 0 && (
-              <span className="sw-chip accent">Trial · {trialDaysLeft} day{trialDaysLeft === 1 ? '' : 's'} left</span>
-            )}
-            <span className="sw-chip">{tier === 'pro' ? 'Pro plan' : 'Free plan'}</span>
-            <span className="sw-chip">{totalItems} items</span>
-          </div>
+          <p className="sw-masthead-sub">
+            {displayName ? `${greeting}, ${displayName}. ` : ''}
+            Your space to think clearly, learn deeply, and keep moving.
+          </p>
         </div>
-        <div className="sw-hero-ring">
-          <Ring value={weeklyGoalPct} size={128} thickness={9} label={`${weeklyGoalPct}%`} caption="weekly goal" />
+        <div className="sw-masthead-meta">
+          {trialDaysLeft > 0 && (
+            <span className="sw-chip accent">Trial · {trialDaysLeft} day{trialDaysLeft === 1 ? '' : 's'}</span>
+          )}
+          <span className="sw-chip">{tier === 'pro' ? 'Pro plan' : 'Free plan'}</span>
+          <span className="sw-chip">{totalItems} items</span>
+          <span className="sw-streak-pill">
+            <IconFlame size={15} />
+            {streak.currentStreak}-day study streak
+          </span>
         </div>
       </HeroDock>
 
-      {/* ── Focus row: goals · timer · streak ──────────────────────────── */}
-      <section className="sw-grid sw-grid-3">
+      {/* ── Focus room + weekly rhythm ─────────────────────────────────── */}
+      <section className="sw-grid sw-grid-main-side">
+
+        {/* The focus room — a live Pomodoro dial */}
+        <div className="sw-focus-room">
+          <div className="sw-focus-copy">
+            <p className="sw-focus-label">The focus room</p>
+            <h2 className="sw-focus-title">One thing at a time.</h2>
+            <p className="sw-focus-desc">
+              A clear mind starts with a single session. Put everything else on pause.
+            </p>
+
+            <div className="sw-focus-controls">
+              {subjectCards.length > 0 && (
+                <select
+                  className="sw-focus-select"
+                  value={focusedSubject?.id ?? ''}
+                  onChange={e => setFocusSubjectId(e.target.value)}
+                  aria-label="Focus subject"
+                >
+                  {subjectCards.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              )}
+              <button type="button" className="sw-focus-btn" onClick={toggleTimer}>
+                {timerRunning ? <IconPause size={15} /> : <IconPlay size={15} />}
+                {timerRunning ? 'Pause' : 'Start focusing'}
+              </button>
+              <button type="button" className="sw-focus-btn ghost" onClick={resetTimer}>
+                Reset
+              </button>
+            </div>
+
+            <p className="sw-focus-meta">
+              25 min / 5 min break · {completedSessions} session{completedSessions === 1 ? '' : 's'} today
+              {focusedSubject ? ` · ${focusedSubject.name}` : ''}
+            </p>
+          </div>
+
+          <FocusDial
+            seconds={timerSeconds}
+            total={timerMode === 'work' ? WORK_SECONDS : BREAK_SECONDS}
+            color={timerMode === 'work' ? 'var(--sw-accent)' : 'var(--sw-success)'}
+          >
+            <span className="sw-dial-tag">
+              {timerMode === 'work' ? 'Focus / 01' : 'Break / 02'}
+            </span>
+            <span className="sw-dial-readout">{formatTime(timerSeconds)}</span>
+            <span className="sw-dial-caption">
+              {timerMode === 'work' ? 'Time to go deep' : 'Breathe in'}
+            </span>
+          </FocusDial>
+
+          <p className="sw-focus-foot">Breathe in. Settle in.</p>
+        </div>
+
+        {/* Weekly rhythm */}
+        <div className="sw-rhythm">
+          <div className="sw-rhythm-head">
+            <span className="sw-rhythm-title">Your weekly rhythm</span>
+            <span className="sw-rhythm-more" aria-hidden="true"><IconDots size={18} /></span>
+          </div>
+
+          <div className="sw-rhythm-value-row">
+            <span className="sw-rhythm-value">{weekTotals.thisWeek}</span>
+            <span className="sw-rhythm-unit">reviews</span>
+            <span
+              className={`sw-rhythm-badge${
+                weekTotals.change.direction === 'down' ? ' down'
+                : weekTotals.change.direction === 'neutral' ? ' flat' : ''
+              }`}
+              title="Compared with the previous 7 days"
+            >
+              {weekTotals.change.direction === 'down' ? '↓ ' : weekTotals.change.direction === 'up' ? '↑ ' : ''}
+              {weekTotals.change.percent}%
+            </span>
+          </div>
+          <p className="sw-rhythm-sub">
+            {weekTotals.thisWeek > 0
+              ? 'Cards reviewed in the last 7 days'
+              : 'Review a card to start your week'}
+          </p>
+
+          <div className="sw-rhythm-chart">
+            <span className="sw-rhythm-grid" style={{ top: 0 }} />
+            <span className="sw-rhythm-grid" style={{ top: '38%' }} />
+            <span className="sw-rhythm-grid" style={{ top: '76%' }} />
+            {weekDays.map((count, i) => {
+              const height = Math.max(4, (count / weekPeak) * 100);
+              return (
+                <div
+                  className={`sw-rhythm-col${i === weekPeakIndex ? ' peak' : ''}${count === 0 ? ' empty' : ''}`}
+                  key={i}
+                  title={`${count} review${count === 1 ? '' : 's'}`}
+                >
+                  <div className="sw-rhythm-bar" style={{ height: `${height}%` }} />
+                  <div className="sw-rhythm-day">{weekLabels[i]}</div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="sw-rhythm-foot">
+            <span className="sw-rhythm-note">Your time is adding up.</span>
+            <span className="sw-rhythm-best">Best · {bestDayLabel}</span>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Subjects + today's plan ────────────────────────────────────── */}
+      <section className="sw-grid sw-grid-main-side">
+
+        {/* Subjects */}
+        <div>
+          <div className="sw-section-head">
+            <h2 className="sw-section-title">Your subjects</h2>
+            <button type="button" className="sw-section-link" onClick={() => setCurrentView('notes')}>
+              View all subjects <IconArrowRight size={13} />
+            </button>
+          </div>
+
+          {subjectCards.length === 0 ? (
+            <div className="sw-subject-empty">
+              <div className="sw-empty">
+                <div className="sw-empty-icon"><IconNotes size={20} /></div>
+                <div className="sw-empty-title">No subjects yet</div>
+                <div className="sw-empty-sub">Create a folder and it becomes a subject here</div>
+                <button
+                  type="button"
+                  className="sw-btn secondary sm"
+                  style={{ marginTop: 12 }}
+                  onClick={() => setCurrentView('notes')}
+                >
+                  Open notes
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="sw-subject-grid">
+              {subjectCards.map((s, i) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  className={`sw-subject-card tint-${['a', 'b', 'c'][i % 3]}`}
+                  onClick={() => setCurrentView('notes')}
+                >
+                  <div className="sw-subject-top">
+                    <span className="sw-subject-code">{s.code}</span>
+                    <span className="sw-subject-open" aria-hidden="true"><IconArrowUpRight size={15} /></span>
+                  </div>
+                  <span className="sw-subject-name">{s.name}</span>
+                  <span className="sw-subject-meta">
+                    {s.notes} note{s.notes === 1 ? '' : 's'} · {s.cards} flashcard{s.cards === 1 ? '' : 's'}
+                  </span>
+                  <span className="sw-subject-rule" />
+                  <div className="sw-subject-mastery">
+                    <span className="sw-subject-mastery-label">Mastery</span>
+                    <span className="sw-subject-mastery-value">{s.mastery}%</span>
+                  </div>
+                  <div className="sw-subject-track">
+                    <div className="sw-subject-fill" style={{ width: `${s.mastery}%` }} />
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Today's plan */}
+        <div className="sw-plan">
+          <div className="sw-plan-head">
+            <span className="sw-plan-title">Today&rsquo;s plan</span>
+            <span className="sw-plan-count">{planDoneCount} / {planItems.length}</span>
+          </div>
+          <p className="sw-plan-sub">A little structure goes a long way.</p>
+
+          <div className="sw-plan-list">
+            {planItems.map(item => {
+              const done = planDone.includes(item.id);
+              return (
+                <div key={item.id} className={`sw-plan-item${done ? ' done' : ''}`}>
+                  <button
+                    type="button"
+                    className="sw-plan-check"
+                    onClick={() => togglePlanDone(item.id)}
+                    aria-label={done ? `Mark "${item.title}" as not done` : `Mark "${item.title}" as done`}
+                    aria-pressed={done}
+                  >
+                    <IconCheck size={11} strokeWidth={3} />
+                  </button>
+                  <button
+                    type="button"
+                    className="sw-plan-body"
+                    style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}
+                    onClick={() => setCurrentView(item.view)}
+                  >
+                    <span className="sw-plan-item-title">{item.title}</span>
+                    <span className="sw-plan-item-sub">{item.sub}</span>
+                  </button>
+                  <span className="sw-plan-time">{item.time}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="sw-plan-foot">
+            <button type="button" className="sw-plan-add" onClick={() => setCurrentView('notes')}>
+              <IconPlus size={13} /> Add a task
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Keep it fresh ──────────────────────────────────────────────── */}
+      <section className="sw-recall">
+        <div className="sw-recall-cards" aria-hidden="true">
+          <div className="sw-recall-card back" />
+          <div className="sw-recall-card front">Recall</div>
+        </div>
+        <div className="sw-recall-copy">
+          <p className="sw-recall-label">Keep it fresh</p>
+          <h2 className="sw-recall-title">A little recall. A lasting memory.</h2>
+          <p className="sw-recall-sub">
+            {subjectDueCards > 0
+              ? `${subjectDueCards} flashcard${subjectDueCards === 1 ? '' : 's'} are ready for a quick review.`
+              : 'Nothing is due right now — a good moment to look over your notes.'}
+          </p>
+        </div>
+        <div className="sw-recall-actions">
+          <span className="sw-recall-time">~ {reviewMinutes} min</span>
+          <button type="button" className="sw-recall-btn" onClick={() => setCurrentView('flashcards')}>
+            Quick review <IconArrowRight size={14} />
+          </button>
+        </div>
+      </section>
+
+      <hr className="sw-editorial-rule" />
+
+      {/* ── Daily goals + streak ───────────────────────────────────────── */}
+      <section className="sw-grid sw-grid-main-side">
 
         {/* Daily Goals */}
         <Reveal fill delay={0}>
@@ -490,94 +940,50 @@ export default function Dashboard({
                 </button>
               </div>
             </div>
-            <div className="sw-stack" style={{ gap: 13 }}>
-              {goalRows.map(g => {
-                const pct = Math.min(100, Math.round((g.current / g.goal) * 100));
-                return (
-                  <div className="sw-goal" key={g.key}>
-                    <div className="sw-goal-top">
-                      <span className="sw-goal-name">{g.label}</span>
-                      <span className="sw-goal-pct">{pct}%</span>
-                    </div>
-                    <div className="sw-meter">
-                      <div
-                        className={`sw-meter-fill${pct >= 100 ? ' success' : ''}`}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                    {showGoalEditor && (
-                      <div className="sw-row" style={{ gap: 6 }}>
-                        <button
-                          type="button"
-                          className="sw-btn secondary sm"
-                          onClick={() => updateGoal(g.key, Math.max(1, g.goal - 5))}
-                        >−</button>
-                        <span className="sw-goal-pct">{g.goal}</span>
-                        <button
-                          type="button"
-                          className="sw-btn secondary sm"
-                          onClick={() => updateGoal(g.key, g.goal + 5)}
-                        >+</button>
+            <div className="sw-row" style={{ gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div className="sw-hero-ring">
+                <Ring value={weeklyGoalPct} size={116} thickness={8} label={`${weeklyGoalPct}%`} caption="weekly goal" />
+              </div>
+              <div className="sw-stack" style={{ gap: 13, flex: 1, minWidth: 190 }}>
+                {goalRows.map(g => {
+                  const pct = Math.min(100, Math.round((g.current / g.goal) * 100));
+                  return (
+                    <div className="sw-goal" key={g.key}>
+                      <div className="sw-goal-top">
+                        <span className="sw-goal-name">{g.label}</span>
+                        <span className="sw-goal-pct">{pct}%</span>
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </Reveal>
-
-        {/* Study Timer */}
-        <Reveal fill delay={70}>
-          <div className="sw-panel">
-            <div className="sw-panel-head">
-              <div className="sw-panel-title">Study Timer</div>
-              <span className="sw-chip">{completedSessions} session{completedSessions === 1 ? '' : 's'} today</span>
-            </div>
-            <div className="sw-row" style={{ gap: 16, alignItems: 'center' }}>
-              <Ring
-                value={(timerSeconds / (timerMode === 'work' ? WORK_SECONDS : BREAK_SECONDS)) * 100}
-                size={86}
-                thickness={6}
-                color={timerMode === 'work' ? 'var(--sw-accent)' : 'var(--sw-success)'}
-              >
-                <span
-                  style={{
-                    fontFamily: 'var(--sw-font-mono)',
-                    fontSize: '0.9375rem',
-                    fontWeight: 500,
-                    color: 'var(--sw-text)',
-                  }}
-                >
-                  {formatTime(timerSeconds)}
-                </span>
-              </Ring>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <p className="sw-label">
-                  {timerMode === 'work' ? 'Focus session' : 'Break time'}
-                </p>
-                <p className="sw-tip-title" style={{ marginTop: 3 }}>
-                  {timerMode === 'work' ? 'Revise your chapter' : 'Recharge'}
-                </p>
-                <p className="sw-tip-body">
-                  {timerMode === 'work' ? 'Calculus · 25 min session' : 'Step away for a moment'}
-                </p>
+                      <div className="sw-meter">
+                        <div
+                          className={`sw-meter-fill${pct >= 100 ? ' success' : ''}`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      {showGoalEditor && (
+                        <div className="sw-row" style={{ gap: 6 }}>
+                          <button
+                            type="button"
+                            className="sw-btn secondary sm"
+                            onClick={() => updateGoal(g.key, Math.max(1, g.goal - 5))}
+                          >−</button>
+                          <span className="sw-goal-pct">{g.goal}</span>
+                          <button
+                            type="button"
+                            className="sw-btn secondary sm"
+                            onClick={() => updateGoal(g.key, g.goal + 5)}
+                          >+</button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
-            <div className="sw-row" style={{ marginTop: 'auto', paddingTop: 14, gap: 8 }}>
-              <button type="button" className="sw-btn secondary" onClick={resetTimer}>Reset</button>
-              <button type="button" className="sw-btn primary" onClick={toggleTimer} style={{ flex: 1 }}>
-                {timerRunning ? 'Pause' : 'Start'}
-              </button>
-            </div>
-            <p className="sw-panel-sub" style={{ textAlign: 'center', marginTop: 8 }}>
-              Find your flow.
-            </p>
           </div>
         </Reveal>
 
         {/* Keep it going */}
-        <Reveal fill delay={140}>
+        <Reveal fill delay={70}>
           <div className="sw-panel">
             <div className="sw-panel-head">
               <div className="sw-panel-title">Keep it going</div>
@@ -688,7 +1094,7 @@ export default function Dashboard({
               </div>
 
               <div style={{ minWidth: 132, paddingLeft: 18, borderLeft: '1px solid var(--sw-line-soft)' }}>
-                <div style={{ fontFamily: 'var(--sw-font-head)', fontSize: '1.875rem', fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--sw-text)', lineHeight: 1 }}>
+                <div style={{ fontFamily: 'var(--sw-font-display)', fontSize: '1.875rem', fontWeight: 600, letterSpacing: '-0.04em', color: 'var(--sw-text)', lineHeight: 1 }}>
                   {formatFocus(todaysStudyMinutes)}
                 </div>
                 <p className="sw-panel-sub" style={{ marginTop: 4 }}>focused today</p>
@@ -920,10 +1326,10 @@ export default function Dashboard({
                   <div className="sw-row" style={{ gap: 10, alignItems: 'baseline' }}>
                     <span
                       style={{
-                        fontFamily: 'var(--sw-font-head)',
+                        fontFamily: 'var(--sw-font-display)',
                         fontSize: '1.5rem',
-                        fontWeight: 800,
-                        letterSpacing: '-0.03em',
+                        fontWeight: 600,
+                        letterSpacing: '-0.035em',
                         color: 'var(--sw-text)',
                       }}
                     >
