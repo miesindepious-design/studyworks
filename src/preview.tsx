@@ -4,7 +4,12 @@
  * the production bundle (it is never imported by main.tsx).
  */
 import { createRoot } from 'react-dom/client';
+import { useState } from 'react';
 import './index.css';
+// Same cascade as App.tsx — the preview has to load the full stack, or
+// buttons, tags, toggles and the docked chip render unstyled.
+import './App.css';
+import './compat.css';
 import './design.css';
 import AppShell from './components/AppShell';
 import Dashboard from './components/Dashboard';
@@ -84,44 +89,52 @@ if (location.search.includes('dark')) {
   document.documentElement.setAttribute('data-theme', 'dark');
 }
 
-// The streak store is seeded in the background; the dashboard reloads it
-// whenever the window regains focus.
-seedStreak();
+// The streak store is seeded before the first paint so the settings rail
+// shows a populated streak instead of zero.
+await seedStreak();
 
-createRoot(document.getElementById('root')!).render(
-  <AppShell
-    currentView="dashboard"
-    onNavigate={() => {}}
-    pageTitle="Dashboard"
-    userName="Alex Morgan"
-    userEmail="alex@studyworks.app"
-    userSub="Cognitive psychology · Level 3"
-    tier="pro"
-    trialDaysLeft={0}
-    totalItems={46}
-    notesCount={notes.length}
-    dueFlashcards={9}
-    accentId="sunset"
-    onAccentChange={() => {}}
-    onOpenCommandPalette={() => {}}
-    onOpenPricing={() => {}}
-    onSignOut={() => {}}
-  >
-    {isSettings ? (
-      <SettingsView
-        notif={{ permission: 'default', request: async () => 'default', notify: () => {}, supported: true }}
-        tier="pro"
-        onAddToast={() => {}}
-        onShowShortcuts={() => {}}
-        folders={folders}
-        theme="light"
-        onThemeChange={() => {}}
-        accent="sunset"
-        onAccentChange={() => {}}
-        data={{ notes, contacts, flashcards, practiceQuestions: [], savedSearches: [] }}
-        displayName="Alex Morgan"
-      />
-    ) : (
+/**
+ * Holds the accent + theme in local state so the swatches and theme tiles
+ * in Settings actually do something in the preview.
+ */
+function Preview() {
+  const [accent, setAccent] = useState('sunset');
+  const [theme, setTheme] = useState('light');
+
+  return (
+    <AppShell
+      currentView="dashboard"
+      onNavigate={() => {}}
+      pageTitle="Dashboard"
+      userName="Alex Morgan"
+      userEmail="alex@studyworks.app"
+      userSub="Cognitive psychology · Level 3"
+      tier="pro"
+      trialDaysLeft={0}
+      totalItems={46}
+      notesCount={notes.length}
+      dueFlashcards={9}
+      accentId={accent}
+      onAccentChange={setAccent}
+      onOpenCommandPalette={() => {}}
+      onOpenPricing={() => {}}
+      onSignOut={() => {}}
+    >
+      {isSettings ? (
+        <SettingsView
+          notif={{ permission: 'default', request: async () => 'default', notify: () => {}, supported: true }}
+          tier="pro"
+          onAddToast={() => {}}
+          onShowShortcuts={() => {}}
+          folders={folders}
+          theme={theme}
+          onThemeChange={setTheme}
+          accent={accent}
+          onAccentChange={setAccent}
+          data={{ notes, contacts, flashcards, practiceQuestions: [], savedSearches: [] }}
+          displayName="Alex Morgan"
+        />
+      ) : (
     <Dashboard
       userName="Alex"
       trialDaysLeft={0}
@@ -141,6 +154,9 @@ createRoot(document.getElementById('root')!).render(
       weeklyInsights={null}
       insightsLoading={false}
     />
-    )}
-  </AppShell>,
-);
+      )}
+    </AppShell>
+  );
+}
+
+createRoot(document.getElementById('root')!).render(<Preview />);

@@ -6,6 +6,8 @@ interface RevealProps {
   delay?: number;
   /** Extra class on the wrapper. */
   className?: string;
+  /** Id on the wrapper — used as a scroll target. */
+  id?: string;
   /** Make the wrapped element fill the wrapper (needed inside grids). */
   fill?: boolean;
   /** Which edge the panel slides in from. Defaults to the left. */
@@ -22,6 +24,7 @@ export default function Reveal({
   delay = 0,
   className = '',
   fill = false,
+  id,
   side = 'left',
 }: RevealProps) {
   const ref = useRef<HTMLDivElement>(null);
@@ -61,7 +64,12 @@ export default function Reveal({
   ].filter(Boolean).join(' ');
 
   return (
-    <div ref={ref} className={classes} style={delay ? { '--rv-delay': `${delay}ms` } as React.CSSProperties : undefined}>
+    <div
+      ref={ref}
+      id={id}
+      className={classes}
+      style={delay ? { '--rv-delay': `${delay}ms` } as React.CSSProperties : undefined}
+    >
       {children}
     </div>
   );

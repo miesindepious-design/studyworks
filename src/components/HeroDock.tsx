@@ -106,7 +106,15 @@ export default function HeroDock({
       : window.innerWidth - chipW - CORNER_EDGE;
 
     // Vector from the banner's current position to the corner.
-    const dx = cornerLeft - m.left;
+    //
+    // The banner scales toward a different corner on each side (top-left when
+    // parking left, top-right when parking right), so the edge that stays
+    // pinned is the one nearest the corner. Measuring from the wrong edge
+    // overshoots the viewport by the banner's width and opens a horizontal
+    // scrollbar.
+    const dx = isLeft
+      ? cornerLeft - m.left
+      : (window.innerWidth - CORNER_EDGE) - (m.left + m.width);
     const dy = CORNER_TOP - (m.top - y);
     const scale = Math.max(0.16, Math.min(1, chipW / m.width));
 

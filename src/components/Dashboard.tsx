@@ -17,6 +17,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { getStreakData, last7Days, EMPTY_STREAK } from '../db/streaks';
 import type { StreakData } from '../db/schema';
 import { useCountUp } from '../hooks/useCountUp';
+ import { useStudyGoals } from '../hooks/useStudyGoals';
 import Ring from './Ring';
 import Reveal from './Reveal';
 import HeroDock from './HeroDock';
@@ -49,36 +50,10 @@ interface DashboardProps {
   insightsLoading: boolean;
 }
 
-// ── Study Goals (localStorage — lightweight, no IDB migration) ───────────────
-interface StudyGoals {
-  dailyFlashcards: number;
-  dailyNotes: number;
-  dailyStudyMinutes: number;
-}
-
-const DEFAULT_GOALS: StudyGoals = {
-  dailyFlashcards: 20,
-  dailyNotes: 3,
-  dailyStudyMinutes: 60,
-};
-
-const GOALS_KEY = 'studyworks-goals';
 const STUDY_LOG_KEY = 'studyworks-study-log';
 const SESSIONS_KEY = 'studyworks-sessions';
 const ACHIEVEMENTS_KEY = 'studyworks-achievements';
 const PLAN_KEY = 'studyworks-plan-done';
-
-function loadGoals(): StudyGoals {
-  try {
-    const raw = localStorage.getItem(GOALS_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return DEFAULT_GOALS;
-}
-
-function saveGoals(goals: StudyGoals) {
-  localStorage.setItem(GOALS_KEY, JSON.stringify(goals));
-}
 
 // ── Achievements ─────────────────────────────────────────────────────────────
 interface Achievement {
@@ -251,17 +226,10 @@ export default function Dashboard({
   }, [dueFlashcards]);
 
   // ── Goals ─────────────────────────────────────────────────────────────────
-  const [goals, setGoals] = useState<StudyGoals>(loadGoals);
+  // Shared with the Settings page, so a target changed in either place is
+  // reflected in both.
+  const { goals, updateGoal } = useStudyGoals();
   const [showGoalEditor, setShowGoalEditor] = useState(false);
-
-  const saveGoalsState = useCallback((newGoals: StudyGoals) => {
-    setGoals(newGoals);
-    saveGoals(newGoals);
-  }, []);
-
-  const updateGoal = useCallback((key: keyof StudyGoals, value: number) => {
-    saveGoalsState({ ...goals, [key]: value });
-  }, [goals, saveGoalsState]);
 
   // ── Achievements ──────────────────────────────────────────────────────────
   const [achievements, setAchievements] = useState<Achievement[]>(() =>

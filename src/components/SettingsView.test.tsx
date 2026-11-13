@@ -71,18 +71,22 @@ describe('Settings page — no feature repeats itself', () => {
   const titles = cardTitles(html);
 
   it('renders exactly the expected set of cards', () => {
+    // The order follows the page's bento layout: profile / timer / daily
+    // goal across the top row, notifications / appearance / install on the
+    // second, then AI + shortcuts, the sharing trio, and the data band.
     expect(titles).toEqual([
       '🎓 Student Profile',
-      '🎨 Appearance',
-      '🤖 AI Features',
       '⏱️ Study Timer',
+      '🎯 Daily goal',
       '🔔 Notifications &amp; Reminders',
+      '🎨 Appearance',
+      '📱 Install App',
+      '🤖 AI Features',
+      '⌨️ Keyboard Shortcuts',
       '🔗 Folder Sharing',
       '📧 Save by Email',
       '💬 Contact Support',
-      '📱 Install App',
       '💾 Data &amp; Storage',
-      '⌨️ Keyboard Shortcuts',
     ]);
   });
 

@@ -100,7 +100,7 @@ export default function Phase2Tools({ folders, tier, onAddToast, reveal = false 
     <>
       {/* ── Folder sharing ── */}
       {panel(0, (
-      <div className="card" style={{ marginBottom: '1.5rem' }}>
+      <div className="card">
         <div className="card-header">
           <span className="card-title">🔗 Folder Sharing</span>
           {!isPro && <span className="tag accent text-xs">Pro</span>}
@@ -140,7 +140,7 @@ export default function Phase2Tools({ folders, tier, onAddToast, reveal = false 
 
       {/* ── Email-to-save ── */}
       {panel(60, (
-      <div className="card" style={{ marginBottom: '1.5rem' }}>
+      <div className="card">
         <div className="card-header"><span className="card-title">📧 Save by Email</span></div>
         {inbound?.enabled && inbound.address ? (
           <>
@@ -158,7 +158,7 @@ export default function Phase2Tools({ folders, tier, onAddToast, reveal = false 
 
       {/* ── Support ── */}
       {panel(120, (
-      <div className="card" style={{ marginBottom: '1.5rem' }}>
+      <div className="card">
         <div className="card-header"><span className="card-title">💬 Contact Support</span></div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1rem' }}>
           <input className="input" placeholder="Subject" value={subject} onChange={e => setSubject(e.target.value)} />

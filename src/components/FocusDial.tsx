@@ -1,9 +1,14 @@
 /**
- * FocusDial — the circular timer face used by the dashboard's focus room.
+ * FocusDial — the circular timer face used by the dashboard's focus room and
+ * the settings page's focus-timer card.
  *
  * A ring of sixty minute ticks with a progress arc underneath, a soft inner
  * disc and a slot for the readout in the middle. It is purely visual: the
  * timer state lives in the parent, this just renders it.
+ *
+ * Every measurement is derived from the requested size, so the same component
+ * renders correctly at 288px on the dashboard and at 132px inside a settings
+ * card without a second set of magic numbers.
  */
 import type { ReactNode } from 'react';
 
@@ -22,23 +27,30 @@ interface FocusDialProps {
 
 const TICKS = 60;
 
+/** The size the geometry constants below were authored against. */
+const BASE_SIZE = 288;
+
 export default function FocusDial({
   seconds,
   total,
   color = 'var(--sw-accent)',
   mutedColor = 'var(--sw-dial-muted, #788866)',
-  size = 288,
+  size = BASE_SIZE,
   children,
 }: FocusDialProps) {
   const radius = size / 2;
   const safeTotal = total > 0 ? total : 1;
   const progress = Math.max(0, Math.min(1, seconds / safeTotal));
 
+  // One scale factor keeps the ring identical at every size: the gaps
+  // between the ticks, the arc and the inner disc all shrink together.
+  const k = size / BASE_SIZE;
+
   // Ticks sit on a circle just inside the edge; every fifth tick is longer,
   // which gives the ring a readable "minutes" rhythm.
-  const tickOuter = radius - 8;
-  const tickInnerBase = radius - 18;
-  const tickInnerMajor = radius - 25;
+  const tickOuter     = radius - 8 * k;
+  const tickInnerBase = radius - 18 * k;
+  const tickInnerMajor = radius - 25 * k;
 
   const ticks = Array.from({ length: TICKS }, (_, i) => {
     const angle = (i / TICKS) * Math.PI * 2 - Math.PI / 2;
@@ -53,9 +65,16 @@ export default function FocusDial({
   });
 
   // Progress arc: a circle whose dash offset is driven by the time left.
-  const arcRadius = radius - 34;
+  const arcRadius = radius - 34 * k;
   const circumference = 2 * Math.PI * arcRadius;
   const dash = circumference * progress;
+
+  // Hairlines disappear entirely at small sizes, so keep a floor.
+  const tickWidth = (w: number) => Math.max(1, w * k);
+  const arcWidth = Math.max(1.25, 2 * k);
+
+  // The readout scales with the face so the numbers never overflow the disc.
+  const readoutSize = 3.25 * k;
 
   return (
     <div
@@ -75,16 +94,16 @@ export default function FocusDial({
         <circle
           cx={radius}
           cy={radius}
-          r={radius - 44}
+          r={radius - 44 * k}
           fill="var(--sw-dial-face, #2B422D)"
         />
         <circle
           cx={radius}
           cy={radius}
-          r={radius - 43}
+          r={radius - 43 * k}
           fill="none"
           stroke="var(--sw-dial-ring, #516944)"
-          strokeWidth={1}
+          strokeWidth={Math.max(1, k)}
         />
 
         {/* Progress arc */}
@@ -94,7 +113,7 @@ export default function FocusDial({
           r={arcRadius}
           fill="none"
           stroke={color}
-          strokeWidth={2}
+          strokeWidth={arcWidth}
           strokeLinecap="round"
           strokeDasharray={`${dash} ${circumference}`}
           opacity={0.55}
@@ -110,14 +129,22 @@ export default function FocusDial({
             x2={t.x2}
             y2={t.y2}
             stroke={t.lit ? color : mutedColor}
-            strokeWidth={t.major ? 3 : 2}
+            strokeWidth={tickWidth(t.major ? 3 : 2)}
             strokeLinecap="round"
             opacity={t.lit ? 1 : 0.85}
           />
         ))}
       </svg>
 
-      <div className="sw-dial-center">{children}</div>
+      <div
+        className="sw-dial-center"
+        style={{
+          gap: Math.max(1, 4 * k),
+          fontSize: `${readoutSize}rem`,
+        }}
+      >
+        {children}
+      </div>
     </div>
   );
 }
