@@ -74,9 +74,7 @@ export default function AdminDashboard({ adminEmail, addToast }: Props) {
       <div className="page-header">
         <div>
           <span className="sw-label">Admin</span>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, letterSpacing: '-0.025em', color: 'var(--sw-text)' }}>
-            🛡️ Admin Dashboard
-          </h1>
+          <h1>Admin Dashboard</h1>
           <p className="text-sm text-muted">Signed in as <strong>{adminEmail}</strong></p>
         </div>
       </div>

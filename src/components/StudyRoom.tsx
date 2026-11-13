@@ -389,7 +389,7 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
       <div className="sw-hero" style={{ marginBottom: '1.25rem' }}>
         <div className="sw-hero-main">
           <span className="sw-label">Create</span>
-          <h2 className="sw-hero-title" style={{ fontSize: '1.5rem', marginTop: 6 }}>Study Room</h2>
+          <h2 className="sw-hero-title">Study Room</h2>
           <p className="sw-hero-sub">Create a private room to study with friends. Talk via voice chat, run a Pomodoro timer together, and take shared notes.</p>
         </div>
         {tier !== 'pro' && (

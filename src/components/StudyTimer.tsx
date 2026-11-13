@@ -161,9 +161,7 @@ export default function StudyTimer() {
       <div className="page-header">
         <div>
           <span className="sw-label">Study</span>
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            ⏱️ Study Timer
-          </h2>
+          <h2>Study Timer</h2>
           <p className="text-sm text-muted" style={{ marginTop: '0.25rem' }}>
             Stay focused with Pomodoro sessions
           </p>
@@ -182,17 +180,10 @@ export default function StudyTimer() {
         </div>
       </div>
 
-      {/* Timer card */}
-      <div
-        className="card"
-        style={{
-          marginBottom: '1.5rem',
-          background: phase === 'focus'
-            ? 'linear-gradient(135deg, var(--surface-1), var(--surface-0))'
-            : 'linear-gradient(135deg, var(--accent-soft), var(--accent-soft-2))',
-          borderColor: phase === 'focus' ? 'var(--border)' : 'rgb(99 102 241 / .28)',
-        }}
-      >
+      {/* Timer card — the page's dark hero, the same block the settings
+          board uses for its focus room. The phase still reads from the
+          badge and the ring colour, so break time stays distinct. */}
+      <div className="card sw-dark-card" style={{ marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.5rem', padding: '1.5rem 0' }}>
 
           {/* Phase label */}
@@ -332,7 +323,6 @@ export default function StudyTimer() {
 
           <TimerSettingsPanel settings={settings} onChange={updateSetting} />
         </div>
-      )}
-    </div>
+      )}    </div>
   );
 }

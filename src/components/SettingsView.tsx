@@ -555,7 +555,7 @@ export default function SettingsView({
                     <span className="card-title">🎓 Student Profile</span>
                     <p className="card-note" style={{ margin: '4px 0 0' }}>The one place your study level is set</p>
                   </div>
-                  <span className="sw-card-glyph" aria-hidden="true"><IconPeople size={14} /></span>
+                  <span className="sw-glyph" aria-hidden="true"><IconPeople size={14} /></span>
                 </div>
 
                 <div className="sw-id">
@@ -689,13 +689,13 @@ export default function SettingsView({
               fill
               delay={60}
             >
-              <div className="card sw-card-dark">
+              <div className="card sw-dark-card">
                 <div className="card-header">
                   <div>
                     <span className="card-title">⏱️ Study Timer</span>
                     <p className="card-note" style={{ margin: '4px 0 0' }}>Pomodoro rhythm for deep work</p>
                   </div>
-                  <span className="sw-card-glyph" aria-hidden="true"><IconTimer size={14} /></span>
+                  <span className="sw-glyph" aria-hidden="true"><IconTimer size={14} /></span>
                 </div>
 
                 <div className="sw-timer-card">
@@ -751,13 +751,13 @@ export default function SettingsView({
               fill
               delay={120}
             >
-              <div className="card sw-card-solid">
+              <div className="card sw-solid-card">
                 <div className="card-header">
                   <div>
                     <span className="card-title">🎯 Daily goal</span>
                     <p className="card-note" style={{ margin: '4px 0 0' }}>Hours of focus you aim for each day</p>
                   </div>
-                  <span className="sw-card-glyph" aria-hidden="true"><IconTarget size={14} /></span>
+                  <span className="sw-glyph" aria-hidden="true"><IconTarget size={14} /></span>
                 </div>
 
                 <div className="sw-goal-hero">
@@ -838,8 +838,8 @@ export default function SettingsView({
                     <span className="card-title">🔔 Notifications &amp; Reminders</span>
                     <p className="card-note" style={{ margin: '4px 0 0' }}>Gentle nudges, never noise</p>
                   </div>
-                  <div className="sw-card-head-aside">
-                    <span className="sw-card-glyph" aria-hidden="true"><IconBell size={14} /></span>
+                  <div className="sw-card-aside">
+                    <span className="sw-glyph" aria-hidden="true"><IconBell size={14} /></span>
                     <span className="sw-card-status" style={{ color: permColor[notif.permission] }}>
                       {permLabel[notif.permission]}
                     </span>
@@ -920,7 +920,7 @@ export default function SettingsView({
                     <span className="card-title">🎨 Appearance</span>
                     <p className="card-note" style={{ margin: '4px 0 0' }}>Pick a mood for your study space</p>
                   </div>
-                  <span className="sw-card-glyph" aria-hidden="true"><IconSparkles size={14} /></span>
+                  <span className="sw-glyph" aria-hidden="true"><IconSparkles size={14} /></span>
                 </div>
 
                 <div className="sw-theme-grid">
@@ -1003,7 +1003,7 @@ export default function SettingsView({
                     <span className="card-title">📱 Install App</span>
                     <p className="card-note" style={{ margin: '4px 0 0' }}>A native-like app, no app store</p>
                   </div>
-                  <span className="sw-card-glyph" aria-hidden="true"><IconDownload size={14} /></span>
+                  <span className="sw-glyph" aria-hidden="true"><IconDownload size={14} /></span>
                 </div>
 
                 <div className="sw-mini-grid">
@@ -1037,8 +1037,8 @@ export default function SettingsView({
                     <span className="card-title">🤖 AI Features</span>
                     <p className="card-note" style={{ margin: '4px 0 0' }}>Summaries, flashcards, practice questions and Smart Q&amp;A</p>
                   </div>
-                  <div className="sw-card-head-aside">
-                    <span className="sw-card-glyph" aria-hidden="true"><IconTutor size={14} /></span>
+                  <div className="sw-card-aside">
+                    <span className="sw-glyph" aria-hidden="true"><IconTutor size={14} /></span>
                     <span className={`tag ${aiConfig.enabled && (aiConfig.apiKey || serverHasApiKey) ? 'success' : ''}`}>
                       {serverManaged ? '🖥️ Backend managed' : serverHasApiKey ? '🔒 Saved on server' : aiConfig.enabled && aiConfig.apiKey ? '✅ Active' : '⏸️ Not configured'}
                     </span>
@@ -1251,8 +1251,8 @@ export default function SettingsView({
                     <span className="card-title">⌨️ Keyboard Shortcuts</span>
                     <p className="card-note" style={{ margin: '4px 0 0' }}>Rebind anything — it applies instantly</p>
                   </div>
-                  <div className="sw-card-head-aside">
-                    <span className="sw-card-glyph" aria-hidden="true"><IconSearch size={14} /></span>
+                  <div className="sw-card-aside">
+                    <span className="sw-glyph" aria-hidden="true"><IconSearch size={14} /></span>
                     <button className="btn btn-secondary btn-sm" onClick={onShowShortcuts}>View all</button>
                   </div>
                 </div>

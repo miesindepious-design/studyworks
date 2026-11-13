@@ -290,7 +290,7 @@ export default function MultiplayerQuiz({ db, userId, userName, tier, setCurrent
         <div className="sw-hero" style={{ marginBottom: '1.25rem' }}>
           <div className="sw-hero-main">
             <span className="sw-label">Create</span>
-            <h2 className="sw-hero-title" style={{ fontSize: '1.5rem', marginTop: 6 }}>Quiz Battle</h2>
+            <h2 className="sw-hero-title">Quiz Battle</h2>
             <p className="sw-hero-sub">Host a room with your flashcards, share the code, and play live. Use power-ups, build streaks for bonus XP, and climb the leaderboard.</p>
           </div>
           {tier !== 'pro' && <span className="sw-chip accent">Pro</span>}
