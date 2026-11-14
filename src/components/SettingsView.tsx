@@ -26,11 +26,10 @@ import {
 } from '../config/studentProfile';
 import { buildExportPayload, downloadJSON, openPrintableExport } from '../utils/dataExport';
 import {
-  IconBell, IconPeople, IconTimer, IconSparkles, IconTutor, IconNotes,
+  IconBell, IconPeople, IconTimer, IconSparkles, IconTutor,
   IconDownload, IconLock, IconSearch,
-  IconTarget, IconFlame,
+  IconTarget,
 } from './icons';
-import { getStreakData } from '../db/streaks';
 
 interface SettingsViewProps {
   notif: UseNotificationsResult;
@@ -73,17 +72,6 @@ const EMPTY_PROFILE: ProfileState = {
   educationLevel: '',
 };
 
-/**
- * The section rail. Each entry scrolls to the card it belongs to; the
- * keywords are what the settings search matches against.
- */
-interface SettingsSection {
-  id: string;
-  label: string;
-  keywords: string;
-  icon: React.ReactNode;
-}
-
 export default function SettingsView({
   notif, tier, onAddToast, onShowShortcuts, onAISaved, folders,
   theme, onThemeChange, accent, onAccentChange, data, displayName,
@@ -93,13 +81,8 @@ export default function SettingsView({
   const [storageUsed, setStorageUsed] = useState<string | null>(null);
   const [storageDetail, setStorageDetail] = useState<{ used: number; quota: number } | null>(null);
 
-  // Current review streak — the rail card answers "how am I doing" before
-  // you touch a single setting.
-  const [streak, setStreak] = useState(0);
-
-  // Settings search + the section rail's active state.
+  // Settings search — typing filters the cards in place.
   const [query, setQuery] = useState('');
-  const [activeSection, setActiveSection] = useState('account');
 
   // Study timer settings — shared with the Timer tab (one store, one UI).
   const { settings: timerSettings, update: updateTimer } = useTimerSettings();
@@ -147,11 +130,6 @@ export default function SettingsView({
     }
   }, []);
 
-  // The streak is a read-only readout — the same number the dashboard shows.
-  useEffect(() => {
-    getStreakData().then(s => setStreak(s.currentStreak)).catch(() => {});
-  }, []);
-
   // Load the saved student profile so the card reflects reality instead of
   // always starting blank.
   useEffect(() => {    serverAI.fetchStudentProfile().then(res => {
@@ -167,28 +145,6 @@ export default function SettingsView({
         educationLevel: u.educationLevel ?? (u.schoolStage ? levelForStage(u.schoolStage as SchoolStage) : ''),
       });
     }).catch(() => {});
-  }, []);
-
-  // Keep the rail in sync with the card that is on screen.
-  useEffect(() => {
-    const ids = SECTIONS.map(s => s.id);
-    const nodes = ids
-      .map(id => document.getElementById(`settings-${id}`))
-      .filter((n): n is HTMLElement => !!n);
-
-    if (!nodes.length || typeof IntersectionObserver === 'undefined') return;
-
-    const observer = new IntersectionObserver(
-      entries => {
-        const visible = entries
-          .filter(e => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
-        if (visible) setActiveSection(visible.target.id.replace('settings-', ''));
-      },
-      { rootMargin: '-25% 0px -60% 0px', threshold: 0 },
-    );
-    nodes.forEach(n => observer.observe(n));
-    return () => observer.disconnect();
   }, []);
 
   // ── Student profile handlers ──────────────────────────────────────────────
@@ -399,32 +355,12 @@ export default function SettingsView({
   const shortcutError = useCallback((msg: string) => onAddToast(msg, 'error'), [onAddToast]);
   const shortcutSuccess = useCallback((msg: string) => onAddToast(msg, 'success'), [onAddToast]);
 
-  // ── Section rail ──────────────────────────────────────────────────────────
-  const SECTIONS: SettingsSection[] = useMemo(() => ([
-    { id: 'account',      label: 'Account',           keywords: 'profile student stage class year department level name email education', icon: <IconPeople size={15} /> },
-    { id: 'study',        label: 'Study preferences', keywords: 'timer focus break pomodoro daily goal target minutes cards notes',        icon: <IconTimer size={15} /> },
-    { id: 'notifications',label: 'Notifications',     keywords: 'notification reminder permission enable test background service worker',    icon: <IconBell size={15} /> },
-    { id: 'appearance',   label: 'Appearance',        keywords: 'theme light dark system accent colour color mode',                       icon: <IconSparkles size={15} /> },
-    { id: 'ai',           label: 'AI features',       keywords: 'ai gemini openai api key model provider prompt test',                    icon: <IconTutor size={15} /> },
-    { id: 'install',      label: 'Install app',       keywords: 'install pwa desktop ios android home screen',                           icon: <IconDownload size={15} /> },
-    { id: 'shortcuts',    label: 'Shortcuts',         keywords: 'keyboard shortcuts rebind cmd k palette',                              icon: <IconSearch size={15} /> },
-    { id: 'data',         label: 'Data & storage',    keywords: 'data storage export pdf json clear delete privacy quota',              icon: <IconLock size={15} /> },
-    { id: 'tools',        label: 'Sharing & support', keywords: 'share sharing email support ticket folder link',                         icon: <IconNotes size={15} /> },
-  ]), []);
-
   /** Does a card's keyword list match the current search? */
   const matches = useCallback((...keywords: string[]) => {
     const q = query.trim().toLowerCase();
     if (!q) return true;
     return keywords.some(k => k.toLowerCase().includes(q));
   }, [query]);
-
-  const scrollTo = useCallback((id: string) => {
-    const el = document.getElementById(`settings-${id}`);
-    if (!el) return;
-    setActiveSection(id);
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, []);
 
   const visibleCount = useMemo(() => {
     const cards: boolean[] = [
@@ -455,46 +391,6 @@ export default function SettingsView({
   return (
     <div className="sw-settings animate-in">
       <div className="sw-settings-shell">
-
-        {/* ── Section rail ────────────────────────────────────────────── */}
-        <nav className="sw-settings-nav" aria-label="Settings sections">
-          <p className="sw-settings-nav-label">Settings</p>
-          {SECTIONS.map(s => (
-            <button
-              key={s.id}
-              type="button"
-              className={`sw-settings-nav-link${activeSection === s.id ? ' active' : ''}`}
-              onClick={() => scrollTo(s.id)}
-              aria-current={activeSection === s.id ? 'true' : undefined}
-            >
-              {s.icon}
-              {s.label}
-            </button>
-          ))}
-
-          {/* A small status card that closes the rail — the streak first,
-              because it is the one number worth glancing at. */}
-          <div className="sw-settings-rail-card">
-            <p className="sw-settings-rail-card-label">
-              <IconFlame size={12} /> Current streak
-            </p>
-            <p className="sw-settings-rail-card-value">
-              {streak} <span className="sw-settings-rail-card-unit">days</span>
-            </p>
-            <p className="sw-settings-rail-card-note">
-              {streak > 0 ? 'Keep it going today' : 'Start your streak today'}
-            </p>
-            <p className="sw-settings-rail-card-meta">
-              <span>{tier === 'pro' ? 'Pro plan' : 'Free plan'} · {totalItems} items</span>
-              <span>{profileSummary}</span>
-            </p>
-            <div className="sw-settings-rail-pips" aria-hidden="true">
-              {Array.from({ length: 10 }, (_, i) => (
-                <span key={i} className={`sw-settings-rail-pip${i < Math.min(10, Math.round((totalItems / 50) * 10)) ? ' on' : ''}`} />
-              ))}
-            </div>
-          </div>
-        </nav>
 
         {/* ── Page ────────────────────────────────────────────────────── */}
         <div className="sw-settings-main">

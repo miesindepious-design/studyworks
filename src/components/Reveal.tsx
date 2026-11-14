@@ -40,6 +40,12 @@ export default function Reveal({
       return;
     }
 
+    // Fail-safe: some environments (full-page screenshot tools, odd scroll
+    // containers) never fire the observer, which would leave panels stuck
+    // invisible below the fold. Reveal anyway after a beat — the entrance
+    // animation still plays for anyone who scrolls sooner.
+    const fallback = window.setTimeout(() => el.classList.add('is-in'), 1200);
+
     const io = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
@@ -53,7 +59,10 @@ export default function Reveal({
     );
 
     io.observe(el);
-    return () => io.disconnect();
+    return () => {
+      window.clearTimeout(fallback);
+      io.disconnect();
+    };
   }, [delay]);
 
   const classes = [

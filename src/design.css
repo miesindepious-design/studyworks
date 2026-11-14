@@ -2516,96 +2516,10 @@ select.sw-focus-select option {
 
 .sw-settings-shell {
   display: grid;
-  grid-template-columns: 206px minmax(0, 1fr);
-  gap: 30px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
   align-items: start;
 }
-
-/* ── Section rail ─────────────────────────────────────────────────────────── */
-
-.sw-settings-nav {
-  position: sticky;
-  top: calc(var(--sw-topbar-h) + 20px);
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 4px 0;
-}
-.sw-settings-nav-label {
-  font-family: var(--sw-font-mono);
-  font-size: 0.5625rem;
-  font-weight: 500;
-  letter-spacing: 0.17em;
-  text-transform: uppercase;
-  color: var(--sw-text-faint);
-  padding: 0 12px 9px;
-}
-.sw-settings-nav-link {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 8px 12px;
-  border: none;
-  border-radius: var(--sw-r-sm);
-  background: transparent;
-  color: var(--sw-text-2);
-  font-family: var(--sw-font-body);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  cursor: pointer;
-  text-align: left;
-  text-decoration: none;
-  transition: background var(--sw-fast) var(--sw-ease),
-              color var(--sw-fast) var(--sw-ease);
-}
-.sw-settings-nav-link:hover { background: var(--sw-hover); color: var(--sw-text); }
-.sw-settings-nav-link:focus-visible {
-  outline: 2px solid var(--sw-accent);
-  outline-offset: 1px;
-}
-.sw-settings-nav-link.active {
-  background: var(--sw-text);
-  color: var(--sw-page);
-  font-weight: 600;
-}
-.sw-settings-nav-link svg { flex-shrink: 0; opacity: .7; }
-.sw-settings-nav-link.active svg { opacity: 1; }
-
-/* The little status card that closes the rail. */
-.sw-settings-rail-card {
-  margin-top: 18px;
-  padding: 16px;
-  border-radius: var(--sw-r-lg);
-  background:
-    radial-gradient(160px 90px at 100% 0%, color-mix(in srgb, var(--sw-accent) 26%, transparent), transparent 70%),
-    var(--sw-accent-soft);
-  border: 1px solid var(--sw-accent-line);
-}
-.sw-settings-rail-card-label {
-  font-family: var(--sw-font-mono);
-  font-size: 0.5625rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--sw-text-3);
-}
-.sw-settings-rail-card-value {
-  font-family: var(--sw-font-display);
-  font-size: 1.75rem;
-  font-weight: 700;
-  letter-spacing: -0.04em;
-  line-height: 1.1;
-  margin-top: 6px;
-  color: var(--sw-text);
-}
-.sw-settings-rail-card-note { margin-top: 4px; font-size: 0.75rem; color: var(--sw-text-2); }
-.sw-settings-rail-pips { display: flex; gap: 4px; margin-top: 12px; }
-.sw-settings-rail-pip {
-  height: 5px;
-  flex: 1;
-  border-radius: var(--sw-r-full);
-  background: color-mix(in srgb, var(--sw-accent) 26%, transparent);
-}
-.sw-settings-rail-pip.on { background: var(--sw-accent); }
 
 /* ── Page header ──────────────────────────────────────────────────────────── */
 
@@ -3085,7 +2999,6 @@ select.sw-focus-select option {
 /* ── Responsive ───────────────────────────────────────────────────────────── */
 
 @media (max-width: 1240px) {
-  .sw-settings-shell { grid-template-columns: 178px minmax(0, 1fr); gap: 22px; }
   .sw-settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sw-settings-grid > .sw-settings-col { grid-column: span 2; }
   .sw-settings-grid > .sw-settings-col-2 { grid-column: span 2; }
@@ -3093,20 +3006,7 @@ select.sw-focus-select option {
 }
 
 @media (max-width: 900px) {
-  .sw-settings-shell { grid-template-columns: minmax(0, 1fr); gap: 18px; }
-  .sw-settings-nav {
-    position: static;
-    flex-direction: row;
-    gap: 6px;
-    overflow-x: auto;
-    padding-bottom: 6px;
-    scrollbar-width: none;
-  }
-  .sw-settings-nav::-webkit-scrollbar { display: none; }
-  .sw-settings-nav-label { display: none; }
-  .sw-settings-nav-link { white-space: nowrap; border: 1px solid var(--sw-line); }
-  .sw-settings-nav-link.active { background: var(--sw-text); border-color: var(--sw-text); }
-  .sw-settings-rail-card { display: none; }
+  .sw-settings-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 680px) {
@@ -3120,9 +3020,9 @@ select.sw-focus-select option {
 
 
 /* ══ 11  SETTINGS — BENTO LAYER ═══════════════════════════════════════════
-   The settings page is a bento grid: a narrow section rail on the left, a
-   big editorial header with the search field parked in the top-right, and a
-   three-column board of cards underneath.
+   The settings page is a single full-width bento board: an editorial header
+   with the search field parked in the top-right, and a three-column board
+   of cards underneath.
 
    Two cards break the board on purpose — the dark focus room and the solid
    accent block — because a grid of identical white panels reads flat. Both
@@ -3132,7 +3032,7 @@ select.sw-focus-select option {
 
 /* ── Header: the search field rides in the top-right corner ─────────────── */
 
-/* The rail scrolls a section to the top of the viewport — leave room for
+/* Anchors scroll a section to the top of the viewport — leave room for
    the sticky topbar so the target isn't hidden behind it. */
 .sw-settings [id^="settings-"] {
   scroll-margin-top: calc(var(--sw-topbar-h) + 20px);
