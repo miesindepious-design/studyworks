@@ -12,20 +12,13 @@ import {
   getInboundAddress, type InboundAddress,
   listTickets, createTicket, type SupportTicket,
 } from '../api/phase2';
-import Reveal from './Reveal';
-
 interface Props {
   folders: Folder[];
   tier: string;
   onAddToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
-  /**
-   * Wrap each card in the scroll-cascade reveal. Each of the three tools gets
-   * its own panel so they arrive one after another instead of as one block.
-   */
-  reveal?: boolean;
 }
 
-export default function Phase2Tools({ folders, tier, onAddToast, reveal = false }: Props) {
+export default function Phase2Tools({ folders, tier, onAddToast }: Props) {
   const isPro = tier === 'pro';
 
   // ── Folder sharing ──────────────────────────────────────────────────────────
@@ -92,9 +85,10 @@ export default function Phase2Tools({ folders, tier, onAddToast, reveal = false 
 
   const folderName = (id: string) => folders.find(f => f.id === id)?.name ?? 'Unknown folder';
 
-  /** Wrap a card in the cascade reveal when the page asked for it. */
-  const panel = (delay: number, card: ReactNode) =>
-    reveal ? <Reveal delay={delay}>{card}</Reveal> : card;
+  /** Each tool sits in its own grid cell so the three cards line up. */
+  const panel = (_delay: number, card: ReactNode) => (
+    <div className="sw-settings-cell sw-span-2">{card}</div>
+  );
 
   return (
     <>

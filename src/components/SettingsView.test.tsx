@@ -72,8 +72,9 @@ describe('Settings page — no feature repeats itself', () => {
 
   it('renders exactly the expected set of cards', () => {
     // The order follows the page's bento layout: profile / timer / daily
-    // goal across the top row, notifications / appearance / install on the
-    // second, then AI + shortcuts, the sharing trio, and the data band.
+    // goal across the top row, notifications / appearance on the second,
+    // install + shortcuts on the third, then the full-width AI card, the
+    // sharing trio, and the data band.
     expect(titles).toEqual([
       '🎓 Student Profile',
       '⏱️ Study Timer',
@@ -81,8 +82,8 @@ describe('Settings page — no feature repeats itself', () => {
       '🔔 Notifications &amp; Reminders',
       '🎨 Appearance',
       '📱 Install App',
-      '🤖 AI Features',
       '⌨️ Keyboard Shortcuts',
+      '🤖 AI Features',
       '🔗 Folder Sharing',
       '📧 Save by Email',
       '💬 Contact Support',
@@ -131,15 +132,12 @@ describe('Settings page — scroll cascade', () => {
     expect(html).not.toContain('hero-dock-slot-left');
   });
 
-  it('slides panels in from the left edge', () => {
-    expect(html).toContain('reveal-left');
-    expect(html).not.toContain('reveal-right');
-  });
-
-  it('wraps every settings card in a reveal wrapper', () => {
-    // 11 cards; Phase2Tools wraps its own three, the rest are wrapped by
-    // SettingsView. Every card must therefore sit inside a reveal.
-    expect(count(html, 'reveal-wrap')).toBeGreaterThanOrEqual(11);
+  it('renders every card immediately — no reveal animation to miss', () => {
+    // The scroll-cascade reveal left cards invisible in full-page captures
+    // and slow environments, so the settings board renders plain: every card
+    // sits in a grid cell and no reveal wrapper remains.
+    expect(html).not.toContain('reveal-wrap');
+    expect(count(html, 'sw-settings-cell')).toBeGreaterThanOrEqual(11);
   });
 
   it('renders the settings hero', () => {

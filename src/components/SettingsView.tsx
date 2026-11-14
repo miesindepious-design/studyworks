@@ -8,7 +8,6 @@ import { chatComplete } from '../ai/client';
 import * as serverAI from '../api/ai';
 import Phase2Tools from './Phase2Tools';
 import HeroDock from './HeroDock';
-import Reveal from './Reveal';
 import FocusDial from './FocusDial';
 import TimerSettingsPanel from './TimerSettingsPanel';
 import ShortcutEditor from './ShortcutEditor';
@@ -439,11 +438,9 @@ export default function SettingsView({
           <div className="sw-settings-grid">
 
             {/* ── Student profile ─────────────────────────────────────── */}
-            <Reveal
-              className={`sw-settings-cell${matches('profile', 'student', 'stage', 'class', 'department', 'level', 'education', 'account') ? '' : ' is-filtered'}`}
+            <div
+              className={`sw-settings-cell sw-span-2${matches('profile', 'student', 'stage', 'class', 'department', 'level', 'education', 'account') ? '' : ' is-filtered'}`}
               id="settings-account"
-              fill
-              delay={0}
             >
               <div className="card">
                 <div className="card-header">
@@ -576,14 +573,12 @@ export default function SettingsView({
                   )}
                 </div>
               </div>
-            </Reveal>
+            </div>
 
             {/* ── Focus timer ──────────────────────────────────────────── */}
-            <Reveal
-              className={`sw-settings-cell${matches('timer', 'focus', 'break', 'pomodoro', 'study preferences') ? '' : ' is-filtered'}`}
+            <div
+              className={`sw-settings-cell sw-span-2${matches('timer', 'focus', 'break', 'pomodoro', 'study preferences') ? '' : ' is-filtered'}`}
               id="settings-study"
-              fill
-              delay={60}
             >
               <div className="card sw-dark-card">
                 <div className="card-header">
@@ -639,13 +634,11 @@ export default function SettingsView({
                   <TimerSettingsPanel settings={timerSettings} onChange={updateTimer} />
                 </div>
               </div>
-            </Reveal>
+            </div>
 
             {/* ── Daily goal ───────────────────────────────────────────── */}
-            <Reveal
-              className={`sw-settings-cell${matches('daily goal', 'goal', 'target', 'minutes', 'hours', 'study preferences') ? '' : ' is-filtered'}`}
-              fill
-              delay={120}
+            <div
+              className={`sw-settings-cell sw-span-2${matches('daily goal', 'goal', 'target', 'minutes', 'hours', 'study preferences') ? '' : ' is-filtered'}`}
             >
               <div className="card sw-solid-card">
                 <div className="card-header">
@@ -719,14 +712,12 @@ export default function SettingsView({
                   The same targets drive your dashboard progress ring.
                 </p>
               </div>
-            </Reveal>
+            </div>
 
             {/* ── Notifications ────────────────────────────────────────── */}
-            <Reveal
-              className={`sw-settings-cell${matches('notification', 'reminder', 'permission', 'background') ? '' : ' is-filtered'}`}
+            <div
+              className={`sw-settings-cell sw-span-3${matches('notification', 'reminder', 'permission', 'background') ? '' : ' is-filtered'}`}
               id="settings-notifications"
-              fill
-              delay={0}
             >
               <div className="card">
                 <div className="card-header">
@@ -801,14 +792,12 @@ export default function SettingsView({
                   ))}
                 </div>
               </div>
-            </Reveal>
+            </div>
 
             {/* ── Appearance ───────────────────────────────────────────── */}
-            <Reveal
-              className={`sw-settings-cell${matches('appearance', 'theme', 'accent', 'colour', 'color', 'light', 'dark') ? '' : ' is-filtered'}`}
+            <div
+              className={`sw-settings-cell sw-span-3${matches('appearance', 'theme', 'accent', 'colour', 'color', 'light', 'dark') ? '' : ' is-filtered'}`}
               id="settings-appearance"
-              fill
-              delay={60}
             >
               <div className="card">
                 <div className="card-header">
@@ -884,14 +873,12 @@ export default function SettingsView({
                   </div>
                 )}
               </div>
-            </Reveal>
+            </div>
 
             {/* ── Install app ──────────────────────────────────────────── */}
-            <Reveal
-              className={`sw-settings-cell${matches('install', 'pwa', 'desktop', 'ios', 'android') ? '' : ' is-filtered'}`}
+            <div
+              className={`sw-settings-cell sw-span-3${matches('install', 'pwa', 'desktop', 'ios', 'android') ? '' : ' is-filtered'}`}
               id="settings-install"
-              fill
-              delay={120}
             >
               <div className="card">
                 <div className="card-header">
@@ -918,14 +905,45 @@ export default function SettingsView({
                   ))}
                 </div>
               </div>
-            </Reveal>
+            </div>
+
+            {/* ── Keyboard shortcuts ───────────────────────────────────── */}
+            <div
+              className={`sw-settings-cell sw-span-3${matches('keyboard', 'shortcut', 'rebind', 'command palette') ? '' : ' is-filtered'}`}
+              id="settings-shortcuts"
+            >
+              <div className="card">
+                <div className="card-header">
+                  <div>
+                    <span className="card-title">⌨️ Keyboard Shortcuts</span>
+                    <p className="card-note" style={{ margin: '4px 0 0' }}>Rebind anything — it applies instantly</p>
+                  </div>
+                  <div className="sw-card-aside">
+                    <span className="sw-glyph" aria-hidden="true"><IconSearch size={14} /></span>
+                    <button className="btn btn-secondary btn-sm" onClick={onShowShortcuts}>View all</button>
+                  </div>
+                </div>
+
+                <p className="card-note">
+                  Rebind any shortcut here — the change takes effect immediately across the app.
+                  <kbd style={{ padding: '0.1rem 0.4rem', background: 'var(--sw-sunken)', border: '1px solid var(--sw-line)', borderRadius: 'var(--sw-r-xs)', fontFamily: 'inherit', fontSize: '0.8rem' }}>⌘K</kbd> opens the command palette anytime.
+                </p>
+
+                {/* The full list is long — it scrolls inside the card so the
+                    board keeps its proportions instead of one runaway column. */}
+                <div className="sw-shortcut-scroll">
+                  <ShortcutEditor
+                    onError={shortcutError}
+                    onSuccess={shortcutSuccess}
+                  />
+                </div>
+              </div>
+            </div>
 
             {/* ── AI features ──────────────────────────────────────────── */}
-            <Reveal
-              className={`sw-settings-cell sw-settings-col-2${matches('ai', 'gemini', 'openai', 'api key', 'model', 'provider', 'prompt') ? '' : ' is-filtered'}`}
+            <div
+              className={`sw-settings-cell sw-span-6${matches('ai', 'gemini', 'openai', 'api key', 'model', 'provider', 'prompt') ? '' : ' is-filtered'}`}
               id="settings-ai"
-              fill
-              delay={0}
             >
               <div className="card">
                 <div className="card-header">
@@ -1132,62 +1150,24 @@ export default function SettingsView({
                   </div>
                 )}
               </div>
-            </Reveal>
-
-            {/* ── Keyboard shortcuts ───────────────────────────────────── */}
-            <Reveal
-              className={`sw-settings-cell${matches('keyboard', 'shortcut', 'rebind', 'command palette') ? '' : ' is-filtered'}`}
-              id="settings-shortcuts"
-              fill
-              delay={60}
-            >
-              <div className="card">
-                <div className="card-header">
-                  <div>
-                    <span className="card-title">⌨️ Keyboard Shortcuts</span>
-                    <p className="card-note" style={{ margin: '4px 0 0' }}>Rebind anything — it applies instantly</p>
-                  </div>
-                  <div className="sw-card-aside">
-                    <span className="sw-glyph" aria-hidden="true"><IconSearch size={14} /></span>
-                    <button className="btn btn-secondary btn-sm" onClick={onShowShortcuts}>View all</button>
-                  </div>
-                </div>
-
-                <p className="card-note">
-                  Rebind any shortcut here — the change takes effect immediately across the app.
-                  <kbd style={{ padding: '0.1rem 0.4rem', background: 'var(--sw-sunken)', border: '1px solid var(--sw-line)', borderRadius: 'var(--sw-r-xs)', fontFamily: 'inherit', fontSize: '0.8rem' }}>⌘K</kbd> opens the command palette anytime.
-                </p>
-
-                {/* The full list is long — it scrolls inside the card so the
-                    board keeps its proportions instead of one runaway column. */}
-                <div className="sw-shortcut-scroll">
-                  <ShortcutEditor
-                    onError={shortcutError}
-                    onSuccess={shortcutSuccess}
-                  />
-                </div>
-              </div>
-            </Reveal>
+            </div>
 
           </div>
 
           {/* ── Sharing & support ───────────────────────────────────────
-              Each tool cascades in on its own (Phase2Tools handles the
-              reveal). It renders its own three cards, so it sits in its
-              own grid below the main one. */}
+              Phase2Tools renders the three sharing/support cards, each in
+              its own grid cell, in a grid below the main one. */}
           <div className="sw-settings-grid" id="settings-tools" style={{ marginTop: 18 }}>
-            <Phase2Tools folders={folders} tier={tier} onAddToast={onAddToast} reveal />
+            <Phase2Tools folders={folders} tier={tier} onAddToast={onAddToast} />
           </div>
 
           {/* ── Data & storage ─────────────────────────────────────────
               The closing band: one full-width row that owns every export
               and delete action, so the destructive ones sit together. */}
           <div className="sw-settings-grid" id="settings-data-row" style={{ marginTop: 18 }}>
-            <Reveal
-              className={`sw-settings-cell sw-settings-col${matches('data', 'storage', 'export', 'pdf', 'json', 'clear', 'privacy', 'quota') ? '' : ' is-filtered'}`}
+            <div
+              className={`sw-settings-cell sw-span-6${matches('data', 'storage', 'export', 'pdf', 'json', 'clear', 'privacy', 'quota') ? '' : ' is-filtered'}`}
               id="settings-data"
-              fill
-              delay={120}
             >
               <div className="card sw-settings-data-card">
                 <div className="sw-settings-data-head">
@@ -1266,7 +1246,7 @@ export default function SettingsView({
                   </div>
                 </div>
               </div>
-            </Reveal>
+            </div>
           </div>
 
         </div>
