@@ -296,7 +296,7 @@ export default function MultiplayerQuiz({ db, userId, userName, tier, setCurrent
           {tier !== 'pro' && <span className="sw-chip accent">Pro</span>}
         </div>
 
-        <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+        <div className="grid sw-two-col" style={{ gap: '1rem' }}>
           <div className="card" style={{ padding: '1.25rem' }}>
             <h3 style={{ marginBottom: '0.75rem' }}>🎯 Create a room</h3>
             <label className="text-muted text-xs">Seconds per question</label>
@@ -431,7 +431,7 @@ export default function MultiplayerQuiz({ db, userId, userName, tier, setCurrent
   const showStreak = streak >= 2;
 
   return (
-    <div className="animate-in" style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: '1.25rem', alignItems: 'start' }}>
+    <div className="animate-in sw-quiz-layout">
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -478,7 +478,7 @@ export default function MultiplayerQuiz({ db, userId, userName, tier, setCurrent
               </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            <div className="sw-two-col">
               {question.options.map((opt, i) => {
                 if (disabledOptions.has(i)) return null;
                 const isAnswer = revealed && i === correctIdx;

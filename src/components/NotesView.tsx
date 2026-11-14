@@ -680,13 +680,13 @@ export default function NotesView({
                   {tier === 'free' && <span className="tag accent">{totalItems}/50 items</span>}
                 </div>
                 <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <div className="sw-two-col">
                     <input type="text" className="input" placeholder="Title" value={title} onChange={e => setTitle(e.target.value)} required />
                     <select className="select" value={type} onChange={e => setType(e.target.value as Note['type'])}>
                       <option value="note">Note</option><option value="article">Article</option><option value="idea">Idea</option><option value="project">Project</option>
                     </select>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <div className="sw-two-col">
                     <select className="select" value={selectedFolder} onChange={e => setSelectedFolder(e.target.value)}>
                       {folders.map(f => (<option key={f.id} value={f.id}>{f.isSmart ? '⚡ ' : ''}{f.name}</option>))}
                     </select>
@@ -812,7 +812,7 @@ export default function NotesView({
               onClick={() => setShowTemplateMenu(o => !o)}
             >▾</button>
             {showTemplateMenu && (
-              <div className="card" style={{ position: 'absolute', right: 0, top: '110%', zIndex: 50, padding: '0.75rem', boxShadow: 'var(--shadow-lg)', minWidth: '520px' }}>
+              <div className="card" style={{ position: 'absolute', right: 0, top: '110%', zIndex: 50, padding: '0.75rem', boxShadow: 'var(--shadow-lg)', minWidth: 'min(520px, calc(100vw - 48px))' }}>
                 <p className="text-xs text-muted" style={{ padding: '0 0.25rem 0.5rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Choose a template</p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.5rem' }}>
                   {NOTE_TEMPLATES.map(t => (
@@ -935,13 +935,13 @@ export default function NotesView({
             {tier === 'free' && <span className="tag accent">{totalItems}/50 items</span>}
           </div>
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            <div className="sw-two-col">
               <input type="text" className="input" placeholder="Title" value={title} onChange={e => setTitle(e.target.value)} required />
               <select className="select" value={type} onChange={e => setType(e.target.value as Note['type'])}>
                 <option value="note">Note</option><option value="article">Article</option><option value="idea">Idea</option><option value="project">Project</option>
               </select>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            <div className="sw-two-col">
               <select className="select" value={selectedFolder} onChange={e => setSelectedFolder(e.target.value)}>
                 {folders.map(f => (
                   <option key={f.id} value={f.id}>

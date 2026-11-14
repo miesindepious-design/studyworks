@@ -303,7 +303,9 @@
 }
 .sw-nav-item.active {
   background: color-mix(in srgb, var(--sw-accent) 17%, var(--sw-rail));
-  color: var(--sw-accent-ink);
+  /* The rail is always dark, so the active label stays light — accent-ink
+     is meant for text on a *solid* accent fill, not on a tint. */
+  color: var(--sw-rail-text);
   font-weight: 600;
 }
 .sw-nav-item.active::before {
@@ -835,6 +837,25 @@
 .sw-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .sw-grid-main-side { grid-template-columns: minmax(0, 1.62fr) minmax(0, 1fr); }
 .sw-grid-side-main { grid-template-columns: minmax(0, 1fr) minmax(0, 1.62fr); }
+/* Two side-by-side form fields that stack on a phone. */
+.sw-two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+/* The AI Tutor: a fixed level panel beside the ask panel. */
+.sw-tutor-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 1.25rem;
+}
+/* Quiz Battle: the lobby beside the leaderboard. */
+.sw-quiz-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 1.25rem;
+  align-items: start;
+}
 .sw-stack { display: flex; flex-direction: column; gap: var(--sw-gap); }
 .sw-row { display: flex; align-items: center; gap: 10px; }
 .sw-row-wrap { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -2947,6 +2968,14 @@ select.sw-focus-select option {
   margin-top: 14px;
   flex-wrap: wrap;
 }
+
+/* The skip / start / reset row. */
+.sw-timer-controls {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
 .sw-timer-preset {
   min-width: 46px;
   padding: 6px 10px;
@@ -3590,3 +3619,112 @@ select.sw-focus-select option {
 
 /* Inside the settings grid the older scoped rules still apply; everywhere
    else the shared variants above are the single source. */
+
+
+/* ══ 13  MOBILE ═══════════════════════════════════════════════════════════
+   Phone-first behaviour for the whole app:
+
+   ≤900px  the sidebar becomes an off-canvas drawer (hamburger + scrim),
+           side-by-side panels stack, the chrome tightens up.
+   ≤620px  every two-column form stacks, modals go edge to edge and the
+           tap targets grow to thumb size.
+
+   Safe-area insets keep the notch and the home indicator clear.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 900px) {
+  /* ── Drawer ─────────────────────────────────────────────────────────── */
+  .sw-sidebar {
+    width: min(300px, 86vw);
+    min-width: min(300px, 86vw);
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+  .sw-main { min-width: 0; }
+
+  /* ── Content + topbar ───────────────────────────────────────────────── */
+  .sw-content { padding: 16px 14px calc(32px + env(safe-area-inset-bottom)); }
+  .sw-topbar {
+    gap: 10px;
+    padding: 0 max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left));
+  }
+  .sw-topbar-title {
+    min-width: 0;
+    flex-shrink: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .sw-topbar-actions { gap: 6px; }
+
+  /* ── Panels that can't sit side by side ────────────────────────────── */
+  .sw-tutor-layout,
+  .sw-quiz-layout { grid-template-columns: minmax(0, 1fr); }
+  .sw-tutor-layout { gap: 1rem; }
+  .sw-quiz-layout { gap: 1rem; }
+
+  /* ── Hero ───────────────────────────────────────────────────────────── */
+  .sw-hero { padding: 20px 18px; gap: 18px; }
+  .sw-hero-title { font-size: 1.5rem; }
+  .sw-hero-sub { font-size: 0.8125rem; }
+
+  /* ── Thumb-sized targets ────────────────────────────────────────────── */
+  .sw-nav-item { min-height: 42px; }
+  .sw-deck-btn { height: 34px; }
+  .sw-icon-btn { min-width: 34px; min-height: 34px; }
+
+  /* ── Floating button clears the home indicator ──────────────────────── */
+  .sw-copilot-fab {
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    right: 14px;
+  }
+
+  /* ── The settings board header stacks ───────────────────────────────── */
+  .sw-settings-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .sw-settings-search { min-width: 0; width: 100%; }
+}
+
+@media (max-width: 620px) {
+  /* Two-column form pairs stack. */
+  .sw-two-col { grid-template-columns: minmax(0, 1fr); }
+
+  /* The timer's three buttons share the row; the primary one gets its
+     own full-width line so nothing is clipped. */
+  .sw-timer-controls { gap: 0.75rem; }
+  .sw-timer-controls > .btn { flex: 1 1 auto; min-width: 0 !important; }
+  .sw-timer-controls > .btn-primary { flex-basis: 100%; order: -1; }
+
+  /* Modals go edge to edge and read like sheets. */
+  .modal-backdrop { padding: 10px; align-items: flex-end; }
+  .modal-panel { width: 100%; max-height: 88vh; }
+  .modal-header { padding: 1rem; }
+  .modal-body { padding: 1rem; }
+  .modal-footer { padding: 0.85rem 1rem; flex-wrap: wrap; }
+
+  /* Bigger tap targets for buttons and selects. */
+  .btn { min-height: 40px; }
+  .btn.sm, .btn.btn-sm { min-height: 34px; }
+  .select, .input { min-height: 40px; }
+
+  /* Cards breathe a little less on a narrow screen. */
+  .card { padding: 16px 15px; }
+
+  /* Page headers shrink to fit. */
+  .sw-page-head-title { font-size: 1.125rem; }
+  .sw-settings-title { font-size: clamp(1.75rem, 8vw, 2.25rem); }
+
+  /* The AI tutor's level panel and the ask panel stack cleanly. */
+  .sw-tutor-layout > .card,
+  .sw-quiz-layout > * { min-width: 0; }
+}
+
+/* Very small phones (iPhone SE and friends) */
+@media (max-width: 380px) {
+  .sw-content { padding: 14px 11px calc(28px + env(safe-area-inset-bottom)); }
+  .sw-topbar { gap: 6px; }
+  .sw-hero { padding: 16px 14px; }
+  .card { padding: 14px 13px; }
+  .sw-search { width: 32px; }
+}

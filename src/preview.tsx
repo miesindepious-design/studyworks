@@ -27,6 +27,7 @@ import StudyRoom from './components/StudyRoom';
 import MultiplayerQuiz from './components/MultiplayerQuiz';
 import PricingView from './components/PricingView';
 import AdminDashboard from './components/AdminDashboard';
+import ShortcutsModal from './components/ShortcutsModal';
 import type { Note, Contact, Flashcard, Folder, PracticeQuestion, SavedSearch } from './types';
 import type { UseAIResult } from './hooks/useAI';
 import { PAGE_TITLES } from './config/nav';
@@ -160,6 +161,7 @@ function Preview() {
   const [questions, setQuestions] = useState(practiceQuestions);
   const [searches, setSearches] = useState(savedSearches);
   const [folderList, setFolderList] = useState(folders);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const shared = {
     tier: 'pro' as const,
@@ -245,6 +247,7 @@ function Preview() {
   })();
 
   return (
+    <>
     <AppShell
       currentView={VIEW as never}
       onNavigate={noop}
@@ -269,15 +272,18 @@ function Preview() {
             <button type="button" className="sw-deck-btn sw-deck-icon">⬇</button>
             <button type="button" className="sw-deck-btn sw-deck-icon">⬆</button>
           </div>
-          <button type="button" className="sw-deck-btn sw-deck-wide">
-            <span>Shortcuts</span>
-            <span className="sw-deck-dots" aria-hidden="true">···</span>
-          </button>
+            <button type="button" className="sw-deck-btn sw-deck-wide" onClick={() => setShortcutsOpen(true)}>
+              <span>Shortcuts</span>
+              <span className="sw-deck-dots" aria-hidden="true">···</span>
+            </button>
         </div>
       )}
     >
       {view}
     </AppShell>
+
+    {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
+    </>
   );
 }
 

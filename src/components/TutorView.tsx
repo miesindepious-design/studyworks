@@ -369,7 +369,7 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
         <span className="tag">{tier === 'pro' ? '⭐ Pro' : 'Free'}</span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '1.25rem' }}>
+      <div className="sw-tutor-layout">
         <div className="card">
           <div className="card-header">
             <span className="card-title">Your level</span>

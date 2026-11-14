@@ -256,7 +256,7 @@ export default function StudyTimer() {
           </div>
 
           {/* Controls */}
-          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <div className="sw-timer-controls">
             <button
               className="btn btn-lg"
               onClick={skipPhase}

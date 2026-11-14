@@ -161,7 +161,7 @@ export default function PricingView({ currentTier, onDowngrade, onCheckoutResult
       </div>
 
       {/* Plan cards */}
-      <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', marginBottom: '3rem', alignItems: 'start' }}>
+      <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(340px, 100%), 1fr))', marginBottom: '3rem', alignItems: 'start' }}>
 
         {/* Free card */}
         <div className="card" style={{ border: currentTier === 'free' ? '2px solid var(--accent)' : '1px solid var(--border)' }}>
@@ -274,7 +274,7 @@ export default function PricingView({ currentTier, onDowngrade, onCheckoutResult
       {/* Roadmap */}
       <div>
         <h2 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '1.5rem', textAlign: 'center' }}>🗺️ Roadmap</h2>
-        <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))' }}>
+        <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(340px, 100%), 1fr))' }}>
           {ROADMAP.map(r => (
             <div key={r.phase} className="card" style={{ borderTop: `3px solid ${r.color}` }}>
               <div style={{ marginBottom: '1rem' }}>

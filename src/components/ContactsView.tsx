@@ -248,15 +248,15 @@ export default function ContactsView({ contacts, setContacts, addToast, tier, se
             {tier === 'free' && <span className="tag accent">{totalItems}/50 items</span>}
           </div>
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            <div className="sw-two-col">
               <input type="text" className="input" placeholder="Full name" value={name} onChange={e => setName(e.target.value)} required />
               <input type="text" className="input" placeholder="Role (Professor, Classmate, Client…)" value={role} onChange={e => setRole(e.target.value)} required />
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            <div className="sw-two-col">
               <input type="email" className="input" placeholder="Email (optional)" value={email} onChange={e => setEmail(e.target.value)} />
               <input type="tel" className="input" placeholder="Phone (optional)" value={phone} onChange={e => setPhone(e.target.value)} />
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            <div className="sw-two-col">
               <select className="select" value={selectedFolder} onChange={e => setSelectedFolder(e.target.value)}>
                 {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
               </select>
@@ -267,7 +267,7 @@ export default function ContactsView({ contacts, setContacts, addToast, tier, se
                 </div>
               )}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            <div className="sw-two-col">
               <div>
                 <label className="form-label" style={{ display: 'block', marginBottom: '0.25rem' }}>Birthday</label>
                 <input type="date" className="input" value={birthday} onChange={e => setBirthday(e.target.value)} />
@@ -282,7 +282,7 @@ export default function ContactsView({ contacts, setContacts, addToast, tier, se
               </div>
             </div>
             <textarea className="textarea" placeholder="Notes about this person…" rows={2} value={notes} onChange={e => setNotes(e.target.value)} />
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            <div className="sw-two-col">
               <div>
                 <label className="form-label" style={{ display: 'block', marginBottom: '0.25rem' }}>Follow-up reminder</label>
                 <input type="datetime-local" className="input" value={nextReminder} onChange={e => setNextReminder(e.target.value)} />

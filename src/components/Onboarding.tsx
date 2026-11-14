@@ -155,7 +155,7 @@ export default function Onboarding({ onComplete, product, onLoadStarterPack }: O
         </p>
 
         <div className="grid" style={{
-          gridTemplateColumns: 'repeat(3, 1fr)',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
           gap: '0.75rem', marginBottom: '2rem',
           animation: 'slideUp 0.3s 0.1s ease both',
         }}>

@@ -475,7 +475,7 @@ export default function FlashcardsView({
             {tier === 'free' && <span className="tag accent">{totalItems}/50 items</span>}
           </div>
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            <div className="sw-two-col">
               <select className="select" value={selectedFolder} onChange={e => setSelectedFolder(e.target.value)}>
                 {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
               </select>
