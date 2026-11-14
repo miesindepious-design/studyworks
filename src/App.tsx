@@ -576,36 +576,37 @@ export default function App() {
           </>
         )}
         sidebarExtra={(
-          <div className="sw-row-wrap" style={{ gap: 6, padding: '0 8px' }}>
+          <div className="sw-side-deck">
+            <div className="sw-side-deck-row">
+              <button
+                type="button"
+                className="sw-deck-btn sw-deck-theme"
+                onClick={cycleTheme}
+                title={`Theme: ${THEME_LABEL[theme]} — click to cycle`}
+              >
+                {THEME_ICON[theme]} <span>{THEME_LABEL[theme]}</span>
+              </button>
+              <button type="button" className="sw-deck-btn sw-deck-icon" onClick={exportData} title="Export JSON">
+                <IconDownload size={14} />
+              </button>
+              {tier === 'pro' && (
+                <label className="sw-deck-btn sw-deck-icon" style={{ cursor: 'pointer' }} title="Import data (JSON export file)">
+                  <IconUpload size={14} />
+                  <input type="file" accept=".json" onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleImportFile(file);
+                    e.target.value = ''; // allow re-selecting the same file
+                  }} style={{ display: 'none' }} />
+                </label>
+              )}
+            </div>
             <button
               type="button"
-              className="sw-btn secondary sm"
-              onClick={cycleTheme}
-              title={`Theme: ${THEME_LABEL[theme]} — click to cycle`}
-              style={{ flex: 1 }}
-            >
-              {THEME_ICON[theme]} {THEME_LABEL[theme]}
-            </button>
-            <button type="button" className="sw-btn secondary sm" onClick={exportData} title="Export JSON">
-              <IconDownload size={14} />
-            </button>
-            {tier === 'pro' && (
-              <label className="sw-btn secondary sm" style={{ cursor: 'pointer' }} title="Import data (JSON export file)">
-                <IconUpload size={14} />
-                <input type="file" accept=".json" onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleImportFile(file);
-                  e.target.value = ''; // allow re-selecting the same file
-                }} style={{ display: 'none' }} />
-              </label>
-            )}
-            <button
-              type="button"
-              className="sw-btn ghost sm"
+              className="sw-deck-btn sw-deck-wide"
               onClick={() => setShowShortcuts(true)}
-              style={{ flex: 1 }}
             >
-              Shortcuts
+              <span>Shortcuts</span>
+              <span className="sw-deck-dots" aria-hidden="true">···</span>
             </button>
           </div>
         )}

@@ -57,7 +57,6 @@ export default function AppShell(props: AppShellProps) {
   };
 
   const initials = (userName || 'A').trim().charAt(0).toUpperCase();
-  const isPro = tier === 'pro' || trialDaysLeft > 0;
 
   return (
     <div className="sw-shell">
@@ -121,33 +120,24 @@ export default function AppShell(props: AppShellProps) {
 
         {/* ── Sidebar footer ────────────────────────────────────────────── */}
         <div className="sw-sidebar-foot">
-          {isPro ? (
-            <div className="sw-pro-card">
-              <div className="sw-pro-card-top">
-                <span className="sw-pro-card-icon"><IconCrown size={13} strokeWidth={2} /></span>
-                {trialDaysLeft > 0 ? `Pro trial · ${trialDaysLeft}d` : 'Pro plan'}
-              </div>
-              <p className="sw-pro-card-copy">
-                {trialDaysLeft > 0
-                  ? `${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} left on your free Pro trial.`
-                  : 'Make room for your next big idea.'}
-              </p>
-              <button type="button" className="sw-pro-card-link" onClick={onOpenPricing}>
-                Manage subscription <IconChevronRight size={11} strokeWidth={2.2} />
-              </button>
+          <div className="sw-pro-card">
+            <span className="sw-pro-card-sheen" aria-hidden="true" />
+            <div className="sw-pro-card-top">
+              <span className="sw-pro-card-icon"><IconCrown size={12} strokeWidth={2} /></span>
+              <span className="sw-pro-card-tier">
+                {trialDaysLeft > 0 ? `Pro trial · ${trialDaysLeft}d left` : 'Pro plan'}
+              </span>
+              <span className="sw-pro-card-pip" aria-hidden="true" />
             </div>
-          ) : (
-            <div className="sw-pro-card">
-              <div className="sw-pro-card-top">
-                <span className="sw-pro-card-icon"><IconCrown size={13} strokeWidth={2} /></span>
-                Pro plan
-              </div>
-              <p className="sw-pro-card-copy">Make room for your next big idea.</p>
-              <button type="button" className="sw-pro-card-link" onClick={onOpenPricing}>
-                Manage subscription <IconChevronRight size={11} strokeWidth={2.2} />
-              </button>
-            </div>
-          )}
+            <p className="sw-pro-card-copy">
+              {trialDaysLeft > 0
+                ? `${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} left on your free Pro trial.`
+                : 'Make room for your next big idea.'}
+            </p>
+            <button type="button" className="sw-pro-card-link" onClick={onOpenPricing}>
+              Manage subscription <IconChevronRight size={11} strokeWidth={2.2} />
+            </button>
+          </div>
 
           {tier === 'free' && (
             <div style={{ padding: '0 8px' }}>

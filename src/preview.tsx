@@ -262,6 +262,19 @@ function Preview() {
       onOpenCommandPalette={noop}
       onOpenPricing={noop}
       onSignOut={noop}
+      sidebarExtra={(
+        <div className="sw-side-deck">
+          <div className="sw-side-deck-row">
+            <button type="button" className="sw-deck-btn sw-deck-theme">🌙 <span>Dark</span></button>
+            <button type="button" className="sw-deck-btn sw-deck-icon">⬇</button>
+            <button type="button" className="sw-deck-btn sw-deck-icon">⬆</button>
+          </div>
+          <button type="button" className="sw-deck-btn sw-deck-wide">
+            <span>Shortcuts</span>
+            <span className="sw-deck-dots" aria-hidden="true">···</span>
+          </button>
+        </div>
+      )}
     >
       {view}
     </AppShell>
