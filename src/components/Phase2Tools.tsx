@@ -16,9 +16,11 @@ interface Props {
   folders: Folder[];
   tier: string;
   onAddToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
+  /** True when the settings search doesn't match these cards — hide them. */
+  filtered?: boolean;
 }
 
-export default function Phase2Tools({ folders, tier, onAddToast }: Props) {
+export default function Phase2Tools({ folders, tier, onAddToast, filtered = false }: Props) {
   const isPro = tier === 'pro';
 
   // ── Folder sharing ──────────────────────────────────────────────────────────
@@ -87,7 +89,7 @@ export default function Phase2Tools({ folders, tier, onAddToast }: Props) {
 
   /** Each tool sits in its own grid cell so the three cards line up. */
   const panel = (_delay: number, card: ReactNode) => (
-    <div className="sw-settings-cell sw-span-2">{card}</div>
+    <div className={`sw-settings-cell sw-span-2${filtered ? ' is-filtered' : ''}`}>{card}</div>
   );
 
   return (

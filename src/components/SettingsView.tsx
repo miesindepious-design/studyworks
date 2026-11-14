@@ -426,6 +426,9 @@ export default function SettingsView({
                 onChange={e => setQuery(e.target.value)}
                 placeholder="Search settings"
                 aria-label="Search settings"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
               />
               {query && (
                 <span className="sw-settings-search-count">
@@ -1158,7 +1161,12 @@ export default function SettingsView({
               Phase2Tools renders the three sharing/support cards, each in
               its own grid cell, in a grid below the main one. */}
           <div className="sw-settings-grid" id="settings-tools" style={{ marginTop: 18 }}>
-            <Phase2Tools folders={folders} tier={tier} onAddToast={onAddToast} />
+            <Phase2Tools
+              folders={folders}
+              tier={tier}
+              onAddToast={onAddToast}
+              filtered={!matches('share', 'sharing', 'email', 'support', 'ticket', 'folder', 'link')}
+            />
           </div>
 
           {/* ── Data & storage ─────────────────────────────────────────
@@ -1247,6 +1255,16 @@ export default function SettingsView({
                 </div>
               </div>
             </div>
+
+            {/* ── No matches ──────────────────────────────────────────── */}
+            {query.trim() && visibleCount === 0 && (
+              <div className="sw-settings-empty">
+                No settings match &ldquo;{query.trim()}&rdquo;.
+                <button className="btn btn-secondary btn-sm" style={{ marginLeft: 10 }} onClick={() => setQuery('')}>
+                  Clear search
+                </button>
+              </div>
+            )}
           </div>
 
         </div>
