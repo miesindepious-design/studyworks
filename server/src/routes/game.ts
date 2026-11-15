@@ -97,7 +97,7 @@ Rules:
 Return JSON: { "questions": [ { "prompt": "...", "options": ["...","...","...","..."], "answerIdx": 0 } ] } where answerIdx is the 0-based index of the correct option.`,
           },
         ],
-        temperature: 0.6, maxTokens: 8192, jsonMode: true,
+        temperature: 0.6, maxTokens: 8192, jsonMode: true, thinking: 'low',
       });
       const parsed = JSON.parse(raw);
       const rawQs: any[] = parsed.questions ?? [];

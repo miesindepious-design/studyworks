@@ -30,6 +30,7 @@ export async function generateSummary(
     ],
     temperature: 0.3,
     maxTokens: 300,
+    thinking: 'low',
   });
   return text.trim();
 }
@@ -60,6 +61,7 @@ export async function generateFlashcards(
     ],
     temperature: 0.5,
     maxTokens: 4096,
+    thinking: hard ? 'medium' : 'low',
   });
 
   try {
@@ -107,6 +109,7 @@ ${content}`,
     ],
     temperature: 0.6,
     maxTokens: 1500,
+    thinking: 'low',
   });
 
   try {
@@ -154,6 +157,7 @@ export async function smartQA(
     ],
     temperature: 0.3,
     maxTokens: 700,
+    thinking: 'medium',
   });
   return text.trim();
 }
@@ -186,6 +190,7 @@ ${list}`,
     ],
     temperature: 0.1,
     maxTokens: 200,
+    thinking: 'low',
   });
 
   try {
@@ -242,6 +247,7 @@ Keep each field concise (1-3 sentences). Be specific and actionable.`,
     ],
     temperature: 0.4,
     maxTokens: 500,
+    thinking: 'low',
   });
 
   try {
@@ -271,6 +277,7 @@ export async function runCustomPrompt(
     ],
     temperature: 0.5,
     maxTokens: 800,
+    thinking: 'medium',
   });
   return text.trim();
 }

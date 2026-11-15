@@ -8,6 +8,7 @@
  */
 import { prisma } from './prisma.js';
 import { decryptApiKey } from './encryption.js';
+import { buildGenerationConfig, DEFAULT_GEMINI_MODEL, type ThinkingLevel } from './gemini.js';
 
 export const SYSTEM_BASE = `You are an expert study assistant embedded in StudyWorks, a learning app.
 Be concise, accurate, and focused. Never add disclaimers or meta-commentary.`;
@@ -16,7 +17,8 @@ export function getServerAIFallback() {
   const apiKey = process.env.AI_API_KEY?.trim();
   if (!apiKey) return null;
   const provider = (process.env.AI_PROVIDER || 'gemini') as 'gemini' | 'openai';
-  const model = process.env.AI_MODEL?.trim() || 'gemini-2.5-flash';
+  // Gemini 4 Hydrogen is the first Gemini 4 model on the free tier.
+  const model = process.env.AI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
   return { provider, model, apiKey, serverManaged: true as const };
 }
 
@@ -57,8 +59,13 @@ export async function callProvider(opts: {
   apiKey:      string;
   messages:    { role: string; content: string }[];
   temperature?: number;
-  maxTokens?:   number;
-  jsonMode?:    boolean;
+  maxTokens?:  number;
+  jsonMode?:   boolean;
+  /**
+   * How hard the model should think. Gemini 4 defaults to "high"; cheap
+   * calls ask for less. Ignored by models without the dial.
+   */
+  thinking?:   ThinkingLevel;
 }): Promise<string> {
   if (opts.provider === 'gemini') {
     const systemMsg = opts.messages.find(m => m.role === 'system');
@@ -76,11 +83,13 @@ export async function callProvider(opts: {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents,
-        generationConfig: {
-          temperature:     opts.temperature ?? 0.4,
-          maxOutputTokens: opts.maxTokens   ?? 1024,
-          ...(opts.jsonMode ? { responseMimeType: 'application/json' } : {}),
-        },
+        generationConfig: buildGenerationConfig({
+          model:       opts.model,
+          temperature: opts.temperature,
+          maxTokens:   opts.maxTokens,
+          jsonMode:    opts.jsonMode,
+          thinking:    opts.thinking,
+        }),
       }),
     });
     if (!res.ok) {

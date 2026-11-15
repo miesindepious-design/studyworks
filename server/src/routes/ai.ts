@@ -16,6 +16,7 @@ import { rateLimitMiddleware } from '../lib/rateLimit.js';
 import { prisma } from '../lib/prisma.js';
 import { encryptApiKey, decryptApiKey } from '../lib/encryption.js';
 import { SYSTEM_BASE, loadAIConfig, callProvider, getServerAIFallback } from '../lib/aiProvider.js';
+import { DEFAULT_GEMINI_MODEL } from '../lib/gemini.js';
 import { studentProfileBits, studentPromptContext } from '../lib/studentProfile.js';
 
 export const aiRouter = new Hono();
@@ -46,7 +47,7 @@ aiRouter.get('/settings', async c => {
     const serverManaged = !!fallback;
     return c.json({
       provider:              fallback?.provider ?? 'gemini',
-      model:                 fallback?.model ?? 'gemini-2.5-flash',
+      model:                 fallback?.model ?? DEFAULT_GEMINI_MODEL,
       enabled:               serverManaged,
       hasApiKey:             serverManaged,
       serverManaged,
@@ -148,7 +149,7 @@ aiRouter.post('/summary', requirePro, zValidator('json', z.object({
         { role: 'system', content: SYSTEM_BASE },
         { role: 'user',   content: `${prompt}\n\nTitle: ${title}\n\nContent:\n${content}` },
       ],
-      temperature: 0.3, maxTokens: 300,
+      temperature: 0.3, maxTokens: 300, thinking: 'low',
     });
     return c.json({ summary: text.trim() });
   } catch (e) {
@@ -186,7 +187,7 @@ aiRouter.post('/flashcards', requirePro, zValidator('json', z.object({
         { role: 'system', content: `${SYSTEM_BASE}${studentCtx}` },
         { role: 'user',   content: `${prompt}\n\nTitle: ${title}\n\nContent:\n${content}` },
       ],
-      temperature: 0.5, maxTokens: 8192, jsonMode: true,
+      temperature: 0.5, maxTokens: 8192, jsonMode: true, thinking: 'low',
     });
     const parsed = JSON.parse(raw);
     const cards = (parsed.flashcards ?? parsed.cards ?? []).slice(0, count).map((c: any) => ({
@@ -228,7 +229,7 @@ Return JSON: { "questions": [ { "question", "answer", "type", "options"? } ] }
 Title: ${title}\n\nContent:\n${content}`,
         },
       ],
-      temperature: 0.6, maxTokens: 1500, jsonMode: true,
+      temperature: 0.6, maxTokens: 1500, jsonMode: true, thinking: 'low',
     });
     const parsed = JSON.parse(raw);
     const questions = (parsed.questions ?? parsed.practice_questions ?? []).slice(0, count);
@@ -274,7 +275,7 @@ aiRouter.post('/qa', requirePro, zValidator('json', z.object({
           content: `Knowledge base:\n\n${kb || 'No notes available.'}\n\n---\n\nQuestion: ${query}`,
         },
       ],
-      temperature: 0.3, maxTokens: 700,
+      temperature: 0.3, maxTokens: 700, thinking: 'medium',
     });
     return c.json({ answer: text.trim() });
   } catch (e) {
@@ -316,7 +317,7 @@ Return JSON: { "ranked": [list of indices in order, most relevant first] }
 Results:\n${list}`,
         },
       ],
-      temperature: 0.1, maxTokens: 200, jsonMode: true,
+      temperature: 0.1, maxTokens: 200, jsonMode: true, thinking: 'low',
     });
     const parsed = JSON.parse(raw);
     const ranked: number[] = parsed.ranked ?? [];
@@ -383,7 +384,7 @@ Generate 4-5 insights. Each "body" should be 1-2 sentences, specific and actiona
         },
         { role: 'user', content: `Generate weekly insights:\n\n${context}` },
       ],
-      temperature: 0.7, maxTokens: 800, jsonMode: true,
+      temperature: 0.7, maxTokens: 800, jsonMode: true, thinking: 'low',
     });
     const parsed = JSON.parse(raw);
     return c.json({ insights: parsed.insights ?? [] });
@@ -469,6 +470,9 @@ aiRouter.post('/tutor', requirePro, zValidator('json', TutorRequestBody), async 
       messages,
       temperature: mode === 'quiz' ? 0.4 : 0.7,
       maxTokens: mode === 'quiz' ? 1200 : 4000,
+      // A lesson is the one place where thinking pays off; a quiz just
+      // needs recall.
+      thinking: mode === 'quiz' ? 'low' : 'medium',
     });
 
     return c.json({

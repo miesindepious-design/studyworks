@@ -5,6 +5,7 @@
  */
 
 import type { AIProvider } from '../db/aiSettings';
+import { buildThinkingConfig, type ThinkingLevel } from './models';
 
 export interface Message {
   role: 'system' | 'user' | 'assistant';
@@ -19,6 +20,12 @@ export interface ChatOptions {
   temperature?: number;
   maxTokens?:   number;
   jsonMode?:    boolean;
+  /**
+   * How hard the model should think. Gemini 4 defaults to "high", which is
+   * slower and burns more tokens than a summary needs. Ignored by models
+   * that do not support the dial.
+   */
+  thinking?:    ThinkingLevel;
 }
 
 export class AIError extends Error {
@@ -75,6 +82,7 @@ async function callGeminiOnce(opts: ChatOptions): Promise<string> {
       temperature:     opts.temperature ?? 0.4,
       maxOutputTokens: opts.maxTokens   ?? 1024,
       ...(opts.jsonMode ? { responseMimeType: 'application/json' } : {}),
+      ...buildThinkingConfig(opts.model, opts.thinking),
     },
   };
 

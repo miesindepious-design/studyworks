@@ -17,7 +17,7 @@ export const PROVIDERS: { id: AIProvider; label: string; getKeyUrl: string; free
     id:        'gemini',
     label:     'Google Gemini',
     getKeyUrl: 'https://aistudio.google.com/app/apikey',
-    free:      'Free tier: 15 req/min · 1M tokens/day · no card required',
+    free:      'Free tier: Gemini 4 Hydrogen is free to call · rate limits are per project',
   },
   {
     id:        'openai',
@@ -29,9 +29,10 @@ export const PROVIDERS: { id: AIProvider; label: string; getKeyUrl: string; free
 
 export const MODELS_BY_PROVIDER: Record<AIProvider, { id: string; label: string }[]> = {
   gemini: [
-    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (default, fast)' },
-    { id: 'gemini-2.5-pro',   label: 'Gemini 2.5 Pro (best)'         },
-    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (fast)'        },
+    { id: 'gemini-4-hydrogen', label: 'Gemini 4 Hydrogen (newest, free tier)' },
+    { id: 'gemini-2.5-flash',   label: 'Gemini 2.5 Flash (stable, fast)'     },
+    { id: 'gemini-2.5-pro',     label: 'Gemini 2.5 Pro (best)'               },
+    { id: 'gemini-2.0-flash',   label: 'Gemini 2.0 Flash (fast)'            },
   ],
   openai: [
     { id: 'gpt-4o-mini',     label: 'GPT-4o Mini (cheap)'  },
