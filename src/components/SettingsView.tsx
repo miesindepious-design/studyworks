@@ -416,13 +416,21 @@ export default function SettingsView({
               <IconSearch size={15} />
               <input
                 type="search"
+                name="sw-settings-search"
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 placeholder="Search settings"
                 aria-label="Search settings"
-                autoComplete="off"
+                // Browsers ignore plain "off" and offer saved emails here —
+                // an unrecognized token suppresses autofill suggestions.
+                autoComplete="sw-settings-search"
                 autoCorrect="off"
+                autoCapitalize="off"
                 spellCheck={false}
+                role="searchbox"
+                data-1p-ignore
+                data-lpignore="true"
+                data-form-type="other"
               />
               {query && (
                 <span className="sw-settings-search-count">

@@ -43,9 +43,17 @@ export function Header({ currentTab, searchQuery, onSearchChange, onOpenMenu }: 
           <label className="relative">
             <input
               type="search"
+              name="sw-global-search"
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
               placeholder="Search…"
+              autoComplete="sw-global-search"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              data-1p-ignore
+              data-lpignore="true"
+              data-form-type="other"
               className="w-40 sm:w-56 rounded-xl bg-[#16161A] border border-[#2A2A2E] px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-[#2DD4BF]/50 focus:ring-1 focus:ring-[#2DD4BF]/20"
             />
             <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 text-xs pointer-events-none">
