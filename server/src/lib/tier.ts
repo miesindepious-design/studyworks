@@ -72,6 +72,37 @@ export async function requirePro(c: Context, next: Next) {
 }
 
 /**
+ * True when the user has stored their own provider API key (BYOK) and it is
+ * enabled. Mirrors the condition `loadAIConfig` uses to prefer the user's own
+ * key over the server-managed fallback, so a "yes" here means AI calls will
+ * actually succeed with their key.
+ */
+export async function hasOwnAIKey(userId: string): Promise<boolean> {
+  const settings = await prisma.aISettings.findUnique({
+    where: { userId },
+    select: { encryptedApiKey: true, enabled: true },
+  });
+  return !!(settings?.enabled && settings.encryptedApiKey);
+}
+
+/**
+ * Gate for AI endpoints: Pro (or trial) users, OR anyone who brought their
+ * own provider key. A BYOK user pays Google/OpenAI directly, so the AI
+ * features are unlocked for them even on the free plan — that is what the
+ * registration-time "connect your AI key" flow promises.
+ */
+export async function requireAI(c: Context, next: Next) {
+  const user = c.get('user');
+  if (computeEffectiveTier(user) === 'PRO') { await next(); return; }
+  if (await hasOwnAIKey(user.id)) { await next(); return; }
+  return c.json({
+    error: 'AI features need a Pro subscription — or connect your own free Google AI Studio key in Settings.',
+    upgradeUrl: '/pricing',
+    needsApiKey: true,
+  }, 403);
+}
+
+/**
  * Enforce the free-tier item limit (50 total notes + contacts + flashcards).
  * Call this at the start of POST routes that create items.
  */

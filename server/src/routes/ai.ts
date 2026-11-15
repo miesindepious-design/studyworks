@@ -11,7 +11,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { requireAuth } from '../lib/session.js';
-import { requirePro } from '../lib/tier.js';
+import { requireAI } from '../lib/tier.js';
 import { rateLimitMiddleware } from '../lib/rateLimit.js';
 import { prisma } from '../lib/prisma.js';
 import { encryptApiKey, decryptApiKey } from '../lib/encryption.js';
@@ -38,50 +38,56 @@ const AISettingsBody = z.object({
   customQAPrompt:       z.string().optional().nullable(),
 });
 
+/**
+ * Shape every settings response. `canUseAI` tells the client whether AI
+ * features are available to this user right now (Pro/trial, their own stored
+ * key, or a backend-managed key) — the client uses it to decide whether to
+ * show AI actions or the "connect your key" prompt.
+ */
+function settingsResponse(
+  user: { effectiveTier: 'FREE' | 'PRO' },
+  settings: { provider: string; model: string; enabled: boolean; encryptedApiKey: string | null,
+              customSummaryPrompt: string | null; customFlashcardPrompt: string | null; customQAPrompt: string | null } | null,
+) {
+  const fallback = getServerAIFallback();
+  const hasOwnKey = !!settings?.encryptedApiKey;
+  const serverManaged = !hasOwnKey && !!fallback;
+  const canUseAI = user.effectiveTier === 'PRO' || hasOwnKey || serverManaged;
+  return {
+    provider:              settings?.provider ?? fallback?.provider ?? 'gemini',
+    model:                 settings?.model ?? fallback?.model ?? DEFAULT_GEMINI_MODEL,
+    enabled:               (settings?.enabled ?? false) || serverManaged,
+    hasApiKey:             hasOwnKey || !!fallback,
+    hasOwnKey,
+    serverManaged,
+    canUseAI,
+    customSummaryPrompt:   settings?.customSummaryPrompt ?? null,
+    customFlashcardPrompt: settings?.customFlashcardPrompt ?? null,
+    customQAPrompt:        settings?.customQAPrompt ?? null,
+  };
+}
+
 aiRouter.get('/settings', async c => {
   const user     = c.get('user');
   const settings = await prisma.aISettings.findUnique({ where: { userId: user.id } });
-  const fallback = getServerAIFallback();
-
-  if (!settings) {
-    const serverManaged = !!fallback;
-    return c.json({
-      provider:              fallback?.provider ?? 'gemini',
-      model:                 fallback?.model ?? DEFAULT_GEMINI_MODEL,
-      enabled:               serverManaged,
-      hasApiKey:             serverManaged,
-      serverManaged,
-      customSummaryPrompt:   null,
-      customFlashcardPrompt: null,
-      customQAPrompt:        null,
-    });
-  }
 
   // Never return the actual key — only indicate whether one is set
-  const serverManaged = !settings.encryptedApiKey && !!fallback;
-  return c.json({
-    provider:              settings.provider,
-    model:                 settings.model,
-    enabled:               settings.enabled || serverManaged,
-    hasApiKey:             !!settings.encryptedApiKey || !!fallback,
-    serverManaged,
-    customSummaryPrompt:   settings.customSummaryPrompt,
-    customFlashcardPrompt: settings.customFlashcardPrompt,
-    customQAPrompt:        settings.customQAPrompt,
-  });
+  return c.json(settingsResponse(user, settings));
 });
 
-aiRouter.put('/settings', requirePro, zValidator('json', AISettingsBody), async c => {
+// Any authenticated user may store their own provider key (BYOK) — that is
+// the whole point of the registration-time "connect your AI key" flow. The
+// key is encrypted at rest; the user's own quota pays for their calls.
+aiRouter.put('/settings', zValidator('json', AISettingsBody), async c => {
   const user = c.get('user');
   const body = c.req.valid('json');
 
   const current = await prisma.aISettings.findUnique({ where: { userId: user.id } });
 
-  // Encrypt new key if provided; keep existing if not; clear if explicitly empty string.
+  // Encrypt new key if provided; keep existing if not.
+  // (An empty string means "I didn't type anything" — keep what's stored.)
   let encryptedApiKey = current?.encryptedApiKey ?? null;
-  if (body.apiKey === '') {
-    encryptedApiKey = null;
-  } else if (body.apiKey && body.apiKey.trim().length > 0) {
+  if (body.apiKey && body.apiKey.trim().length > 0) {
     encryptedApiKey = encryptApiKey(body.apiKey.trim());
   }
 
@@ -108,19 +114,53 @@ aiRouter.put('/settings', requirePro, zValidator('json', AISettingsBody), async 
     },
   });
 
-  const fallback = getServerAIFallback();
-  const serverManaged = !settings.encryptedApiKey && !!fallback;
+  return c.json(settingsResponse(user, settings));
+});
 
-  return c.json({
-    provider:              settings.provider,
-    model:                 settings.model,
-    enabled:               settings.enabled || serverManaged,
-    hasApiKey:             !!settings.encryptedApiKey || !!fallback,
-    serverManaged,
-    customSummaryPrompt:   settings.customSummaryPrompt,
-    customFlashcardPrompt: settings.customFlashcardPrompt,
-    customQAPrompt:        settings.customQAPrompt,
-  });
+// ── POST /api/ai/test — validate an API key BEFORE saving it ─────────────────
+// The onboarding "connect your AI" step uses this so the user gets instant
+// feedback on whether the key they pasted works. The key is never persisted
+// here — only a single tiny provider call is made.
+const TestKeyBody = z.object({
+  provider: z.enum(['gemini', 'openai']).optional(),
+  model:    z.string().optional(),
+  apiKey:   z.string().optional(),
+});
+
+aiRouter.post('/test', zValidator('json', TestKeyBody), async c => {
+  const user = c.get('user');
+  const body = c.req.valid('json');
+
+  let provider: string | undefined = body.provider;
+  let model: string | undefined    = body.model;
+  let apiKey: string | undefined   = body.apiKey?.trim();
+
+  // No key supplied → validate whatever is already configured (own stored
+  // key or the backend-managed fallback).
+  if (!apiKey) {
+    try {
+      const cfg = await loadAIConfig(user.id);
+      provider = cfg.provider;
+      model    = cfg.model;
+      apiKey   = cfg.apiKey;
+    } catch {
+      return c.json({ ok: false, error: 'No API key configured yet.' }, 400);
+    }
+  }
+
+  provider = provider ?? 'gemini';
+  model    = model ?? (provider === 'gemini' ? DEFAULT_GEMINI_MODEL : 'gpt-4o-mini');
+
+  try {
+    const reply = await callProvider({
+      provider, model, apiKey,
+      messages: [{ role: 'user', content: 'Reply with exactly: OK' }],
+      temperature: 0, maxTokens: 16, thinking: 'low',
+    });
+    return c.json({ ok: true, provider, model, reply: reply.trim().slice(0, 64) });
+  } catch (e) {
+    return c.json({ ok: false, error: (e as Error).message });
+  }
 });
 
 // ── Helper: server-managed fallback AI config ────────────────────────────────
@@ -128,7 +168,7 @@ aiRouter.put('/settings', requirePro, zValidator('json', AISettingsBody), async 
 // ../lib/aiProvider.ts so other features (quiz battles) can reuse them.
 
 // ── POST /api/ai/summary ──────────────────────────────────────────────────────
-aiRouter.post('/summary', requirePro, zValidator('json', z.object({
+aiRouter.post('/summary', requireAI, zValidator('json', z.object({
   title:   z.string(),
   content: z.string(),
 })), async c => {
@@ -158,7 +198,7 @@ aiRouter.post('/summary', requirePro, zValidator('json', z.object({
 });
 
 // ── POST /api/ai/flashcards ───────────────────────────────────────────────────
-aiRouter.post('/flashcards', requirePro, zValidator('json', z.object({
+aiRouter.post('/flashcards', requireAI, zValidator('json', z.object({
   title:   z.string(),
   content: z.string(),
   count:   z.number().int().min(1).max(60).default(20),
@@ -204,7 +244,7 @@ aiRouter.post('/flashcards', requirePro, zValidator('json', z.object({
 });
 
 // ── POST /api/ai/practice-questions ──────────────────────────────────────────
-aiRouter.post('/practice-questions', requirePro, zValidator('json', z.object({
+aiRouter.post('/practice-questions', requireAI, zValidator('json', z.object({
   title:   z.string(),
   content: z.string(),
   count:   z.number().int().min(1).max(20).default(4),
@@ -240,7 +280,7 @@ Title: ${title}\n\nContent:\n${content}`,
 });
 
 // ── POST /api/ai/qa ───────────────────────────────────────────────────────────
-aiRouter.post('/qa', requirePro, zValidator('json', z.object({
+aiRouter.post('/qa', requireAI, zValidator('json', z.object({
   query:    z.string().min(1),
   contexts: z.array(z.object({
     title:   z.string(),
@@ -284,7 +324,7 @@ aiRouter.post('/qa', requirePro, zValidator('json', z.object({
 });
 
 // ── POST /api/ai/rerank ───────────────────────────────────────────────────────
-aiRouter.post('/rerank', requirePro, zValidator('json', z.object({
+aiRouter.post('/rerank', requireAI, zValidator('json', z.object({
   query:      z.string().min(1),
   candidates: z.array(z.object({
     id:      z.string(),
@@ -329,7 +369,7 @@ Results:\n${list}`,
 });
 
 // ── POST /api/ai/insights ─────────────────────────────────────────────────────
-aiRouter.post('/insights', requirePro, zValidator('json', z.object({
+aiRouter.post('/insights', requireAI, zValidator('json', z.object({
   notes: z.array(z.object({
     title:     z.string(),
     content:   z.string(),
@@ -407,7 +447,7 @@ const TutorRequestBody = z.object({
   lastAnswer: z.string().optional().nullable(),
 });
 
-aiRouter.post('/tutor', requirePro, zValidator('json', TutorRequestBody), async c => {
+aiRouter.post('/tutor', requireAI, zValidator('json', TutorRequestBody), async c => {
   const user = c.get('user');
   const { topic, mode, educationLevel, history, lastAnswer } = c.req.valid('json');
 

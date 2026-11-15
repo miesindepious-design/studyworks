@@ -4,7 +4,6 @@ import type { Note, Contact, Flashcard, Folder, PracticeQuestion, SavedSearch } 
 import { ACCENT_THEMES } from '../config/accents';
 import { getAIConfig, saveAIConfig, PROVIDERS, MODELS_BY_PROVIDER, DEFAULT_PROMPTS } from '../db/aiSettings';
 import type { AIConfig, AIProvider } from '../db/aiSettings';
-import { chatComplete } from '../ai/client';
 import * as serverAI from '../api/ai';
 import Phase2Tools from './Phase2Tools';
 import HeroDock from './HeroDock';
@@ -240,29 +239,26 @@ export default function SettingsView({
       // for users who opt out of cloud AI.
       await saveAIConfig(aiConfig);
 
-      // Also save to the server when the user is Pro. The server will
-      // encrypt and store the key; subsequent AI calls will go through the
-      // server proxy, which lets us rate-limit, count usage, and
-      // follow the user across devices.
-      if (tier === 'pro') {
-        try {
-          const apiKey = aiConfig.apiKey && aiConfig.apiKey !== '(saved on server)' ? aiConfig.apiKey : '';
-          const result = await serverAI.saveAISettings({
-            provider:             aiConfig.provider,
-            model:                aiConfig.model,
-            enabled:              aiConfig.enabled,
-            apiKey,
-            customSummaryPrompt:   aiConfig.customSummaryPrompt,
-            customFlashcardPrompt: aiConfig.customFlashcardPrompt,
-            customQAPrompt:        aiConfig.customQAPrompt,
-          });
-          setServerManaged(result.serverManaged);
-          onAddToast(result.serverManaged ? '🖥️ Using backend-managed AI key.' : apiKey ? '🔒 AI key saved (encrypted on server).' : '✅ AI settings saved.', 'success');
-        } catch (serverErr: any) {
-          onAddToast(`Saved locally; server save failed: ${serverErr.message}`, 'error');
-        }
-      } else {
-        onAddToast('AI settings saved locally. Upgrade to Pro to sync your key across devices.', 'info');
+      // Save to the server for EVERY user — since the BYOK flow, any
+      // authenticated user may store their own key encrypted server-side.
+      // Subsequent AI calls go through the server proxy (rate-limited, and
+      // the key follows the user across devices).
+      try {
+        const apiKey = aiConfig.apiKey && aiConfig.apiKey !== '(saved on server)' ? aiConfig.apiKey : undefined;
+        const result = await serverAI.saveAISettings({
+          provider:             aiConfig.provider,
+          model:                aiConfig.model,
+          enabled:              aiConfig.enabled,
+          apiKey,
+          customSummaryPrompt:   aiConfig.customSummaryPrompt,
+          customFlashcardPrompt: aiConfig.customFlashcardPrompt,
+          customQAPrompt:        aiConfig.customQAPrompt,
+        });
+        setServerManaged(result.serverManaged);
+        setServerHasApiKey(result.hasApiKey);
+        onAddToast(result.serverManaged ? '🖥️ Using backend-managed AI key.' : apiKey ? '🔒 AI key saved (encrypted on server).' : '✅ AI settings saved.', 'success');
+      } catch (serverErr: any) {
+        onAddToast(`Saved locally; server save failed: ${serverErr.message}`, 'error');
       }
 
       onAISaved?.();
@@ -274,13 +270,13 @@ export default function SettingsView({
   };
 
   const handleTestAI = async () => {
-    // If the user already has a server-stored key, prefer testing via the
-    // server proxy (the key may be hidden from the client).
-    if (tier === 'pro' && (aiConfig.apiKey === '(saved on server)' || !aiConfig.apiKey)) {
+    // If the key is stored on the server (or this deployment is backend-
+    // managed), test through the server proxy — the key may be hidden here.
+    if (aiConfig.apiKey === '(saved on server)' || (!aiConfig.apiKey && serverHasApiKey)) {
       setTestingAI(true);
       try {
-        await serverAI.serverSummary('ping', 'Reply with exactly: "StudyWorks AI is working!"');
-        onAddToast('✅ StudyWorks AI is working! (via server proxy)', 'success');
+        const r = await serverAI.testAIKey({});
+        onAddToast(r.ok ? '✅ StudyWorks AI is working! (via server proxy)' : `AI test failed: ${r.error}`, r.ok ? 'success' : 'error');
       } catch (err: any) {
         onAddToast(`AI test failed: ${err.message}`, 'error');
       } finally {
@@ -291,14 +287,12 @@ export default function SettingsView({
     if (!aiConfig.apiKey) { onAddToast('Enter an API key first.', 'info'); return; }
     setTestingAI(true);
     try {
-      const result = await chatComplete({
+      const r = await serverAI.testAIKey({
         provider: aiConfig.provider,
-        apiKey:   aiConfig.apiKey,
         model:    aiConfig.model,
-        messages: [{ role: 'user', content: 'Reply with exactly: "StudyWorks AI is working!"' }],
-        maxTokens: 20,
+        apiKey:   aiConfig.apiKey,
       });
-      onAddToast(`✅ ${result.trim()}`, 'success');
+      onAddToast(r.ok ? `✅ Key works! (${r.model ?? aiConfig.model})` : `AI test failed: ${r.error}`, r.ok ? 'success' : 'error');
     } catch (err: any) {
       onAddToast(`AI test failed: ${err.message}`, 'error');
     } finally {
@@ -966,10 +960,22 @@ export default function SettingsView({
                   Connect an AI provider to unlock real AI summaries, flashcard generation,
                   practice questions, and Smart Q&amp;A. {serverManaged
                     ? 'This instance uses a backend-managed key, so you don’t need to enter one.'
-                    : tier === 'pro'
-                      ? 'Pro users: your key is stored encrypted on the server so it follows you across devices.'
-                      : 'Your key is stored locally in your browser and used only to call the provider directly.'}
+                    : 'Your key is stored encrypted on the server, works on every plan, and follows you across devices.'}
                 </p>
+
+                {/* Compact step-by-step — same instructions as onboarding */}
+                {!serverHasApiKey && (
+                  <details className="sw-aikey-details" style={{ marginBottom: '1rem' }}>
+                    <summary className="sw-aikey-steps-title">How to get a free Google AI Studio key</summary>
+                    <ol className="sw-aikey-steps-list">
+                      <li>Open <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--sw-accent)' }}>aistudio.google.com/app/apikey ↗</a></li>
+                      <li>Sign in with your Google account.</li>
+                      <li>Click <strong>Get API key</strong> → <strong>Create API key</strong>.</li>
+                      <li>Pick or create a project, then copy the <code>AIza…</code> key.</li>
+                      <li>Paste it below and press <strong>💾 Save AI Settings</strong>.</li>
+                    </ol>
+                  </details>
+                )}
 
                 {/* Provider picker */}
                 <div className="sw-provider-grid" style={{ marginBottom: '1.25rem' }}>

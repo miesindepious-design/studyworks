@@ -21,7 +21,11 @@ export interface ServerAIConfig {
   model:                string;
   enabled:              boolean;
   hasApiKey:            boolean;
+  /** The user stored their OWN key (not the backend-managed fallback). */
+  hasOwnKey:            boolean;
   serverManaged:        boolean;
+  /** AI features are available to this user (Pro/trial, own key, or backend key). */
+  canUseAI:             boolean;
   customSummaryPrompt:  string | null;
   customFlashcardPrompt: string | null;
   customQAPrompt:       string | null;
@@ -51,6 +55,34 @@ export interface SaveAISettingsBody {
 
 export async function saveAISettings(body: SaveAISettingsBody): Promise<ServerAIConfig> {
   return apiPut<ServerAIConfig>('/api/ai/settings', body);
+}
+
+export interface TestAIKeyBody {
+  provider?: 'gemini' | 'openai';
+  model?:    string;
+  /** Omit to test the key already stored on the server. */
+  apiKey?:   string;
+}
+
+export interface TestAIKeyResult {
+  ok:     boolean;
+  provider?: string;
+  model?:    string;
+  reply?:    string;
+  error?:    string;
+}
+
+/**
+ * Validate an AI API key with one tiny provider call — without saving it.
+ * Used by the registration-time "connect your AI key" step so the user gets
+ * instant feedback before anything is persisted.
+ */
+export async function testAIKey(body: TestAIKeyBody): Promise<TestAIKeyResult> {
+  try {
+    return await apiPost<TestAIKeyResult>('/api/ai/test', body);
+  } catch (err: any) {
+    return { ok: false, error: err.message || 'Connection test failed.' };
+  }
 }
 
 // ── Feature endpoints (server proxy) ──────────────────────────────────────────

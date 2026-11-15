@@ -28,6 +28,7 @@ import MultiplayerQuiz from './components/MultiplayerQuiz';
 import PricingView from './components/PricingView';
 import AdminDashboard from './components/AdminDashboard';
 import ShortcutsModal from './components/ShortcutsModal';
+import Onboarding from './components/Onboarding';
 import type { Note, Contact, Flashcard, Folder, PracticeQuestion, SavedSearch } from './types';
 import type { UseAIResult } from './hooks/useAI';
 import { PAGE_TITLES } from './config/nav';
@@ -87,6 +88,24 @@ if (typeof window !== 'undefined') {
           educationLevel: null,
           response: MESSY_TUTOR_ANSWER,
         }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ));
+    }
+    // No key on the mock account → the onboarding key step shows.
+    if (url.includes('/api/ai/settings')) {
+      return Promise.resolve(new Response(
+        JSON.stringify({
+          provider: 'gemini', model: 'gemini-4-hydrogen', enabled: false,
+          hasApiKey: false, hasOwnKey: false, serverManaged: false, canUseAI: false,
+          customSummaryPrompt: null, customFlashcardPrompt: null, customQAPrompt: null,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ));
+    }
+    // "Test connection" succeeds for any non-empty key in the preview.
+    if (url.includes('/api/ai/test')) {
+      return Promise.resolve(new Response(
+        JSON.stringify({ ok: true, provider: 'gemini', model: 'gemini-4-hydrogen', reply: 'OK' }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       ));
     }
@@ -209,6 +228,33 @@ await seedStreak();
  * Holds the accent + theme in local state so the swatches and theme tiles
  * in Settings actually do something in the preview.
  */
+/**
+ * Onboarding preview — onComplete flips a visible flag so audits can verify
+ * that finishing the flow (saving the key / skipping) actually closes it.
+ */
+function OnboardingPreview() {
+  const [done, setDone] = useState(false);
+  const [saved, setSaved] = useState(false);
+  if (done) {
+    return (
+      <div style={{ padding: '4rem', textAlign: 'center' }} data-testid="onboarding-done">
+        <h2>ONBOARDING-COMPLETE</h2>
+        <p>{saved ? 'KEY-SAVED' : 'KEY-SKIPPED'}</p>
+      </div>
+    );
+  }
+  return (
+    <Onboarding
+      onComplete={() => setDone(true)}
+      onAISaved={() => setSaved(true)}
+      onLoadStarterPack={noop}
+    />
+  );
+}
+
+/**
+ * Onboarding preview marker.
+ */
 function Preview() {
   const [accent, setAccent] = useState('sunset');
   const [theme, setTheme] = useState('light');
@@ -267,6 +313,7 @@ function Preview() {
         <PricingView currentTier="pro" onDowngrade={noop} onCheckoutResult={noop} addToast={noop} />
       );
       case 'admin': return <AdminDashboard adminEmail="alex@studyworks.app" addToast={noop} />;
+      case 'onboarding': return <OnboardingPreview />;
       case 'settings': return (
         <SettingsView
           notif={{ permission: 'default', request: async () => 'default', notify: noop, supported: true }}

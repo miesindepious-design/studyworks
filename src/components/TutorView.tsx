@@ -10,6 +10,8 @@ import {
 
 interface Props {
   tier: string;
+  /** True when AI features are available (Pro/trial, or the user's own key). */
+  aiUnlocked?: boolean;
   setCurrentView: (view: any) => void;
   addToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
   notes?: Note[];
@@ -87,7 +89,9 @@ function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export default function TutorView({ tier, setCurrentView, addToast, notes = [], onSaveNote }: Props) {
+export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, notes = [], onSaveNote }: Props) {
+  // A user who connected their own AI Studio key gets the Tutor on any plan.
+  const unlocked = aiUnlocked ?? tier === 'pro';
   const [level, setLevel] = useState<string | null>(null);
   const [savingLevel, setSavingLevel] = useState(false);
   const [topic, setTopic] = useState('');
@@ -370,7 +374,11 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
   const send = useCallback(async (mode: TutorMode, payloadTopic?: string) => {
     const effectiveTopic = payloadTopic || topic.trim();
     if (!effectiveTopic) { addToast('Enter a topic first.', 'info'); return; }
-    if (tier !== 'pro') { addToast('AI Tutor is a Pro feature.', 'info'); setCurrentView('pricing'); return; }
+    if (!unlocked) {
+      addToast('Connect your free AI Studio key in Settings to unlock the AI Tutor.', 'info');
+      setCurrentView('settings');
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -421,7 +429,7 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
     } finally {
       setLoading(false);
     }
-  }, [topic, tier, level, history, answer, addToast, setCurrentView, speakText]);
+  }, [topic, unlocked, level, history, answer, addToast, setCurrentView, speakText]);
 
   // Keep the refs pointing at the latest callbacks
   sendRef.current = send;
@@ -683,7 +691,7 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
             Ask anything about your coursework and get an explanation at your level.
           </p>
         </div>
-        <span className="tag">{tier === 'pro' ? '⭐ Pro' : 'Free'}</span>
+        <span className="tag">{tier === 'pro' ? '⭐ Pro' : unlocked ? '🔑 Your key' : 'Free'}</span>
       </div>
 
       <div className="sw-tutor-layout">

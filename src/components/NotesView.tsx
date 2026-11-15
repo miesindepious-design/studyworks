@@ -110,6 +110,11 @@ export default function NotesView({
 
   const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
   const [highlightColor, setHighlightColor] = useState(HIGHLIGHT_COLORS[0]);
+
+  // AI access: Pro/trial users, plus anyone who connected their own AI Studio
+  // key during onboarding (BYOK — they pay their own provider, so the free
+  // plan's monthly AI caps do not apply to them).
+  const aiUnlocked = tier === 'pro' || ai.hasOwnKey;
   const [personalNoteInput, setPersonalNoteInput] = useState('');
   const [editingPersonalNote, setEditingPersonalNote] = useState<PersonalNote | null>(null);
 
@@ -477,20 +482,21 @@ export default function NotesView({
   };
 
   const generateSummary = async (note: Note) => {
-    // Gate: free tier monthly limit still applies even with real AI
-    if (tier !== 'pro' && aiSummariesThisMonth >= 20) {
+    // Gate: free tier monthly limit still applies even with real AI —
+    // but BYOK users are exempt (their own key pays for the calls).
+    if (!aiUnlocked && aiSummariesThisMonth >= 20) {
       addToast('20 AI summary limit reached. Upgrade to Pro.', 'info');
       setCurrentView('pricing'); return;
     }
     if (!ai.isReady) {
-      addToast('Configure your OpenAI API key in Settings to use real AI summaries.', 'info');
+      addToast('Connect your free Google AI Studio key in Settings to use AI summaries.', 'info');
       setCurrentView('settings'); return;
     }
     setIsGenerating(note.id);
     try {
       const summary = await ai.generateSummary(note.title, note.content);
       updateNote(note.id, { summary });
-      if (tier === 'free') incrementAiSummaries();
+      if (!aiUnlocked) incrementAiSummaries();
       addToast('AI Summary generated!', 'success');
     } catch (err: any) {
       addToast(`Summary failed: ${err.message}`, 'error');
@@ -504,7 +510,7 @@ export default function NotesView({
   // content. This lets us generate from a PDF even when the note body is
   // empty or just a title.
   const generateFlashcards = async (note: Note, sourceText?: string, hard = false) => {
-    if (tier !== 'pro') { addToast('AI Flashcards is a Pro feature!', 'info'); setCurrentView('pricing'); return; }
+    if (!aiUnlocked) { addToast('Connect your free AI Studio key in Settings to unlock AI flashcards.', 'info'); setCurrentView('settings'); return; }
     if (!ai.isReady) { addToast('Configure your API key in Settings first.', 'info'); setCurrentView('settings'); return; }
     setIsGenerating(note.id);
     try {
@@ -532,8 +538,8 @@ export default function NotesView({
   };
 
   const generatePracticeQuestions = async (note: Note) => {
-    if (tier !== 'pro') { addToast('Practice questions are a Pro feature!', 'info'); setCurrentView('pricing'); return; }
-    if (!ai.isReady) { addToast('Configure your OpenAI API key in Settings first.', 'info'); setCurrentView('settings'); return; }
+    if (!aiUnlocked) { addToast('Connect your free AI Studio key in Settings to unlock practice questions.', 'info'); setCurrentView('settings'); return; }
+    if (!ai.isReady) { addToast('Connect your AI Studio key in Settings first.', 'info'); setCurrentView('settings'); return; }
     setIsGenerating(note.id);
     try {
       const generated = await ai.generatePracticeQuestions(note.title, note.content, 4);
@@ -557,19 +563,19 @@ export default function NotesView({
 
   const handleQa = async () => {
     if (!qaQuery.trim()) return;
-    if (tier !== 'pro' && qaQueriesThisMonth >= 100) {
+    if (!aiUnlocked && qaQueriesThisMonth >= 100) {
       addToast('100 Q&A query limit reached. Upgrade to Pro.', 'info');
       setCurrentView('pricing'); return;
     }
     if (!ai.isReady) {
-      addToast('Configure your OpenAI API key in Settings to use Smart Q&A.', 'info');
+      addToast('Connect your free Google AI Studio key in Settings to use Smart Q&A.', 'info');
       setCurrentView('settings'); return;
     }
     setIsGenerating('qa');
     try {
       const answer = await ai.smartQA(qaQuery, notes);
       setQaAnswer(answer);
-      if (tier === 'free') incrementQaQueries();
+      if (!aiUnlocked) incrementQaQueries();
       addToast('Answer generated!', 'success');
     } catch (err: any) {
       addToast(`Q&A failed: ${err.message}`, 'error');

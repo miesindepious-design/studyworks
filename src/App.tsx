@@ -689,6 +689,7 @@ export default function App() {
           {currentView === 'tutor' && (
             <TutorView
               tier={tier}
+              aiUnlocked={tier === 'pro' || ai.hasOwnKey}
               setCurrentView={navigateTo}
               addToast={addToast}
               notes={notesUR.state}
@@ -754,7 +755,7 @@ export default function App() {
       </div>
 
       {/* Modals */}
-      {!db.onboardingDone && <Onboarding onComplete={db.setOnboardingDone} product={productProfile} onLoadStarterPack={db.loadStarterPack} />}
+      {!db.onboardingDone && <Onboarding onComplete={db.setOnboardingDone} product={productProfile} onLoadStarterPack={db.loadStarterPack} onAISaved={ai.reloadConfig} />}
       {showShortcuts      && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
 
       {downgradeModal && (

@@ -59,6 +59,12 @@ export interface UseAIResult {
   // Source-of-truth badge for Settings: where is the key actually being used?
   source:       'server' | 'client' | 'none';
   serverManaged: boolean;
+  /**
+   * The user has their OWN provider key (stored encrypted on the server, or
+   * locally in the browser). BYOK users get the AI features unlocked on any
+   * plan — they pay their own provider directly.
+   */
+  hasOwnKey:    boolean;
 
   generateSummary:           (title: string, content: string) => Promise<string>;
   generateFlashcards:        (title: string, content: string, count?: number, hard?: boolean) => Promise<GeneratedFlashcard[]>;
@@ -108,6 +114,10 @@ export function useAI(): UseAIResult {
     (local?.apiKey && local.enabled ? 'client' : 'none');
 
   const isReady = source !== 'none';
+
+  // BYOK: the user connected their own key — either stored encrypted on the
+  // server (registration flow / Settings) or kept locally in the browser.
+  const hasOwnKey = server?.hasOwnKey === true || (!!local?.apiKey && local.enabled);
 
   // ── AI feature wrappers — use server proxy when key is on server, else fallback to client-side ─
   const generateSummary = useCallback(async (title: string, content: string) => {
@@ -243,6 +253,7 @@ export function useAI(): UseAIResult {
     reloadConfig,
     source,
     serverManaged: server?.serverManaged ?? false,
+    hasOwnKey,
     generateSummary,
     generateFlashcards,
     generatePracticeQuestions,
