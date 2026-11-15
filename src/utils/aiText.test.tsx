@@ -61,9 +61,9 @@ describe('normalizeMath', () => {
 });
 
 describe('toPlainText', () => {
-  it('removes markdown markers', () => {
+  it('removes markdown markers but keeps paragraph breaks', () => {
     const out = toPlainText('## Heading\n\n**bold** and *italic* and `code`');
-    expect(out).toBe('Heading bold and italic and code');
+    expect(out).toBe('Heading\n\nbold and italic and code');
   });
 
   it('removes bullet and numbered markers', () => {

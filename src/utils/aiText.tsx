@@ -266,6 +266,7 @@ export function toPlainText(input: string): string {
     .replace(/^\s*[-*+]\s+\[[ xX]\]\s*/gm, '')  // task boxes
     .replace(/^\s*[-*+]\s+/gm, '')              // bullets
     .replace(/^\s*\d+[.)]\s+/gm, '')            // numbered lists
+    .replace(/^\s*\|?[\s:-]*-{2,}[\s:|-]*\|?\s*$/gm, ' ') // table rules
     .replace(/^\s*[-*_]{3,}\s*$/gm, ' ')        // rules
     .replace(/\|/g, ' ')                        // table pipes
     .replace(/\*\*([^*]+)\*\*/g, '$1')          // bold
@@ -300,7 +301,11 @@ export function toPlainText(input: string): string {
     .replace(/³/g, ' cubed ')
     .replace(/[₀-₉]/g, c => String('₀₁₂₃₄₅₆₇₈₉'.indexOf(c)))
     .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g, c => String('⁰¹²³⁴⁵⁶⁷⁸⁹'.indexOf(c)))
-    .replace(/\s{2,}/g, ' ')
+    // Collapse horizontal runs only — paragraph breaks are kept so the
+    // speech chunker can pause at the right places.
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 
   return text;

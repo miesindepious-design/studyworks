@@ -3,6 +3,10 @@ import { createPortal } from 'react-dom';
 import { serverTutor, saveUserProfile } from '../api/ai';
 import type { Note } from '../types';
 import { renderAiText, toPlainText } from '../utils/aiText';
+import {
+  pickBestVoice, splitForSpeech, stripEmoji,
+  SPEECH_RATES, SPEECH_SPEED_LABELS, type SpeechSpeed,
+} from '../utils/speech';
 
 interface Props {
   tier: string;
@@ -48,36 +52,6 @@ const DIFFICULTY_LABELS: Record<string, { label: string; color: string }> = {
   medium: { label: 'Medium', color: 'var(--warning)' },
   hard:   { label: 'Hard',   color: 'var(--danger)' },
 };
-
-/**
- * Voices that actually sound good. Windows/Edge expose the Microsoft Neural
- * voices, Chrome exposes Google's — those are far better than the default
- * "Microsoft David Desktop" voice, which is the one that used to read every
- * answer.
- */
-const VOICE_PREFERENCE: RegExp[] = [
-  /Microsoft (Aria|Jenny|Guy|Sonia|Libby|Emma|Michelle|Ava|Ryan)(?!.*David)/i,
-  /Google (US|UK) English/i,
-  /(Samantha|Serena|Karen|Moira|Tessa|Fiona|Allison|Vicki|Nicky|Aria|Jenny|Zira)/i,
-  /(Natural|Neural|Premium|Enhanced)/i,
-  /Microsoft (Zira|Hazel|Sonia)/i,
-];
-
-/** Voices we would rather not fall back to. */
-const VOICE_AVOID = /David|George|Mark|Ricardo/i;
-
-/** Pick the most natural-sounding English voice available. */
-function pickBestVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
-  if (!voices.length) return null;
-  const english = voices.filter(v => /^en(-|_|$)/i.test(v.lang || ''));
-  const pool = english.length ? english : voices;
-  for (const re of VOICE_PREFERENCE) {
-    const hit = pool.find(v => re.test(v.name || ''));
-    if (hit) return hit;
-  }
-  const nice = pool.find(v => v.localService && !VOICE_AVOID.test(v.name || ''));
-  return nice ?? pool[0];
-}
 
 function groupHistoryByTopic(history: ChatTurn[]): TopicGroup[] {
   const map = new Map<string, TopicGroup>();
@@ -134,8 +108,20 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
   const [voiceURI, setVoiceURI] = useState<string>(() => {
     try { return localStorage.getItem('sw-tutor-voice') || ''; } catch { return ''; }
   });
+  const [speed, setSpeed] = useState<SpeechSpeed>(() => {
+    try {
+      const saved = localStorage.getItem('sw-tutor-speed') as SpeechSpeed | null;
+      return saved && saved in SPEECH_RATES ? saved : 'normal';
+    } catch { return 'normal'; }
+  });
+
   const recognitionRef = useRef<any>(null);
   const voiceModeRef = useRef(false);
+  // Bumped whenever a new reply starts speaking — lets a running sentence
+  // chain know it has been superseded.
+  const speechTokenRef = useRef(0);
+  // Safety net: advances the speaking chain if the browser drops `onend`.
+  const watchdogRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // Refs let speakText → startListening → send call each other regardless of
   // declaration order (send is defined below).
   const sendRef = useRef<(mode: TutorMode, payloadTopic?: string) => Promise<void>>(async () => {});
@@ -154,42 +140,117 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
     return () => { window.speechSynthesis.onvoiceschanged = null; };
   }, []);
 
-  // The voice actually used: the user's pick, else the best available.
+  // The voice actually used: the student's pick, else the best available for
+  // the browser's language.
   const activeVoice = useMemo(() => {
     if (voiceURI) {
       const picked = voices.find(v => v.voiceURI === voiceURI);
       if (picked) return picked;
     }
-    return pickBestVoice(voices);
+    const lang = typeof navigator !== 'undefined' ? navigator.language : 'en-US';
+    return pickBestVoice(voices, lang);
   }, [voices, voiceURI]);
 
   // Strip markdown + maths so the TTS reads sentences, not symbols.
-  const cleanForSpeech = useCallback((text: string): string => toPlainText(text), []);
+  const cleanForSpeech = useCallback((text: string): string => stripEmoji(toPlainText(text)), []);
 
+  const clearWatchdog = useCallback(() => {
+    if (watchdogRef.current) {
+      clearTimeout(watchdogRef.current);
+      watchdogRef.current = undefined;
+    }
+  }, []);
+
+  /**
+   * Speak a reply.
+   *
+   * The text is spoken one sentence at a time. A single utterance sounds
+   * mechanical and Chrome truncates anything past ~15 seconds; sentence-sized
+   * chunks give the voice natural pauses and keep every utterance short.
+   *
+   * A watchdog timer advances the chain in case the browser never fires
+   * `onend` — without it the reply would stop after the first sentence.
+   */
   const speakText = useCallback((text: string) => {
     if (!('speechSynthesis' in window)) return;
     const clean = cleanForSpeech(text);
     if (!clean) return;
+
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(clean);
+    const token = ++speechTokenRef.current;
+    const chunks = splitForSpeech(clean);
+    if (!chunks.length) return;
+
+    const rate = SPEECH_RATES[speed];
+    let index = 0;
+
+    const speakNext = () => {
+      // A newer reply (or a cancel) invalidates this chain.
+      if (token !== speechTokenRef.current) return;
+      clearWatchdog();
+
+      if (index >= chunks.length) {
+        setSpeaking(false);
+        // Hands-free loop: listen again after the tutor finishes speaking
+        if (voiceModeRef.current) startListeningRef.current();
+        return;
+      }
+
+      const chunk = chunks[index++];
+      const utterance = new SpeechSynthesisUtterance(chunk);
+      if (activeVoice) {
+        utterance.voice = activeVoice;
+        utterance.lang = activeVoice.lang;
+      } else {
+        utterance.lang = 'en-US';
+      }
+      utterance.rate = rate;     // a touch slower than default — clearer
+      utterance.pitch = 1.03;    // slightly brighter, still neutral
+      utterance.volume = 1;
+      utterance.onstart = () => setSpeaking(true);
+      utterance.onend = () => { clearWatchdog(); speakNext(); };
+      utterance.onerror = () => {
+        clearWatchdog();
+        setSpeaking(false);
+        if (token === speechTokenRef.current && voiceModeRef.current) startListeningRef.current();
+      };
+
+      // If `onend` never arrives, move on anyway.
+      const words = chunk.split(/\s+/).length;
+      const estimate = Math.max(1200, (words / (2.6 * rate)) * 1000);
+      watchdogRef.current = setTimeout(() => {
+        watchdogRef.current = undefined;
+        if (token === speechTokenRef.current) speakNext();
+      }, estimate + 1200);
+
+      window.speechSynthesis.speak(utterance);
+    };
+
+    speakNext();
+  }, [cleanForSpeech, activeVoice, speed, clearWatchdog]);
+
+  /** Let the student hear the selected voice before committing to it. */
+  const previewVoice = useCallback(() => {
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    speechTokenRef.current += 1;
+    clearWatchdog();
+    const utterance = new SpeechSynthesisUtterance(
+      "Hi, I'm your study tutor. I'll walk you through this topic clearly, one step at a time.",
+    );
     if (activeVoice) {
       utterance.voice = activeVoice;
       utterance.lang = activeVoice.lang;
     } else {
       utterance.lang = 'en-US';
     }
-    utterance.rate = 0.97;      // a touch slower than default — clearer
-    utterance.pitch = 1.04;     // slightly brighter
-    utterance.volume = 1;
-    utterance.onstart = () => setSpeaking(true);
-    utterance.onend = () => {
-      setSpeaking(false);
-      // Hands-free loop: listen again after the tutor finishes speaking
-      if (voiceModeRef.current) startListeningRef.current();
-    };
+    utterance.rate = SPEECH_RATES[speed];
+    utterance.pitch = 1.03;
+    utterance.onend = () => setSpeaking(false);
     utterance.onerror = () => setSpeaking(false);
+    setSpeaking(true);
     window.speechSynthesis.speak(utterance);
-  }, [cleanForSpeech, activeVoice]);
+  }, [activeVoice, speed, clearWatchdog]);
 
   const startListening = useCallback(() => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -243,6 +304,8 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
       if (!next) {
         try { recognitionRef.current?.stop(); } catch {}
         window.speechSynthesis.cancel();
+        speechTokenRef.current += 1;
+        clearWatchdog();
         setSpeaking(false);
         setListening(false);
       } else {
@@ -250,13 +313,15 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
       }
       return next;
     });
-  }, [addToast]);
+  }, [addToast, clearWatchdog]);
 
   // Stop speech/recognition on unmount
   useEffect(() => () => {
     try { recognitionRef.current?.stop(); } catch {}
+    speechTokenRef.current += 1;
+    clearWatchdog();
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-  }, []);
+  }, [clearWatchdog]);
 
   // Exit fullscreen on Escape
   useEffect(() => {
@@ -439,38 +504,70 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
     </div>
   );
 
-  /** Voice controls + voice picker. */
+  /** Voice controls: toggle, voice picker, preview, speed. */
   const voiceControls = (
     <div className="sw-tutor-voice">
       <button
         type="button"
         className={`btn btn-sm ${voiceMode ? 'btn-primary' : 'btn-secondary'}`}
         onClick={toggleVoiceMode}
-        title={voiceMode ? 'Turn voice mode off' : 'Turn voice mode on — speak your questions and hear answers aloud'}
+        title={voiceMode ? 'Turn voice mode off' : 'Turn voice mode on — speak your questions and hear answers aloud'
+        }
         aria-pressed={voiceMode}
       >
         {voiceMode ? '🔊 Voice on' : '🔈 Voice off'}
       </button>
+
       {voices.length > 0 && (
-        <select
-          className="select select-sm sw-tutor-voice-select"
-          value={activeVoice?.voiceURI ?? ''}
-          onChange={e => {
-            setVoiceURI(e.target.value);
-            try { localStorage.setItem('sw-tutor-voice', e.target.value); } catch {}
-          }}
-          title="Choose the voice used for spoken answers"
-          aria-label="Tutor voice"
-        >
-          {voices
-            .filter(v => /^en/i.test(v.lang || ''))
-            .map(v => (
-              <option key={v.voiceURI} value={v.voiceURI}>
-                {v.name.replace(/\s+(Microsoft|Google|Desktop|Natural)\s*/gi, ' ').trim()} ({v.lang})
-              </option>
+        <>
+          <select
+            className="select select-sm sw-tutor-voice-select"
+            value={activeVoice?.voiceURI ?? ''}
+            onChange={e => {
+              setVoiceURI(e.target.value);
+              try { localStorage.setItem('sw-tutor-voice', e.target.value); } catch {}
+            }}
+            title="Choose the voice used for spoken answers"
+            aria-label="Tutor voice"
+          >
+            {voices
+              .filter(v => /^en/i.test(v.lang || ''))
+              .map(v => (
+                <option key={v.voiceURI} value={v.voiceURI}>
+                  {v.name.replace(/^Microsoft\s+/i, '').replace(/\s+Desktop$/i, '').trim()}
+                  {v.voiceURI === activeVoice?.voiceURI ? ' — recommended' : ''} ({v.lang})
+                </option>
+              ))}
+          </select>
+
+          <button
+            type="button"
+            className="btn btn-sm btn-secondary sw-tutor-voice-play"
+            onClick={previewVoice}
+            title="Hear this voice"
+            aria-label="Preview voice"
+          >
+            {speaking ? '🔊' : '▶'}
+          </button>
+
+          <select
+            className="select select-sm sw-tutor-speed-select"
+            value={speed}
+            onChange={e => {
+              const next = e.target.value as SpeechSpeed;
+              setSpeed(next);
+              try { localStorage.setItem('sw-tutor-speed', next); } catch {}
+            }}
+            title="Speaking speed"
+            aria-label="Speaking speed"
+          >
+            {(Object.keys(SPEECH_SPEED_LABELS) as SpeechSpeed[]).map(s => (
+              <option key={s} value={s}>{SPEECH_SPEED_LABELS[s]}</option>
             ))}
-        </select>
+          </select>
+        </>
       )}
+
       {speaking && <span className="text-xs text-muted">🗣️ Tutor is speaking…</span>}
       {listening && <span className="text-xs text-muted">🎙️ Listening — say what you don't understand…</span>}
     </div>
