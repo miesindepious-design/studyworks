@@ -37,6 +37,63 @@ const VIEW: string = param.get('view') ?? 'dashboard';
 const IS_DARK = param.has('dark');
 const noop = () => {};
 
+/**
+ * Preview-only mock of the tutor endpoint.
+ *
+ * The sample answer is deliberately messy — raw LaTeX, markdown headers and
+ * table pipes — so the formatting pass (utils/aiText) can be inspected
+ * without an AI key. Dev-only: preview.tsx never ships in the bundle.
+ */
+const MESSY_TUTOR_ANSWER = `## Photosynthesis
+
+**Photosynthesis** is how green plants turn $CO_2$ and water into glucose using light energy:
+
+$$6CO_2 + 6H_2O \\rightarrow C_6H_{12}O_6 + 6O_2$$
+
+### The two stages
+
+- **Light reactions** — chlorophyll ($\\alpha$ and $\\beta$) absorbs photons in the thylakoid
+- **Calvin cycle** — $\\frac{1}{6}$ of the carbon is fixed per turn, in the stroma
+- Energy stored per molecule: $E = mc^2$
+
+> Common exam trap: students mix up the light-dependent and light-independent reactions.
+
+| Stage | Location | Main product |
+| --- | --- | --- |
+| Light reactions | Thylakoid membrane | ATP + NADPH |
+| Calvin cycle | Chloroplast stroma | G3P (glucose precursor) |
+
+### Misconceptions to avoid
+
+1. Saying respiration only happens in the dark — it happens all the time.
+2. Confusing $\\Delta$ (change) with $d$ (a derivative).
+3. Believing plants get energy from soil rather than sunlight.
+
+\`\`\`
+6CO2 + 6H2O -> C6H12O6 + 6O2
+\`\`\`
+
+So the answer is simple: light in, sugar out.`;
+
+if (typeof window !== 'undefined') {
+  const realFetch = window.fetch.bind(window);
+  window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url.includes('/api/ai/tutor')) {
+      return Promise.resolve(new Response(
+        JSON.stringify({
+          topic: 'Photosynthesis',
+          mode: 'lesson',
+          educationLevel: null,
+          response: MESSY_TUTOR_ANSWER,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ));
+    }
+    return realFetch(input, init);
+  }) as typeof window.fetch;
+}
+
 const now = Date.now();
 const day = 86400000;
 

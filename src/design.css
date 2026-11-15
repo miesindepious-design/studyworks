@@ -3728,3 +3728,232 @@ select.sw-focus-select option {
   .card { padding: 14px 13px; }
   .sw-search { width: 32px; }
 }
+
+/* ══ 14  AI ANSWER FORMATTING ════════════════════════════════════════════ */
+/* Model output arrives as markdown + LaTeX. These styles turn the parsed
+   structure into real study notes: headings, lists, tables, code, quotes. */
+
+.sw-ai-text {
+  font-family: var(--sw-font-body);
+  font-size: 0.9375rem;
+  line-height: 1.75;
+  color: var(--sw-text);
+  overflow-wrap: anywhere;
+}
+.sw-ai-text > *:first-child { margin-top: 0; }
+.sw-ai-text > *:last-child  { margin-bottom: 0; }
+
+.sw-ai-text p { margin: 0 0 0.85rem; }
+
+.sw-ai-text h3,
+.sw-ai-text h4,
+.sw-ai-text h5 {
+  font-family: var(--sw-font-display);
+  font-weight: 700;
+  letter-spacing: -0.022em;
+  color: var(--sw-text);
+  margin: 1.4rem 0 0.55rem;
+  line-height: 1.25;
+}
+.sw-ai-text h3 { font-size: 1.125rem; }
+.sw-ai-text h4 { font-size: 1rem; }
+.sw-ai-text h5 { font-size: 0.9375rem; color: var(--sw-text-2); }
+
+.sw-ai-text ul,
+.sw-ai-text ol {
+  margin: 0 0 0.95rem;
+  padding-left: 1.35rem;
+}
+.sw-ai-text li { margin-bottom: 0.35rem; }
+.sw-ai-text li::marker { color: var(--sw-accent); font-weight: 700; }
+.sw-ai-text ul ul,
+.sw-ai-text ol ol,
+.sw-ai-text ul ol,
+.sw-ai-text ol ul { margin: 0.3rem 0 0.3rem; }
+
+.sw-ai-check { margin-right: 0.4rem; color: var(--sw-accent); }
+
+.sw-ai-text strong { font-weight: 700; color: var(--sw-text); }
+.sw-ai-text em { font-style: italic; color: var(--sw-text-2); }
+
+.sw-ai-text code {
+  font-family: var(--sw-font-mono);
+  font-size: 0.85em;
+  background: var(--sw-accent-soft);
+  border: 1px solid var(--sw-accent-line);
+  border-radius: 5px;
+  padding: 0.08em 0.35em;
+}
+.sw-ai-text pre {
+  margin: 0 0 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: var(--sw-r);
+  border: 1px solid var(--sw-line);
+  background: var(--sw-sunken);
+  overflow-x: auto;
+  font-family: var(--sw-font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+.sw-ai-text pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  color: var(--sw-text);
+}
+
+.sw-ai-table-wrap {
+  margin: 0 0 1.1rem;
+  overflow-x: auto;
+  border-radius: var(--sw-r);
+  border: 1px solid var(--sw-line);
+}
+.sw-ai-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8438rem;
+  line-height: 1.55;
+}
+.sw-ai-table th,
+.sw-ai-table td {
+  padding: 0.55rem 0.7rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--sw-line-soft);
+}
+.sw-ai-table th {
+  background: var(--sw-hover);
+  font-weight: 700;
+  color: var(--sw-text);
+  white-space: nowrap;
+}
+.sw-ai-table tr:last-child td { border-bottom: none; }
+
+.sw-ai-text blockquote {
+  margin: 0 0 1rem;
+  padding: 0.15rem 0 0.15rem 0.9rem;
+  border-left: 3px solid var(--sw-accent);
+  color: var(--sw-text-2);
+  font-style: italic;
+}
+
+.sw-ai-text hr {
+  border: none;
+  border-top: 1px solid var(--sw-line);
+  margin: 1.4rem 0;
+}
+
+.sw-ai-text a {
+  color: var(--sw-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ── AI Tutor shell ─────────────────────────────────────────────────────── */
+
+.sw-tutor-ask {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.sw-tutor-ask .input {
+  flex: 1;
+  min-width: 200px;
+}
+/* The mic stays a square target — the primary action takes the slack. */
+.sw-tutor-mic {
+  flex: 0 0 auto;
+  min-width: 44px;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.sw-tutor-voice,
+.sw-tutor-modes {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.sw-tutor-voice { margin-top: 0.75rem; }
+.sw-tutor-modes { margin-top: 0.75rem; }
+
+.sw-tutor-voice-select {
+  width: auto;
+  max-width: 230px;
+  min-height: 32px;
+  padding: 0.2rem 1.6rem 0.2rem 0.55rem;
+  font-size: 0.75rem;
+}
+
+.sw-tutor-panel {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-height: 520px;
+  overflow: auto;
+  padding-right: 0.25rem;
+}
+.sw-tutor-panel-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+.sw-tutor-turn { padding: 1.15rem 1.25rem; }
+
+/* Fullscreen overlay — portalled to <body> so it always fills the screen. */
+.sw-tutor-fs {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: var(--sw-page);
+  color: var(--sw-text);
+  padding: clamp(1rem, 2.4vw, 1.75rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  overflow: hidden;
+}
+.sw-tutor-fs-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--sw-line);
+}
+.sw-tutor-fs-heading h2 {
+  font-family: var(--sw-font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin: 0;
+  color: var(--sw-text);
+}
+.sw-tutor-fs-ask { flex: 0 0 auto; }
+.sw-tutor-fs-ask .sw-tutor-voice,
+.sw-tutor-fs-ask .sw-tutor-modes { margin-top: 0.6rem; }
+.sw-tutor-fs-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-right: 0.35rem;
+  padding-bottom: 1.5rem;
+}
+
+@media (max-width: 620px) {
+  .sw-tutor-fs { padding: 0.85rem 0.75rem calc(1rem + env(safe-area-inset-bottom)); }
+  .sw-tutor-fs-heading h2 { font-size: 1.2rem; }
+  .sw-tutor-ask .input { min-width: 0; flex: 1 1 100%; }
+  .sw-tutor-ask .btn:not(.sw-tutor-mic) { flex: 1 1 auto; }
+  .sw-tutor-mic { flex: 0 0 44px; }
+  .sw-tutor-voice-select { max-width: 100%; flex: 1 1 100%; }
+  .sw-ai-text { font-size: 0.875rem; }
+}

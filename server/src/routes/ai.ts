@@ -444,8 +444,19 @@ aiRouter.post('/tutor', requirePro, zValidator('json', TutorRequestBody), async 
     quiz: `Generate a short mastery quiz for the topic so far. Mix recall, conceptual, and application questions. After each question, give brief feedback. Finish with a short assessment of whether the student seems ready to move on.`,
   };
 
+  // Output contract. The client renders the reply as markdown, so a little
+  // structure helps — but raw LaTeX ("$x$", "\frac{a}{b}") and symbol soup
+  // ("##", "**", "|---|") made the answers unreadable, so the model is told
+  // to write maths in plain text instead.
+  const FORMAT_RULES = `Formatting rules for every reply:
+- Use short markdown headings (##), bullet lists (-), and markdown tables for comparisons.
+- Never use LaTeX or LaTeX delimiters. No "$", no "\\(", no "\\frac", no "\\sum", no "\\alpha".
+- Write formulas as plain readable text: "E = mc^2", "x squared", "a/b", "sqrt(x)", "sum of n = 1 to 10".
+- Use ordinary words for symbols: "less than or equal to", "approximately", "therefore".
+- Never repeat a heading marker, never output raw table pipe rows without a header row.`;
+
   const messages = [
-    { role: 'system', content: `${SYSTEM_BASE}\nYou are an expert AI tutor. ${modeInstructions[mode]}${studentContext}` },
+    { role: 'system', content: `${SYSTEM_BASE}\nYou are an expert AI tutor. ${modeInstructions[mode]}${studentContext}\n${FORMAT_RULES}` },
     ...history,
     { role: 'user', content: lastAnswer ? `Student answer: ${lastAnswer}\nContinue the tutoring session appropriately.` : `Topic: ${topic}` },
   ];

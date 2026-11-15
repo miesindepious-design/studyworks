@@ -5,6 +5,7 @@ import { renderLinkedContent } from '../utils/noteLinker';
 import { matchesSmartFilter, previewSmartFilter } from '../utils/smartFolders';
 import { exportNotesToPDF } from '../utils/exportPDF';
 import { toPlainText, wordCount, readingTime } from '../utils/text';
+import { renderAiText } from '../utils/aiText';
 import { extractTextFromFile } from '../utils/extractText';
 import { NOTE_TEMPLATES } from '../lib/studentTemplates';
 import { uploadFile, deleteRemoteAttachment } from '../api/attachments';
@@ -896,7 +897,7 @@ export default function NotesView({
           )}
           {qaAnswer && !isGenerating && (
             <div style={{ background: 'var(--surface-2)', padding: '1rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
-              <p style={{ whiteSpace: 'pre-wrap', fontSize: '0.9rem', lineHeight: 1.7, margin: 0 }}>{qaAnswer}</p>
+              <div className="sw-ai-text">{renderAiText(qaAnswer)}</div>
               {/* Sources from notes */}
               {notes.filter(n => qaAnswer.toLowerCase().includes(n.title.toLowerCase()) || qaAnswer.toLowerCase().includes(toPlainText(n.content).toLowerCase().slice(0, 100))).slice(0, 3).length > 0 && (
                 <>
@@ -1195,7 +1196,7 @@ export default function NotesView({
               {note.summary && (
                 <div style={{ background: 'var(--surface-2)', padding: '0.75rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)', marginBottom: '0.75rem' }}>
                   <p className="text-xs text-muted" style={{ fontWeight: 700, marginBottom: '0.25rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>AI Summary</p>
-                  <p className="text-sm">{note.summary}</p>
+                  <div className="sw-ai-text">{renderAiText(note.summary)}</div>
                 </div>
               )}
 

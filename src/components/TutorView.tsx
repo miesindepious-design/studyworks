@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { serverTutor, saveUserProfile } from '../api/ai';
 import type { Note } from '../types';
+import { renderAiText, toPlainText } from '../utils/aiText';
 
 interface Props {
   tier: string;
@@ -46,6 +48,36 @@ const DIFFICULTY_LABELS: Record<string, { label: string; color: string }> = {
   medium: { label: 'Medium', color: 'var(--warning)' },
   hard:   { label: 'Hard',   color: 'var(--danger)' },
 };
+
+/**
+ * Voices that actually sound good. Windows/Edge expose the Microsoft Neural
+ * voices, Chrome exposes Google's — those are far better than the default
+ * "Microsoft David Desktop" voice, which is the one that used to read every
+ * answer.
+ */
+const VOICE_PREFERENCE: RegExp[] = [
+  /Microsoft (Aria|Jenny|Guy|Sonia|Libby|Emma|Michelle|Ava|Ryan)(?!.*David)/i,
+  /Google (US|UK) English/i,
+  /(Samantha|Serena|Karen|Moira|Tessa|Fiona|Allison|Vicki|Nicky|Aria|Jenny|Zira)/i,
+  /(Natural|Neural|Premium|Enhanced)/i,
+  /Microsoft (Zira|Hazel|Sonia)/i,
+];
+
+/** Voices we would rather not fall back to. */
+const VOICE_AVOID = /David|George|Mark|Ricardo/i;
+
+/** Pick the most natural-sounding English voice available. */
+function pickBestVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+  if (!voices.length) return null;
+  const english = voices.filter(v => /^en(-|_|$)/i.test(v.lang || ''));
+  const pool = english.length ? english : voices;
+  for (const re of VOICE_PREFERENCE) {
+    const hit = pool.find(v => re.test(v.name || ''));
+    if (hit) return hit;
+  }
+  const nice = pool.find(v => v.localService && !VOICE_AVOID.test(v.name || ''));
+  return nice ?? pool[0];
+}
 
 function groupHistoryByTopic(history: ChatTurn[]): TopicGroup[] {
   const map = new Map<string, TopicGroup>();
@@ -98,6 +130,10 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
   const [voiceMode, setVoiceMode] = useState(false);
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [voiceURI, setVoiceURI] = useState<string>(() => {
+    try { return localStorage.getItem('sw-tutor-voice') || ''; } catch { return ''; }
+  });
   const recognitionRef = useRef<any>(null);
   const voiceModeRef = useRef(false);
   // Refs let speakText → startListening → send call each other regardless of
@@ -109,22 +145,26 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
 
   useEffect(() => { voiceModeRef.current = voiceMode; }, [voiceMode]);
 
-  // Strip markdown so the TTS doesn't read out symbols like "##" or "**"
-  const cleanForSpeech = useCallback((text: string): string => {
-    return text
-      .replace(/```[\s\S]*?```/g, ' ')                // code blocks
-      .replace(/`([^`]*)`/g, '$1')                     // inline code
-      .replace(/^#{1,6}\s+/gm, '')                     // headings
-      .replace(/\*\*([^*]+)\*\*/g, '$1')               // bold
-      .replace(/\*([^*]+)\*/g, '$1')                   // italic
-      .replace(/__([^_]+)__/g, '$1')
-      .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')         // links
-      .replace(/^\s*[-•]\s+/gm, '')                    // bullets
-      .replace(/^\s*\d+\.\s+/gm, '')                   // numbered lists
-      .replace(/[#>*|_~\-]{2,}/g, ' ')                 // leftover symbol runs
-      .replace(/\s+/g, ' ')
-      .trim();
+  // The voice list loads asynchronously in most browsers.
+  useEffect(() => {
+    if (!('speechSynthesis' in window)) return;
+    const load = () => setVoices(window.speechSynthesis.getVoices() || []);
+    load();
+    window.speechSynthesis.onvoiceschanged = load;
+    return () => { window.speechSynthesis.onvoiceschanged = null; };
   }, []);
+
+  // The voice actually used: the user's pick, else the best available.
+  const activeVoice = useMemo(() => {
+    if (voiceURI) {
+      const picked = voices.find(v => v.voiceURI === voiceURI);
+      if (picked) return picked;
+    }
+    return pickBestVoice(voices);
+  }, [voices, voiceURI]);
+
+  // Strip markdown + maths so the TTS reads sentences, not symbols.
+  const cleanForSpeech = useCallback((text: string): string => toPlainText(text), []);
 
   const speakText = useCallback((text: string) => {
     if (!('speechSynthesis' in window)) return;
@@ -132,9 +172,15 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
     if (!clean) return;
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(clean);
-    const englishVoice = window.speechSynthesis.getVoices().find(v => v.lang.startsWith('en'));
-    if (englishVoice) utterance.voice = englishVoice;
-    utterance.rate = 1.0;
+    if (activeVoice) {
+      utterance.voice = activeVoice;
+      utterance.lang = activeVoice.lang;
+    } else {
+      utterance.lang = 'en-US';
+    }
+    utterance.rate = 0.97;      // a touch slower than default — clearer
+    utterance.pitch = 1.04;     // slightly brighter
+    utterance.volume = 1;
     utterance.onstart = () => setSpeaking(true);
     utterance.onend = () => {
       setSpeaking(false);
@@ -143,7 +189,7 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
     };
     utterance.onerror = () => setSpeaking(false);
     window.speechSynthesis.speak(utterance);
-  }, [cleanForSpeech]);
+  }, [cleanForSpeech, activeVoice]);
 
   const startListening = useCallback(() => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -218,6 +264,14 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+  }, [fullscreen]);
+
+  // While fullscreen the body itself scrolls, so the panel fills the screen.
+  useEffect(() => {
+    if (!fullscreen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
   }, [fullscreen]);
 
   const scrollToBottom = useCallback(() => {
@@ -334,7 +388,8 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
     try {
       const topicTurns = history.filter(h => h.topic === activeTopic);
       if (topicTurns.length === 0) { addToast('Nothing to save for this topic.', 'info'); return; }
-      const content = topicTurns.map(t => `[${t.mode.toUpperCase()}] ${t.response}`).join('\n\n---\n\n');
+      // Save plain prose — the raw markdown only reads badly later.
+      const content = topicTurns.map(t => `[${t.mode.toUpperCase()}] ${toPlainText(t.response)}`).join('\n\n---\n\n');
       if (onSaveNote) {
         await onSaveNote({
           title: `AI Tutor: ${activeTopic}`,
@@ -355,6 +410,171 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
   }, [activeTopic, history, onSaveNote, addToast]);
 
   const latestResponse = history[history.length - 1]?.response;
+
+  /* ── Shared pieces ─────────────────────────────────────────────────────── */
+
+  /** The ask row: topic input, mic, teach button. */
+  const askRow = (
+    <div className="sw-tutor-ask">
+      <input
+        className="input"
+        placeholder={listening ? '🎙️ Listening…' : 'Type a topic to learn…'}
+        value={topic}
+        onChange={e => setTopic(e.target.value)}
+        onKeyDown={e => e.key === 'Enter' && send('lesson')}
+      />
+      <button
+        type="button"
+        className={`btn sw-tutor-mic ${listening ? 'btn-primary' : 'btn-secondary'}`}
+        onClick={startListening}
+        disabled={loading}
+        title={listening ? 'Listening for your voice…' : 'Speak your topic'}
+        style={listening ? { animation: 'pulse 1.2s infinite ease-in-out' } : undefined}
+      >
+        {listening ? '🔴' : '🎙️'}
+      </button>
+      <button className="btn btn-primary" onClick={() => send('lesson')} disabled={loading}>
+        {loading ? 'Teaching…' : 'Teach me'}
+      </button>
+    </div>
+  );
+
+  /** Voice controls + voice picker. */
+  const voiceControls = (
+    <div className="sw-tutor-voice">
+      <button
+        type="button"
+        className={`btn btn-sm ${voiceMode ? 'btn-primary' : 'btn-secondary'}`}
+        onClick={toggleVoiceMode}
+        title={voiceMode ? 'Turn voice mode off' : 'Turn voice mode on — speak your questions and hear answers aloud'}
+        aria-pressed={voiceMode}
+      >
+        {voiceMode ? '🔊 Voice on' : '🔈 Voice off'}
+      </button>
+      {voices.length > 0 && (
+        <select
+          className="select select-sm sw-tutor-voice-select"
+          value={activeVoice?.voiceURI ?? ''}
+          onChange={e => {
+            setVoiceURI(e.target.value);
+            try { localStorage.setItem('sw-tutor-voice', e.target.value); } catch {}
+          }}
+          title="Choose the voice used for spoken answers"
+          aria-label="Tutor voice"
+        >
+          {voices
+            .filter(v => /^en/i.test(v.lang || ''))
+            .map(v => (
+              <option key={v.voiceURI} value={v.voiceURI}>
+                {v.name.replace(/\s+(Microsoft|Google|Desktop|Natural)\s*/gi, ' ').trim()} ({v.lang})
+              </option>
+            ))}
+        </select>
+      )}
+      {speaking && <span className="text-xs text-muted">🗣️ Tutor is speaking…</span>}
+      {listening && <span className="text-xs text-muted">🎙️ Listening — say what you don't understand…</span>}
+    </div>
+  );
+
+  /** Mode buttons (simpler / deeper / quiz / save). */
+  const modeControls = (
+    <div className="sw-tutor-modes">
+      <button className="btn btn-secondary btn-sm" onClick={() => send('simpler')} disabled={loading || !latestResponse}>Simpler</button>
+      <button className="btn btn-secondary btn-sm" onClick={() => send('deeper')} disabled={loading || !latestResponse}>Dive deeper</button>
+      <button className="btn btn-secondary btn-sm" onClick={() => send('quiz')} disabled={loading || !latestResponse}>Test me</button>
+      {activeTopic && (
+        <button className="btn btn-ghost btn-sm" onClick={saveToNotes} disabled={saving || loading}>
+          {saving ? 'Saving…' : '💾 Save to notes'}
+        </button>
+      )}
+    </div>
+  );
+
+  /** The chat history list. */
+  const historyList = (() => {
+    const displayedHistory = activeTopic
+      ? history.filter(h => h.topic === activeTopic)
+      : history;
+    if (displayedHistory.length === 0 && !loading) {
+      return (
+        <div className="card empty-state" style={{ padding: '3rem 2rem' }}>
+          <div className="empty-state-icon">{isTyping ? '🤔' : '🎓'}</div>
+          <h3>{isTyping ? 'Thinking...' : 'Start a lesson'}</h3>
+          <p>Enter any topic above and press <strong>Teach me</strong> to begin. Try "Cell division" or "Supply and demand".</p>
+          {isTyping && (
+            <div style={{ marginTop: '1rem', display: 'flex', gap: '0.35rem' }}>
+              <span style={{ animation: 'bounce 1.4s infinite ease-in-out both', fontSize: '1.2rem' }}>.</span>
+              <span style={{ animation: 'bounce 1.4s infinite ease-in-out 0.2s both', fontSize: '1.2rem' }}>.</span>
+              <span style={{ animation: 'bounce 1.4s infinite ease-in-out 0.4s both', fontSize: '1.2rem' }}>.</span>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return displayedHistory.map(turn => (
+      <div key={turn.id} className="card animate-in sw-tutor-turn">
+        <div className="card-header" style={{ marginBottom: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <span className="card-title" style={{ fontSize: '0.95rem' }}>{turn.topic}</span>
+            <span className="tag" style={{ textTransform: 'capitalize' }}>{turn.mode}</span>
+            {turn.difficulty && (
+              <span className="tag" style={{ background: 'var(--surface-2)', color: DIFFICULTY_LABELS[turn.difficulty]?.color || 'var(--text-2)' }}>
+                {DIFFICULTY_LABELS[turn.difficulty]?.label || turn.difficulty}
+              </span>
+            )}
+          </div>
+          <span className="text-xs text-muted">{formatTime(turn.at)}</span>
+        </div>
+        {/* Formatted, symbol-free answer */}
+        {renderAiText(turn.response)}
+        {turn.mode === 'quiz' && (
+          <div style={{ marginTop: '0.75rem' }}>
+            <textarea
+              className="textarea"
+              placeholder="Type your answer here…"
+              value={answer}
+              onChange={e => setAnswer(e.target.value)}
+            />
+            <button className="btn btn-primary btn-sm" style={{ marginTop: '0.5rem' }} onClick={() => send('quiz')} disabled={loading}>
+              Submit answer
+            </button>
+          </div>
+        )}
+      </div>
+    ));
+  })();
+
+  /* ── Fullscreen overlay ────────────────────────────────────────────────── */
+  /* Rendered through a portal on <body> so no ancestor can clip it — the
+     old version was trapped inside the page column and covered half the
+     screen. */
+  const fullscreenOverlay = (
+    <div className="sw-tutor-fs" role="dialog" aria-modal="true" aria-label="AI Tutor full screen">
+      <div className="sw-tutor-fs-bar">
+        <div className="sw-tutor-fs-heading">
+          <span className="sw-label">Create</span>
+          <h2>AI Tutor</h2>
+        </div>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          onClick={() => setFullscreen(false)}
+          title="Exit full screen (Esc)"
+        >
+          ⛶ Exit full screen
+        </button>
+      </div>
+      <div className="sw-tutor-fs-ask">
+        {askRow}
+        {voiceControls}
+        {modeControls}
+      </div>
+      <div className="sw-tutor-fs-list" ref={panelRef}>
+        {historyList}
+      </div>
+    </div>
+  );
 
   return (
     <div className="animate-in">
@@ -411,63 +631,21 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
             <span className="card-title">Ask a topic</span>
             <span className="text-xs text-muted">Examples: "Newton's laws", "Photosynthesis", "OOP"</span>
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <input
-              className="input"
-              placeholder={listening ? '🎙️ Listening…' : 'Type a topic to learn…'}
-              value={topic}
-              onChange={e => setTopic(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && send('lesson')}
-              style={{ flex: 1, minWidth: '220px' }}
-            />
-            <button
-              type="button"
-              className={`btn ${listening ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={startListening}
-              disabled={loading}
-              title={listening ? 'Listening for your voice…' : 'Speak your topic'}
-              style={listening ? { animation: 'pulse 1.2s infinite ease-in-out' } : undefined}
-            >
-              {listening ? '🔴' : '🎙️'}
-            </button>
-            <button className="btn btn-primary" onClick={() => send('lesson')} disabled={loading}>
-              {loading ? 'Teaching…' : 'Teach me'}
-            </button>
-          </div>
+
+          {askRow}
 
           {/* Voice mode toggle */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.75rem' }}>
-            <button
-              type="button"
-              className={`btn btn-sm ${voiceMode ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={toggleVoiceMode}
-              title={voiceMode ? 'Turn voice mode off' : 'Turn voice mode on — speak your questions and hear answers aloud'}
-              aria-pressed={voiceMode}
-            >
-              {voiceMode ? '🔊 Voice on' : '🔈 Voice off'}
-            </button>
-            {speaking && <span className="text-xs text-muted">🗣️ Tutor is speaking…</span>}
-            {listening && <span className="text-xs text-muted">🎙️ Listening — say what you don't understand…</span>}
-          </div>
+          {voiceControls}
 
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.75rem' }}>
-            <button className="btn btn-secondary btn-sm" onClick={() => send('simpler')} disabled={loading || !latestResponse}>Simpler</button>
-            <button className="btn btn-secondary btn-sm" onClick={() => send('deeper')} disabled={loading || !latestResponse}>Dive deeper</button>
-            <button className="btn btn-secondary btn-sm" onClick={() => send('quiz')} disabled={loading || !latestResponse}>Test me</button>
-            {activeTopic && (
-              <button className="btn btn-ghost btn-sm" onClick={saveToNotes} disabled={saving || loading}>
-                {saving ? 'Saving…' : '💾 Save to notes'}
-              </button>
-            )}
-          </div>
+          {modeControls}
 
           {suggestedTopics.length > 0 && (
             <div style={{ marginTop: '0.75rem' }}>
               <p className="text-xs text-muted" style={{ marginBottom: '0.35rem' }}>Suggested from your notes:</p>
               <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-                {suggestedTopics.map(s => (
+                {suggestedTopics.map((s, si) => (
                   <button
-                    key={s}
+                    key={`${s}-${si}`}
                     className="badge badge-primary"
                     style={{ cursor: 'pointer' }}
                     onClick={() => { setTopic(s); send('lesson', s); }}
@@ -512,98 +690,22 @@ export default function TutorView({ tier, setCurrentView, addToast, notes = [], 
       })()}
 
       {/* Chat history panel */}
-      <div
-        ref={panelRef}
-        style={fullscreen
-          ? {
-              position: 'fixed',
-              inset: 0,
-              zIndex: 1200,
-              background: 'var(--surface-0)',
-              padding: '1.5rem',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '1rem',
-              overflow: 'auto',
-            }
-          : { marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '520px', overflow: 'auto', paddingRight: '0.25rem' }}
-      >
+      <div ref={panelRef} className="sw-tutor-panel">
         {/* Fullscreen toolbar */}
-        <div
-          style={{
-            position: fullscreen ? 'sticky' : 'static',
-            top: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            gap: '0.5rem',
-            background: fullscreen ? 'var(--surface-0)' : 'transparent',
-            paddingBottom: fullscreen ? '0.5rem' : 0,
-            zIndex: 1,
-          }}
-        >
+        <div className="sw-tutor-panel-bar">
           <button
             type="button"
             className="btn btn-secondary btn-sm"
-            onClick={() => setFullscreen(f => !f)}
-            title={fullscreen ? 'Exit full screen (Esc)' : 'View in full screen'}
+            onClick={() => setFullscreen(true)}
+            title="View in full screen"
           >
-            {fullscreen ? '⛶ Exit full screen' : '⛶ Full screen'}
+            ⛶ Full screen
           </button>
         </div>
-        {(() => {
-          const displayedHistory = activeTopic
-            ? history.filter(h => h.topic === activeTopic)
-            : history;
-          if (displayedHistory.length === 0 && !loading) {
-            return (
-              <div className="card empty-state" style={{ padding: '3rem 2rem' }}>
-                <div className="empty-state-icon">{isTyping ? '🤔' : '🎓'}</div>
-                <h3>{isTyping ? 'Thinking...' : 'Start a lesson'}</h3>
-                <p>Enter any topic above and press <strong>Teach me</strong> to begin. Try "Cell division" or "Supply and demand".</p>
-                {isTyping && (
-                  <div style={{ marginTop: '1rem', display: 'flex', gap: '0.35rem' }}>
-                    <span style={{ animation: 'bounce 1.4s infinite ease-in-out both', fontSize: '1.2rem' }}>.</span>
-                    <span style={{ animation: 'bounce 1.4s infinite ease-in-out 0.2s both', fontSize: '1.2rem' }}>.</span>
-                    <span style={{ animation: 'bounce 1.4s infinite ease-in-out 0.4s both', fontSize: '1.2rem' }}>.</span>
-                  </div>
-                )}
-              </div>
-            );
-          }
-
-          return displayedHistory.map(turn => (
-            <div key={turn.id} className="card animate-in" style={{ border: '1px solid var(--border)' }}>
-              <div className="card-header" style={{ marginBottom: '0.5rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  <span className="card-title" style={{ fontSize: '0.95rem' }}>{turn.topic}</span>
-                  <span className="tag" style={{ textTransform: 'capitalize' }}>{turn.mode}</span>
-                  {turn.difficulty && (
-                    <span className="tag" style={{ background: 'var(--surface-2)', color: DIFFICULTY_LABELS[turn.difficulty]?.color || 'var(--text-2)' }}>
-                      {DIFFICULTY_LABELS[turn.difficulty]?.label || turn.difficulty}
-                    </span>
-                  )}
-                </div>
-                <span className="text-xs text-muted">{formatTime(turn.at)}</span>
-              </div>
-              <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{turn.response}</div>
-              {turn.mode === 'quiz' && (
-                <div style={{ marginTop: '0.75rem' }}>
-                  <textarea
-                    className="textarea"
-                    placeholder="Type your answer here…"
-                    value={answer}
-                    onChange={e => setAnswer(e.target.value)}
-                  />
-                  <button className="btn btn-primary btn-sm" style={{ marginTop: '0.5rem' }} onClick={() => send('quiz')} disabled={loading}>
-                    Submit answer
-                  </button>
-                </div>
-              )}
-            </div>
-          ));
-        })()}
+        {historyList}
       </div>
+
+      {fullscreen && createPortal(fullscreenOverlay, document.body)}
     </div>
   );
 }
