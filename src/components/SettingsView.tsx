@@ -81,6 +81,15 @@ export default function SettingsView({
 
   // Settings search — typing filters the cards in place.
   const [query, setQuery] = useState('');
+  // Anti-autofill guard: browsers "helpfully" type the user's saved email
+  // into this box right after login, which instantly filters every card out
+  // ("0 matches"). While the field is locked (readonly) nothing can be
+  // injected into it on page load — it unlocks the moment the user actually
+  // focuses or starts typing.
+  const [searchLocked, setSearchLocked] = useState(true);
+  // Bumped to force a re-render when an injection is rejected, so React
+  // wipes the injected value out of the controlled input.
+  const [, bumpSearchRender] = useState(0);
 
   // Study timer settings — shared with the Timer tab (one store, one UI).
   const { settings: timerSettings, update: updateTimer } = useTimerSettings();
@@ -418,7 +427,17 @@ export default function SettingsView({
                 type="search"
                 name="sw-settings-search"
                 value={query}
-                onChange={e => setQuery(e.target.value)}
+                onChange={e => {
+                  if (searchLocked) {
+                    e.target.value = '';          // wipe anything a browser/extension injected
+                    bumpSearchRender(t => t + 1); // and force React to re-sync the controlled value
+                    return;
+                  }
+                  setQuery(e.target.value);
+                }}
+                onFocus={() => setSearchLocked(false)}
+                onKeyDown={() => setSearchLocked(false)}
+                readOnly={searchLocked}
                 placeholder="Search settings"
                 aria-label="Search settings"
                 // Browsers ignore plain "off" and offer saved emails here —

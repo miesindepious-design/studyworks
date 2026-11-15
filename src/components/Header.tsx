@@ -20,6 +20,11 @@ const TABS: Record<string, string> = {
 export function Header({ currentTab, searchQuery, onSearchChange, onOpenMenu }: HeaderProps) {
   const [_u] = useState(0);
   const title = TABS[currentTab] || 'StudyWorks';
+  // Anti-autofill guard: browsers type the saved email into the first
+  // text-like field right after login. Lock the field (readonly) until the
+  // user actually interacts with it, so nothing can be injected on load.
+  const [searchLocked, setSearchLocked] = useState(true);
+  const [, bumpSearchRender] = useState(0);
 
   return (
     <header className="sticky top-0 z-20 bg-[#111115]/80 backdrop-blur border-b border-[#2A2A2E] px-4 sm:px-6 lg:px-8">
@@ -45,7 +50,17 @@ export function Header({ currentTab, searchQuery, onSearchChange, onOpenMenu }: 
               type="search"
               name="sw-global-search"
               value={searchQuery}
-              onChange={(e) => onSearchChange(e.target.value)}
+              onChange={(e) => {
+                if (searchLocked) {
+                  e.target.value = '';
+                  bumpSearchRender(t => t + 1);
+                  return;
+                }
+                onSearchChange(e.target.value);
+              }}
+              onFocus={() => setSearchLocked(false)}
+              onKeyDown={() => setSearchLocked(false)}
+              readOnly={searchLocked}
               placeholder="Search…"
               autoComplete="sw-global-search"
               autoCorrect="off"
