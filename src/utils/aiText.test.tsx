@@ -189,3 +189,124 @@ describe('svgToReact — tutor diagrams', () => {
     expect(node).not.toBeNull();
   });
 });
+
+describe('svgToReact — diagram fidelity', () => {
+  const WITH_REFS = '<svg viewBox="0 0 100 100">'
+    + '<defs><marker id="arrow" markerWidth="8" markerHeight="8"><path d="M0 0 L8 4 L0 8 Z"/></marker>'
+    + '<linearGradient id="grad"><stop offset="0%" stop-color="#fff"/></linearGradient></defs>'
+    + '<rect width="10" height="10" fill="url(#grad)"/>'
+    + '<path d="M0 0 L10 10" marker-end="url(#arrow)"/>'
+    + '</svg>';
+
+  const out = (svg: string) => {
+    const node = svgToReact(svg);
+    return node === null ? '' : renderToString(createElement('div', null, node));
+  };
+
+  it('keeps ids so markers and gradients still resolve', () => {
+    const html = out(WITH_REFS);
+    const markerId = /<marker[^>]*id="([^"]+)"/.exec(html)?.[1];
+    const gradId = /<linearGradient[^>]*id="([^"]+)"/.exec(html)?.[1];
+    expect(markerId).toBeTruthy();
+    expect(gradId).toBeTruthy();
+    // The references must point at the ids the diagram actually defines.
+    expect(/marker-end="url\(#([^)]+)\)"/.exec(html)?.[1]).toBe(markerId);
+    expect(/<rect[^>]*fill="url\(#([^)]+)\)"/.exec(html)?.[1]).toBe(gradId);
+  });
+
+  it('gives every element a key so React stops warning', () => {
+    // A missing key is a React error, not just noise — it breaks reconciliation.
+    const errors: string[] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => { errors.push(String(args[0])); };
+    try {
+      out(WITH_REFS);
+    } finally {
+      console.error = original;
+    }
+    expect(errors.join('\n')).not.toContain('unique "key" prop');
+  });
+
+  it('finds the svg inside surrounding prose and an xml prolog', () => {
+    const noisy = '<?xml version="1.0"?>\n<!-- a note -->\nHere it is:\n'
+      + '<svg viewBox="0 0 10 10"><text x="1" y="2">Hi</text></svg>';
+    const html = out(noisy);
+    expect(html).toContain('<svg');
+    expect(html).toContain('Hi');
+  });
+
+  it('repairs a diagram that was cut off mid-answer', () => {
+    const cut = '<svg viewBox="0 0 10 10"><g><rect width="5" height="5"/><text x="1" y="2">Hi';
+    const html = out(cut);
+    expect(html).toContain('<svg');
+    expect(html).toContain('Hi');
+  });
+});
+
+describe('renderAiText — diagram blocks', () => {
+  const SVG = '<svg viewBox="0 0 100 100"><rect width="10" height="10"/><text x="1" y="2">Mitochondria</text></svg>';
+
+  it('renders a fenced svg block as a figure, not as code', () => {
+    const out = html(`Here you go:\n\n\`\`\`svg\n${SVG}\n\`\`\``);
+    expect(out).toContain('sw-ai-diagram');
+    expect(out).toContain('<svg');
+    expect(out).not.toContain('<pre');
+  });
+
+  it('renders a diagram even when the fence was never closed', () => {
+    const out = html(`Here you go:\n\n\`\`\`svg\n${SVG}`);
+    expect(out).toContain('sw-ai-diagram');
+    expect(out).toContain('<svg');
+  });
+
+  it('renders a diagram in a fence tagged "svg diagram"', () => {
+    const out = html(`\`\`\`svg diagram\n${SVG}\n\`\`\``);
+    expect(out).toContain('sw-ai-diagram');
+  });
+
+  it('renders a diagram in an untagged fence', () => {
+    const out = html(`\`\`\`\n${SVG}\n\`\`\``);
+    expect(out).toContain('sw-ai-diagram');
+  });
+
+  it('still shows ordinary code blocks as code', () => {
+    const out = html('```js\nconst a = 1;\n```');
+    expect(out).toContain('<pre');
+    expect(out).not.toContain('sw-ai-diagram');
+  });
+});
+
+describe('renderAiText — plain-text line diagrams', () => {
+  const LINE_DIAGRAM = [
+    '  Sunlight + H2O',
+    '        │',
+    '        ▼',
+    '  ┌──────────────┐      ┌──────────────┐',
+    '  │ Light rxns   │ ───▶ │ Calvin cycle │',
+    '  └──────────────┘      └──────────────┘',
+  ].join('\n');
+
+  it('renders a diagram fence as a line-diagram panel', () => {
+    const out = html(`\`\`\`diagram\n${LINE_DIAGRAM}\n\`\`\``);
+    expect(out).toContain('sw-ai-diagram-text');
+    expect(out).not.toContain('sw-ai-diagram"');
+  });
+
+  it('keeps the box-drawing alignment exactly', () => {
+    const out = html(`\`\`\`diagram\n${LINE_DIAGRAM}\n\`\`\``);
+    // Leading spaces must survive — a line diagram falls apart without them.
+    expect(out).toContain('        │');
+    expect(out).toContain('  ┌──────────────┐');
+  });
+
+  it('accepts an ascii fence as well', () => {
+    const out = html(`\`\`\`ascii\n${LINE_DIAGRAM}\n\`\`\``);
+    expect(out).toContain('sw-ai-diagram-text');
+  });
+
+  it('leaves a plain text fence as an ordinary code block', () => {
+    const out = html('```text\nsome notes\n```');
+    expect(out).toContain('<pre');
+    expect(out).not.toContain('sw-ai-diagram-text');
+  });
+});

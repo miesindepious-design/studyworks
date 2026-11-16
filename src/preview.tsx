@@ -36,6 +36,9 @@ import { PAGE_TITLES } from './config/nav';
 const param = new URLSearchParams(location.search);
 const VIEW: string = param.get('view') ?? 'dashboard';
 const IS_DARK = param.has('dark');
+// Which diagram tier the mocked tutor answers with: 'line' (cheap plain
+// text) or 'svg' (the expensive full picture).
+const DIAGRAM_KIND: string = param.get('diagram') ?? 'svg';
 const noop = () => {};
 
 /**
@@ -75,6 +78,22 @@ $$6CO_2 + 6H_2O \\rightarrow C_6H_{12}O_6 + 6O_2$$
 \`\`\`
 
 So the answer is simple: light in, sugar out.`;
+
+const LINE_DIAGRAM_TUTOR_ANSWER = `Here is the two-stage flow you asked for.
+
+\`\`\`diagram
+  Sunlight + H2O
+        │
+        ▼
+  ┌──────────────────┐                  ┌──────────────────┐
+  │  Light reactions │ ───────────────→ │   Calvin cycle   │
+  │   (thylakoid)    │                  │    (stroma)      │
+  └──────────────────┘                  └──────────────────┘
+        │                                     │
+       O2 released                          G3P → glucose
+\`\`\`
+
+**How to read it:** light hits the thylakoid membrane, where the light reactions make ATP and NADPH. Those feed the Calvin cycle in the stroma, which fixes carbon dioxide into G3P — the sugar that stores the energy. Oxygen leaves as a by-product.`;
 
 const PHOTOSYNTHESIS_DIAGRAM = `<svg viewBox="0 0 680 300" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -139,8 +158,8 @@ if (typeof window !== 'undefined') {
       let body: any = null;
       try { body = init?.body ? JSON.parse(String(init.body)) : null; } catch { body = null; }
       const instruction: string | undefined = body?.instruction;
-      const response = instruction?.includes('SVG diagram')
-        ? DIAGRAM_TUTOR_ANSWER
+      const response = instruction?.includes('asked for a diagram')
+        ? (DIAGRAM_KIND === 'line' ? LINE_DIAGRAM_TUTOR_ANSWER : DIAGRAM_TUTOR_ANSWER)
         : instruction?.includes('does not understand a specific part')
           ? PART_EXPLANATION
           : MESSY_TUTOR_ANSWER;

@@ -197,8 +197,45 @@ describe('POST /api/ai/tutor — key points', () => {
         body: JSON.stringify({ topic: 'photosynthesis', mode: 'lesson' }),
       });
       const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-      const system = body.contents[0].parts[0].text;
+      // The instructions live in Gemini's system instruction, so they are
+      // applied to every turn of the conversation.
+      const system = body.systemInstruction?.parts?.[0]?.text ?? '';
       expect(system).toContain(KEY_POINTS_OPEN);
+      // The diagram rules travel with them.
+      expect(system).toContain('```svg');
+    } finally {
+      restore();
+    }
+  });
+
+  it('keeps diagrams rare and cheap', async () => {
+    // A diagram is several hundred tokens, so the prompt has to push the
+    // model towards prose, tables and plain-text line diagrams, and only
+    // allow a full SVG when the concept is genuinely spatial.
+    const { request, login } = await buildTestApp();
+    login({ id: 'u1', email: 'a@b.com', name: 'A', tier: 'FREE' });
+
+    const fetchMock = vi.fn().mockResolvedValue(geminiReply('A lesson.'));
+    const restore = withFetch(fetchMock);
+    try {
+      await request('/api/ai/tutor', {
+        method: 'POST',
+        body: JSON.stringify({ topic: 'photosynthesis', mode: 'lesson' }),
+      });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      const system = body.systemInstruction?.parts?.[0]?.text ?? '';
+
+      // The cheap tier has to be offered first.
+      expect(system).toContain('```diagram');
+      expect(system).toContain('box-drawing');
+      // No diagram where prose or a table does the job.
+      expect(system).toContain('NO diagram');
+      expect(system).toContain('comparison (use a markdown table');
+      // The SVG tier is bounded, not open-ended.
+      expect(system).toContain('ONLY when the concept is genuinely spatial');
+      expect(system).toContain('at most about 12 shapes');
+      // Never the same picture twice.
+      expect(system).toContain('never redraw');
     } finally {
       restore();
     }

@@ -45,6 +45,8 @@ interface ChatTurn {
   fromDocument?: boolean;
   /** Set when this turn answers a "I don't understand this part" ask. */
   followUp?: { quote?: string; note?: string };
+  /** The instruction that produced this turn ("show me a diagram", …). */
+  instruction?: string;
 }
 
 interface TopicGroup {
@@ -90,6 +92,44 @@ function buildDocumentBrief(analysis: DocumentAnalysis): string {
     analysis.overview ? `Overview:\n${analysis.overview.slice(0, 2500)}` : '',
     points ? `Key points:\n${points}` : '',
   ].filter(Boolean).join('\n\n');
+}
+
+/**
+ * Drop the SVG source from a past answer before it is replayed.
+ *
+ * A single diagram is several hundred tokens of markup the model does not
+ * need to read again — it already knows what it drew, and the student can
+ * still see the picture in the transcript. Replacing it with a marker keeps
+ * every follow-up cheap.
+ */
+function stripDiagramMarkup(text: string): string {
+  return text.replace(/```svg[\s\S]*?```/g, '[a diagram was drawn here]');
+}
+
+/**
+ * The conversation so far, as proper user/assistant turns.
+ *
+ * This used to send only the assistant answers, which meant the model never
+ * saw what the student actually asked and Gemini received
+ * `model, model, …, user` — a conversation with no context and no valid
+ * role order. A follow-up like "show me a diagram" then had nothing to
+ * attach to. Now every turn replays as the student's ask followed by the
+ * tutor's answer.
+ */
+export function buildChatHistory(
+  turns: ChatTurn[],
+): { role: 'user' | 'assistant'; content: string }[] {
+  const out: { role: 'user' | 'assistant'; content: string }[] = [];
+  for (const turn of turns) {
+    const ask = turn.instruction
+      ? `Topic: ${turn.topic}\n\n${turn.instruction}`
+      : turn.mode === 'quiz'
+        ? `My answer to your question: ${turn.question || '(no answer given)'}`
+        : `Topic: ${turn.topic}`;
+    out.push({ role: 'user', content: ask });
+    out.push({ role: 'assistant', content: stripDiagramMarkup(turn.response) });
+  }
+  return out;
 }
 
 function groupHistoryByTopic(history: ChatTurn[]): TopicGroup[] {
@@ -469,7 +509,7 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
         topic: effectiveTopic,
         mode,
         educationLevel: level,
-        history: history.map(h => ({ role: 'assistant', content: h.response })),
+        history: buildChatHistory(history),
         lastAnswer: mode === 'quiz' ? answer || undefined : undefined,
         instruction: opts?.instruction ?? undefined,
         documents: tutorDocs,
@@ -499,6 +539,7 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
         question: mode === 'quiz' ? answer || undefined : undefined,
         response: res.response,
         followUp: opts?.followUp,
+        instruction: opts?.instruction,
         keyPoints: res.keyPoints,
         at: new Date(),
         difficulty: newDifficulty,
@@ -902,9 +943,9 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
               className="btn btn-secondary btn-sm"
               disabled={loading}
               onClick={() => send('lesson', turn.topic, {
-                instruction: 'The student wants a picture to help understand this topic. Produce ONE labelled SVG diagram (in a ```svg block) of the single most important concept from the lesson so far, followed by a one-line caption and two or three sentences on how to read the diagram.',
+                instruction: 'The student explicitly asked for a diagram. Draw exactly one diagram of the single most important concept from the lesson so far, using the cheapest form that explains it: a short plain-text diagram in a ```diagram block (box-drawing characters, one line per box, 3-10 lines) when the idea is a simple flow or sequence; only use an SVG in a ```svg block when the concept is genuinely spatial or complex. Then add a one-line caption and two or three sentences on how to read it.',
               })}
-              title="Ask the tutor to draw a labelled diagram of this topic"
+              title="Ask the tutor to draw a diagram of this topic"
             >
               🖼️ Show me a diagram
             </button>

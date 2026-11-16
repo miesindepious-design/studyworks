@@ -23,33 +23,54 @@ import { Fragment, createElement, type ReactNode } from 'react';
 
 /**
  * Tags the tutor's SVG diagrams may use. Anything else — <script>,
- * <foreignObject>, <image>, <use>, <a>… — is dropped wholesale, so a
+ * <foreignObject>, <image>, <a>… — is dropped wholesale, so a
  * model can never smuggle markup into the page.
  */
 const SVG_TAGS = new Set([
-  'svg', 'g', 'defs', 'marker', 'clipPath',
+  'svg', 'g', 'defs', 'marker', 'clipPath', 'mask', 'use',
   'path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon',
   'text', 'tspan', 'title', 'desc',
   'linearGradient', 'radialGradient', 'stop', 'pattern',
+  // Filter primitives — a soft drop shadow is common in a good diagram.
+  'filter', 'feGaussianBlur', 'feDropShadow', 'feOffset', 'feBlend',
+  'feColorMatrix', 'feMerge', 'feMergeNode', 'feFlood', 'feComposite',
+  'feTurbulence', 'feDisplacementMap', 'feMorphology', 'feConvolveMatrix',
+  'feTile', 'feComponentTransfer', 'feFuncR', 'feFuncG', 'feFuncB', 'feFuncA',
+  'feDiffuseLighting', 'feSpecularLighting', 'fePointLight', 'feSpotLight',
+  'feDistantLight',
 ]);
 
 /**
  * Attributes those tags may carry, as JSX names (camelCase). Hyphenated
  * SVG names are converted; anything outside this list is stripped.
+ *
+ * `id` matters: markers, gradients and clip paths are all referenced by
+ * `url(#name)`. Without it the diagram still draws, but every arrow loses
+ * its head and every gradient fill collapses to flat black.
  */
 const SVG_ATTRS = new Set([
   'viewBox', 'xmlns', 'width', 'height', 'preserveAspectRatio', 'fill', 'stroke',
   'strokeWidth', 'strokeLinecap', 'strokeLinejoin', 'strokeDasharray',
   'fillOpacity', 'strokeOpacity', 'opacity', 'd', 'x', 'y', 'x1', 'x2', 'y1', 'y2',
   'cx', 'cy', 'r', 'rx', 'ry', 'points', 'transform', 'dx', 'dy', 'textAnchor',
-  'dominantBaseline', 'fontFamily', 'fontSize', 'fontWeight', 'fontStyle',
+  'dominantBaseline', 'alignmentBaseline', 'baselineShift', 'fontFamily',
+  'fontSize', 'fontWeight', 'fontStyle', 'fontVariant', 'writingMode',
   'textDecoration', 'textLength', 'lengthAdjust', 'letterSpacing', 'wordSpacing',
-  'gradientUnits', 'gradientTransform', 'spreadMethod', 'offset', 'stopColor',
-  'stopOpacity', 'patternUnits', 'patternContentUnits', 'patternTransform',
-  'markerWidth', 'markerHeight', 'refX', 'refY', 'orient', 'markerUnits',
-  'markerEnd', 'markerStart', 'markerMid', 'clipPath', 'clipRule', 'clipPathUnits',
-  'overflow', 'color', 'paintOrder', 'shapeRendering', 'strokeMiterlimit',
-  'vectorEffect', 'display', 'rotate', 'startOffset', 'side', 'spacing',
+  'fillRule', 'clipRule', 'gradientUnits', 'gradientTransform', 'spreadMethod',
+  'offset', 'stopColor', 'stopOpacity', 'patternUnits', 'patternContentUnits',
+  'patternTransform', 'markerWidth', 'markerHeight', 'refX', 'refY', 'orient',
+  'markerUnits', 'markerEnd', 'markerStart', 'markerMid', 'clipPath', 'clipPathUnits',
+  'mask', 'maskUnits', 'maskContentUnits', 'filter', 'filterUnits', 'primitiveUnits',
+  'overflow', 'color', 'paintOrder', 'shapeRendering', 'imageRendering',
+  'strokeMiterlimit', 'vectorEffect', 'display', 'rotate', 'startOffset',
+  'side', 'spacing', 'textOverflow', 'whiteSpace', 'transformOrigin',
+  // Filter primitive attributes.
+  'stdDeviation', 'floodColor', 'floodOpacity', 'lightingColor', 'result', 'in2',
+  'values', 'type', 'operator', 'k1', 'k2', 'k3', 'k4', 'scale', 'radius',
+  'baseFrequency', 'numOctaves', 'seed', 'stitchTiles', 'tableValues',
+  'slope', 'intercept', 'amplitude', 'exponent', 'azimuth', 'elevation',
+  'surfaceScale', 'diffuseConstant', 'specularConstant', 'specularExponent',
+  'pointsAtX', 'pointsAtY', 'limitingConeAngle',
 ]);
 
 /** Hyphenated SVG attribute → JSX name ('stroke-width' → 'strokeWidth'). */
@@ -63,14 +84,60 @@ function toJsxAttr(name: string): string | null {
 }
 
 /**
+ * Close any element the model left open.
+ *
+ * A reply that was cut off mid-diagram (the token budget ran out) leaves
+ * tags unclosed, which makes the whole SVG unparseable — the student then
+ * sees raw markup instead of a picture. Closing the open tags gives back
+ * a diagram that is missing only its tail.
+ */
+function closeOpenTags(svg: string): string {
+  const stack: string[] = [];
+  const tag = /<\/?([A-Za-z][\w:-]*)([^>]*?)(\/?)>/g;
+  let m: RegExpExecArray | null;
+  while ((m = tag.exec(svg)) !== null) {
+    const raw = m[0];
+    const name = m[1];
+    if (raw.startsWith('</')) {
+      const idx = stack.lastIndexOf(name);
+      if (idx !== -1) stack.length = idx;
+      continue;
+    }
+    if (raw.endsWith('/>')) continue;             // self-closing
+    stack.push(name);
+  }
+  if (stack.length === 0) return svg;
+  return svg + stack.reverse().map(n => `</${n}>`).join('');
+}
+
+/**
+ * Pull the <svg> element out of whatever the model wrapped it in.
+ *
+ * Replies often carry an XML prolog, a comment or a sentence of prose
+ * around the diagram — any of which makes DOMParser reject the whole
+ * block and leave the student with a code dump.
+ */
+function extractSvgSource(text: string): string | null {
+  const start = text.search(/<svg[\s>]/i);
+  if (start === -1) return null;
+  const rest = text.slice(start);
+  const closeIdx = rest.search(/<\/svg\s*>/i);
+  const svg = closeIdx === -1 ? rest : rest.slice(0, closeIdx + 6);
+  return closeOpenTags(svg);
+}
+
+/**
  * Parse a model-produced SVG string and rebuild it as a React element tree,
  * keeping only whitelisted tags and attributes. Unsafe nodes (and their
  * children) disappear entirely.
  */
 export function svgToReact(svgText: string): ReactNode | null {
+  const source = extractSvgSource(svgText);
+  if (!source) return null;
+
   let doc: Document;
   try {
-    doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
+    doc = new DOMParser().parseFromString(source, 'image/svg+xml');
   } catch {
     return null;
   }
@@ -81,27 +148,52 @@ export function svgToReact(svgText: string): ReactNode | null {
     return null;
   }
 
-  const build = (node: Element, depth: number): ReactNode | null => {
-    const tag = node.tagName;
-    // React needs the exact case; lowercase output from the parser is mapped.
-    const proper = /^[a-z]+$/.test(tag)
-      ? (SVG_TAGS.has(tag) ? tag : null)
-      : (SVG_TAGS.has(tag) ? tag : null);
-    if (!proper || !SVG_TAGS.has(tag) || depth > 12) return null;
+  // Ids are namespaced per render, so a diagram can never collide with the
+  // page around it (or with another diagram on the same page).
+  const idMap = new Map<string, string>();
+  let uid = 0;
+  const mapId = (id: string): string => {
+    let mapped = idMap.get(id);
+    if (!mapped) {
+      mapped = `sw-svg-${uid++}`;
+      idMap.set(id, mapped);
+    }
+    return mapped;
+  };
+  /** Rewrite `url(#name)` so it points at the namespaced id. */
+  const mapRefs = (value: string): string =>
+    value.replace(/url\(\s*#([^)\s]+)\s*\)/g, (_m, name: string) => `url(#${mapId(name)})`);
 
-    const props: Record<string, unknown> = { key: undefined };
+  const build = (node: Element, depth: number, key: string): ReactNode | null => {
+    const tag = node.tagName;
+    if (!SVG_TAGS.has(tag) || depth > 12) return null;
+
+    const props: Record<string, unknown> = { key };
     for (const attr of Array.from(node.attributes)) {
+      if (attr.name === 'id') {
+        props.id = mapId(attr.value);
+        continue;
+      }
+      if (attr.name === 'href') {
+        // A <use> may only point at a fragment inside this same diagram.
+        if (tag === 'use' && /^#[A-Za-z][\w:.-]*$/.test(attr.value)) {
+          props.href = `#${mapId(attr.value.slice(1))}`;
+        }
+        continue;
+      }
       const jsx = toJsxAttr(attr.name);
-      if (jsx) props[jsx] = attr.value;
+      if (!jsx) continue;
+      props[jsx] = mapRefs(attr.value);
     }
 
     const children: ReactNode[] = [];
+    let ci = 0;
     for (const child of Array.from(node.childNodes)) {
       if (child.nodeType === Node.TEXT_NODE) {
         const t = child.textContent ?? '';
         if (t.trim()) children.push(t);
       } else if (child.nodeType === Node.ELEMENT_NODE) {
-        const el = build(child as Element, depth + 1);
+        const el = build(child as Element, depth + 1, `${key}-${ci++}`);
         if (el !== null) children.push(el);
       }
     }
@@ -109,8 +201,7 @@ export function svgToReact(svgText: string): ReactNode | null {
     return createElement(tag, props, children.length > 0 ? children : undefined);
   };
 
-  const rendered = build(root, 0);
-  return rendered;
+  return build(root, 0, 'svg');
 }
 
 /* ── LaTeX → unicode ──────────────────────────────────────────────────────── */
@@ -501,12 +592,31 @@ export function renderAiText(input: string): ReactNode {
       const body: string[] = [];
       i++;
       while (i < lines.length && !/^```/.test(lines[i].trim())) body.push(lines[i++]);
-      i++; // closing fence
+      // Step over the closing fence. When the reply was cut short there is
+      // none, and the loop simply ends — the body still renders.
+      if (i < lines.length) i++;
+
+      const source = body.join('\n');
+
+      // A plain-text line diagram — the cheap tier. Box-drawing characters
+      // keep their spacing, so it needs a monospace block of its own.
+      if (lang === 'diagram' || lang === 'ascii') {
+        blocks.push(
+          <figure key={`ld${key++}`} className="sw-ai-diagram-text">
+            <pre><code>{source}</code></pre>
+          </figure>,
+        );
+        continue;
+      }
 
       // An SVG diagram from the tutor — sanitize and render it inline as a
-      // figure instead of showing the raw source as a code block.
-      if (lang === 'svg') {
-        const svgNode = svgToReact(body.join('\n'));
+      // figure instead of showing the raw source as a code block. The fence
+      // is tagged ```svg, but the model sometimes writes ```svg diagram or
+      // forgets the tag entirely, so fall back to sniffing the body.
+      const looksLikeSvg =
+        lang === 'svg' || lang.startsWith('svg ') || /<svg[\s>]/i.test(source);
+      if (looksLikeSvg) {
+        const svgNode = svgToReact(source);
         if (svgNode !== null) {
           blocks.push(
             <figure key={`d${key++}`} className="sw-ai-diagram">
@@ -519,7 +629,7 @@ export function renderAiText(input: string): ReactNode {
 
       blocks.push(
         <pre key={`c${key++}`} data-lang={lang || undefined}>
-          <code>{body.join('\n')}</code>
+          <code>{source}</code>
         </pre>,
       );
       continue;

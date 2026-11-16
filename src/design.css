@@ -4505,6 +4505,48 @@ select.sw-focus-select option {
   max-height: 480px;
 }
 
+/* Plain-text line diagrams — the cheap tier the tutor falls back to for
+   simple flows. Box-drawing characters only line up in a monospace font
+   with its whitespace preserved.
+
+   The font stack is deliberately NOT the brand mono font, and it names real
+   fonts rather than `ui-monospace`: JetBrains Mono has no arrow glyphs
+   (U+2192, U+25BC), and `ui-monospace` has no box-drawing glyphs. Either
+   way the odd characters fall back to a second font with a different
+   advance width and the diagram falls apart. The fonts below each cover
+   letters AND box-drawing AND arrows at one fixed width. */
+.sw-ai-diagram-text {
+  margin: 0 0 1rem;
+  padding: 0;
+  border: 1px solid var(--sw-line-soft, var(--border));
+  border-radius: var(--sw-r, 12px);
+  background: var(--sw-panel-2, var(--surface-2));
+  overflow-x: auto;
+}
+.sw-ai-diagram-text pre {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  border: none;
+  border-radius: 0;
+  background: none;
+  overflow: visible;
+  font-family: Consolas, 'Cascadia Mono', 'DejaVu Sans Mono', Menlo, 'Liberation Mono', monospace;
+  font-size: 0.82rem;
+  /* Box-drawing glyphs are drawn for a tight line box — with a looser
+     line-height the vertical strokes stop short and the boxes come apart. */
+  line-height: 1.15;
+  white-space: pre;
+  color: var(--sw-text, var(--text));
+}
+.sw-ai-diagram-text pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  font-family: inherit;   /* the brand mono font has no box-drawing glyphs */
+  color: inherit;
+}
+
 /* "Show me a diagram" / "I don't understand a part" row */
 .sw-tutor-followups {
   display: flex;

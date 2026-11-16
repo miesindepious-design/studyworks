@@ -547,11 +547,13 @@ aiRouter.post('/tutor', requireAI, zValidator('json', TutorRequestBody), async c
 - Use ordinary words for symbols: "less than or equal to", "approximately", "therefore".
 - Never repeat a heading marker, never output raw table pipe rows without a header row.
 
-Diagram rules — the student learns better with pictures:
-- When a picture would genuinely help understanding (processes, cycles, structures, anatomy, systems, geometry, flows, timelines, comparisons), include ONE diagram as a fenced block that starts with \`\`\`svg.
-- Inside the block write ONE complete, self-contained <svg>...</svg> element. Requirements: viewBox="0 0 680 H" (pick H freely), font-size 13-16 for labels, dark readable text (#1a1a1a on light fills or #f5f5f5 on dark fills), labelled boxes/circles/arrows, short labels (a few words each).
+Diagram rules — a picture costs far more tokens than a sentence, so use the cheapest form that works:
+- Most replies need NO diagram. Never draw one for a definition, a summary, a list of facts, or a comparison (use a markdown table for comparisons).
+- Simple flow, sequence or cycle (5 or fewer steps, no branching, nothing to label): draw a plain-text diagram in a \`\`\`diagram block using box-drawing characters (┌ ─ ┐ │ └ ┘ ├ ┤ and → ↓), one line per box, 3-10 lines in total. This is cheap and students read it fine.
+- Use an SVG (a \`\`\`svg block) ONLY when the concept is genuinely spatial: geometry, anatomy, a labelled structure, a branching process, or a timeline with scale. Keep it minimal — one <svg> element with viewBox="0 0 680 H", font-size 13-16 for labels, at most about 12 shapes and 8 short labels, flat fills, no gradients, shadows or decoration.
 - Absolutely no <script>, no <foreignObject>, no <image>, no external references, no event handler attributes. Everything must live inside the SVG itself.
-- Give the diagram a one-line caption immediately after the block, then continue the normal explanation.`;
+- At most ONE diagram per reply, and never redraw a diagram you already drew — refer back to it instead.
+- Follow the diagram with one line on how to read it, then continue the normal explanation.`;
 
   // ── Uploaded document context ───────────────────────────────────────────────
   // When the student attached files, the lesson must be grounded in them
@@ -580,16 +582,21 @@ Diagram rules — the student learns better with pictures:
   const messages = [
     {
       role: 'system',
-      content: `${SYSTEM_BASE}\nYou are an expert AI tutor. ${modeInstructions[mode]}${studentContext}\n${FORMAT_RULES}${wantsKeyPoints ? `\n${KEY_POINTS_INSTRUCTION}` : ''}${documentContext}`,
+      content: `${SYSTEM_BASE}\nYou are an expert AI tutor. ${modeInstructions[mode]}${studentContext}\n${FORMAT_RULES}${wantsKeyPoints ? `\n${KEY_POINTS_INSTRUCTION}` : ''}`,
     },
     ...history,
     {
       role: 'user',
-      content: lastAnswer
-        ? `Student answer: ${lastAnswer}\nContinue the tutoring session appropriately.`
-        : instruction
-          ? `Topic: ${topic}\n\n${instruction}`
-          : `Topic: ${topic}`,
+      // The student's own ask rides along with the topic. `instruction` is
+      // how "show me a diagram" and "explain this part" reach the model, so
+      // it must never be dropped — not even when a quiz answer is present.
+      // The uploaded material rides here too: it is source material to
+      // ground the answer on, not an instruction.
+      content: [
+        lastAnswer ? `Student answer: ${lastAnswer}` : `Topic: ${topic}`,
+        instruction ?? '',
+        documentContext.trim(),
+      ].filter(Boolean).join('\n\n'),
     },
   ];
 
@@ -600,7 +607,10 @@ Diagram rules — the student learns better with pictures:
       apiKey: cfg.apiKey,
       messages,
       temperature: mode === 'quiz' ? 0.4 : 0.7,
-      maxTokens: mode === 'quiz' ? 1200 : 4000,
+      // A lesson is long: exam-ready notes *plus* a labelled SVG diagram.
+      // At 4000 tokens the reply was sometimes cut off mid-diagram, which
+      // left the student staring at raw SVG markup instead of a picture.
+      maxTokens: mode === 'quiz' ? 1200 : 8000,
       // A lesson is the one place where thinking pays off; a quiz just
       // needs recall.
       thinking: mode === 'quiz' ? 'low' : 'medium',

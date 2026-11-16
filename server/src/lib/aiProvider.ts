@@ -74,15 +74,26 @@ export async function callProvider(opts: {
       role:  m.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: m.content }],
     }));
-    if (systemMsg && contents.length > 0 && contents[0].role === 'user') {
-      contents[0].parts[0].text = `${systemMsg.content}\n\n${contents[0].parts[0].text}`;
+
+    // The system prompt has to reach the model on EVERY call. It used to be
+    // folded into the first *user* turn, which silently threw it away
+    // whenever the conversation did not start with one — and the tutor
+    // sends the previous answers as history, so every follow-up (including
+    // "show me a diagram") lost the diagram rules, the mode instructions,
+    // the student's level and the key-points contract.
+    //
+    // Gemini has a native field for this, so use it.
+    const request: Record<string, unknown> = { contents };
+    if (systemMsg?.content?.trim()) {
+      request.systemInstruction = { parts: [{ text: systemMsg.content }] };
     }
+
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${opts.model}:generateContent?key=${opts.apiKey}`;
     const res = await fetch(url, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents,
+        ...request,
         generationConfig: buildGenerationConfig({
           model:       opts.model,
           temperature: opts.temperature,
@@ -97,7 +108,15 @@ export async function callProvider(opts: {
       throw new Error(`Gemini ${res.status}: ${(err as any)?.error?.message ?? res.statusText}`);
     }
     const data = await res.json();
-    return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+    // A reply can arrive as several parts (thinking + text, or a text block
+    // split across parts). Taking only the first one truncates the answer —
+    // and a truncated answer can cut an SVG diagram in half.
+    const parts: any[] = data?.candidates?.[0]?.content?.parts ?? [];
+    const text = parts
+      .filter(p => !p?.thought && typeof p?.text === 'string')
+      .map(p => p.text)
+      .join('');
+    return text;
   }
 
   if (opts.provider === 'openai') {
