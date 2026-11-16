@@ -43,6 +43,8 @@ interface ChatTurn {
   analysis?: DocumentAnalysis;
   /** True when the turn came from an uploaded file rather than a topic. */
   fromDocument?: boolean;
+  /** Set when this turn answers a "I don't understand this part" ask. */
+  followUp?: { quote?: string; note?: string };
 }
 
 interface TopicGroup {
@@ -139,6 +141,29 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
   const [isTyping, setIsTyping] = useState(false);
   const [saving, setSaving] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  // "I don't understand a part" panel — one open at a time.
+  const [confusedFor, setConfusedFor] = useState<string | null>(null);
+  const [confusedQuote, setConfusedQuote] = useState('');
+  const [confusedNote, setConfusedNote] = useState('');
+  // The student's latest highlight inside a tutor answer. Captured on
+  // `selectionchange` because clicking the button itself collapses the DOM
+  // selection before the click handler can read it.
+  const lastSelRef = useRef<{ turnId: string; text: string } | null>(null);
+
+  useEffect(() => {
+    const onSelChange = () => {
+      const sel = window.getSelection();
+      const text = sel?.toString().trim() ?? '';
+      if (!text || text.length < 2) return; // keep the last real highlight
+      let node: Node | null = sel!.anchorNode;
+      if (node && node.nodeType !== Node.ELEMENT_NODE) node = node.parentElement;
+      const host = (node as Element | null)?.closest?.('[data-turn-id]');
+      const turnId = host?.getAttribute('data-turn-id');
+      if (turnId) lastSelRef.current = { turnId, text: text.slice(0, 600) };
+    };
+    document.addEventListener('selectionchange', onSelChange);
+    return () => document.removeEventListener('selectionchange', onSelChange);
+  }, []);
   // Voice mode: mic in (speech recognition) + spoken answers (speech synthesis)
   const [voiceMode, setVoiceMode] = useState(false);
   const [listening, setListening] = useState(false);
@@ -424,7 +449,11 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
     [docAnalysis],
   );
 
-  const send = useCallback(async (mode: TutorMode, payloadTopic?: string) => {
+  const send = useCallback(async (
+    mode: TutorMode,
+    payloadTopic?: string,
+    opts?: { instruction?: string; followUp?: { quote?: string; note?: string } },
+  ) => {
     const effectiveTopic = payloadTopic || topic.trim();
     if (!effectiveTopic) { addToast('Enter a topic first.', 'info'); return; }
     if (!unlocked) {
@@ -442,6 +471,7 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
         educationLevel: level,
         history: history.map(h => ({ role: 'assistant', content: h.response })),
         lastAnswer: mode === 'quiz' ? answer || undefined : undefined,
+        instruction: opts?.instruction ?? undefined,
         documents: tutorDocs,
         documentBrief,
       });
@@ -468,6 +498,7 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
         topic: effectiveTopic,
         question: mode === 'quiz' ? answer || undefined : undefined,
         response: res.response,
+        followUp: opts?.followUp,
         keyPoints: res.keyPoints,
         at: new Date(),
         difficulty: newDifficulty,
@@ -838,18 +869,109 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
           <span className="text-xs text-muted">{formatTime(turn.at)}</span>
         </div>
 
+        {/* What the student asked to have explained, when this turn answers
+            an "I don't understand this part" follow-up. */}
+        {turn.followUp && (turn.followUp.quote || turn.followUp.note) && (
+          <div className="sw-tutor-asked">
+            <span className="sw-tutor-asked-label">🤔 You asked about:</span>
+            {turn.followUp.quote && <blockquote>“{turn.followUp.quote}”</blockquote>}
+            {turn.followUp.note && <p>{turn.followUp.note}</p>}
+          </div>
+        )}
+
         {turn.analysis ? (
           <DocumentBriefing analysis={turn.analysis} />
         ) : (
           <>
             {/* Formatted, symbol-free answer */}
-            {renderAiText(turn.response)}
+            <div data-turn-id={turn.id}>
+              {renderAiText(turn.response)}
+            </div>
             {/* The important points for this topic — same panel the document
                 briefing uses, so revision looks consistent everywhere. */}
             {turn.keyPoints && turn.keyPoints.length > 0 && (
               <KeyPointsPanel points={turn.keyPoints} compact />
             )}
           </>
+        )}
+
+        {/* Follow-up interactions for explanation turns */}
+        {turn.mode !== 'quiz' && (
+          <div className="sw-tutor-followups">
+            <button
+              className="btn btn-secondary btn-sm"
+              disabled={loading}
+              onClick={() => send('lesson', turn.topic, {
+                instruction: 'The student wants a picture to help understand this topic. Produce ONE labelled SVG diagram (in a ```svg block) of the single most important concept from the lesson so far, followed by a one-line caption and two or three sentences on how to read the diagram.',
+              })}
+              title="Ask the tutor to draw a labelled diagram of this topic"
+            >
+              🖼️ Show me a diagram
+            </button>
+            <button
+              className="btn btn-secondary btn-sm"
+              disabled={loading}
+              onClick={() => {
+                // Use the highlight captured on selectionchange — reading
+                // window.getSelection() here is too late, the click already
+                // collapsed it.
+                const captured = lastSelRef.current?.turnId === turn.id
+                  ? lastSelRef.current.text
+                  : '';
+                setConfusedQuote(captured);
+                setConfusedNote('');
+                setConfusedFor(confusedFor === turn.id ? null : turn.id);
+              }}
+              title="Point at the part you don't understand and get a focused explanation"
+            >
+              🤔 I don't understand a part
+            </button>
+          </div>
+        )}
+
+        {confusedFor === turn.id && (
+          <div className="sw-confused-panel">
+            <p className="text-xs text-muted" style={{ margin: 0 }}>
+              Tip: highlight the exact part in the explanation above before opening this,
+              or just describe what's confusing you.
+            </p>
+            <textarea
+              className="textarea"
+              rows={2}
+              placeholder="The part you're stuck on (highlighted text appears here)…"
+              value={confusedQuote}
+              onChange={e => setConfusedQuote(e.target.value)}
+            />
+            <textarea
+              className="textarea"
+              rows={2}
+              placeholder="Anything else the tutor should know (optional)…"
+              value={confusedNote}
+              onChange={e => setConfusedNote(e.target.value)}
+            />
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setConfusedFor(null)}>Cancel</button>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={loading || (!confusedQuote.trim() && !confusedNote.trim())}
+                onClick={() => {
+                  const quote = confusedQuote.trim();
+                  const note = confusedNote.trim();
+                  setConfusedFor(null);
+                  send('lesson', turn.topic, {
+                    instruction: [
+                      'The student does not understand a specific part of your previous explanation in this conversation. Re-explain ONLY that part, slowly and step by step, at the same level. Start by restating the part in your own words, then break it down. Do not re-teach the whole topic.',
+                      quote ? `The part they are stuck on (quoted from your explanation): "${quote}"` : '',
+                      note ? `Extra context from the student: "${note}"` : '',
+                    ].filter(Boolean).join('\n'),
+                    followUp: { quote: quote || undefined, note: note || undefined },
+                  });
+                }}
+              >
+                🎯 Explain this part
+              </button>
+            </div>
+          </div>
         )}
 
         {turn.mode === 'quiz' && (

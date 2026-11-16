@@ -11,7 +11,7 @@ import { describe, it, expect } from 'vitest';
 import { renderToString } from 'react-dom/server';
 import { createElement } from 'react';
 
-import { normalizeMath, toPlainText, renderAiText } from './aiText';
+import { normalizeMath, toPlainText, renderAiText, svgToReact } from './aiText';
 
 const html = (md: string) => renderToString(createElement('div', null, renderAiText(md)));
 
@@ -142,5 +142,50 @@ describe('renderAiText', () => {
   it('returns nothing for empty input', () => {
     expect(renderAiText('')).toBeNull();
     expect(renderAiText('   ')).toBeNull();
+  });
+});
+
+describe('svgToReact — tutor diagrams', () => {
+  const SIMPLE = '<svg viewBox="0 0 680 200"><rect x="10" y="10" width="120" height="40" fill="#eee" stroke="#333"/><text x="20" y="35" font-size="14" fill="#1a1a1a">Mitochondria</text></svg>';
+
+  it('renders a clean diagram as an svg element', () => {
+    const node = svgToReact(SIMPLE);
+    expect(node).not.toBeNull();
+    const out = renderToString(createElement('div', null, node));
+    expect(out).toContain('<svg');
+    expect(out).toContain('Mitochondria');
+  });
+
+  it('drops scripts, event handlers and external references', () => {
+    const hostile = '<svg viewBox="0 0 100 50">'
+      + '<script>alert(1)</script>'
+      + '<rect x="0" y="0" width="10" height="10" onclick="alert(1)"/>'
+      + '<circle cx="5" cy="5" r="4" href="https://evil.example/x"/>'
+      + '<image xlink:href="https://evil.example/i.png"/>'
+      + '<foreignObject><body>injected</body></foreignObject>'
+      + '</svg>';
+    const node = svgToReact(hostile);
+    const out = node === null ? '' : renderToString(createElement('div', null, node));
+    expect(out).not.toContain('script');
+    expect(out).not.toContain('alert');
+    expect(out).not.toContain('evil.example');
+    expect(out).not.toContain('injected');
+    expect(out).not.toContain('foreignObject');
+  });
+
+  it('keeps valid attributes and strips unknown ones', () => {
+    const node = svgToReact('<svg viewBox="0 0 10 10"><path d="M0 0 L10 10" stroke-width="2" class="thing" data-x="1" fill="red"/></svg>');
+    const out = renderToString(createElement('div', null, node));
+    expect(out).toContain('stroke-width="2"');
+    expect(out).toContain('class="thing"');
+    expect(out).toContain('fill="red"');
+    expect(out).not.toContain('data-x');
+  });
+
+  it('renders closed SVG even when trailing junk follows it', () => {
+    // The renderer extracts the fenced body; the parser keeps whatever is
+    // well-formed inside the root element.
+    const node = svgToReact('<svg viewBox="0 0 10 10"><rect width="5" height="5"/></svg>');
+    expect(node).not.toBeNull();
   });
 });

@@ -449,6 +449,9 @@ const TutorRequestBody = z.object({
     content: z.string(),
   })).default([]),
   lastAnswer: z.string().optional().nullable(),
+  // A free-text instruction that rides along with the topic — powers the
+  // "show me a diagram" and "I don't understand this part" interactions.
+  instruction: z.string().max(4000).optional().nullable(),
   // Documents the student uploaded for this session. The text was extracted
   // in the browser (PDF/DOCX/PPTX/OCR); the server only proxies it.
   documents: z.array(z.object({
@@ -497,7 +500,7 @@ ${passage.slice(0, 12000)}`,
 
 aiRouter.post('/tutor', requireAI, zValidator('json', TutorRequestBody), async c => {
   const user = c.get('user');
-  const { topic, mode, educationLevel, history, lastAnswer, documents, documentBrief } = c.req.valid('json');
+  const { topic, mode, educationLevel, history, lastAnswer, documents, documentBrief, instruction } = c.req.valid('json');
 
   let cfg;
   try { cfg = await loadAIConfig(user.id); }
@@ -542,7 +545,13 @@ aiRouter.post('/tutor', requireAI, zValidator('json', TutorRequestBody), async c
 - Never use LaTeX or LaTeX delimiters. No "$", no "\\(", no "\\frac", no "\\sum", no "\\alpha".
 - Write formulas as plain readable text: "E = mc^2", "x squared", "a/b", "sqrt(x)", "sum of n = 1 to 10".
 - Use ordinary words for symbols: "less than or equal to", "approximately", "therefore".
-- Never repeat a heading marker, never output raw table pipe rows without a header row.`;
+- Never repeat a heading marker, never output raw table pipe rows without a header row.
+
+Diagram rules — the student learns better with pictures:
+- When a picture would genuinely help understanding (processes, cycles, structures, anatomy, systems, geometry, flows, timelines, comparisons), include ONE diagram as a fenced block that starts with \`\`\`svg.
+- Inside the block write ONE complete, self-contained <svg>...</svg> element. Requirements: viewBox="0 0 680 H" (pick H freely), font-size 13-16 for labels, dark readable text (#1a1a1a on light fills or #f5f5f5 on dark fills), labelled boxes/circles/arrows, short labels (a few words each).
+- Absolutely no <script>, no <foreignObject>, no <image>, no external references, no event handler attributes. Everything must live inside the SVG itself.
+- Give the diagram a one-line caption immediately after the block, then continue the normal explanation.`;
 
   // ── Uploaded document context ───────────────────────────────────────────────
   // When the student attached files, the lesson must be grounded in them
@@ -574,7 +583,14 @@ aiRouter.post('/tutor', requireAI, zValidator('json', TutorRequestBody), async c
       content: `${SYSTEM_BASE}\nYou are an expert AI tutor. ${modeInstructions[mode]}${studentContext}\n${FORMAT_RULES}${wantsKeyPoints ? `\n${KEY_POINTS_INSTRUCTION}` : ''}${documentContext}`,
     },
     ...history,
-    { role: 'user', content: lastAnswer ? `Student answer: ${lastAnswer}\nContinue the tutoring session appropriately.` : `Topic: ${topic}` },
+    {
+      role: 'user',
+      content: lastAnswer
+        ? `Student answer: ${lastAnswer}\nContinue the tutoring session appropriately.`
+        : instruction
+          ? `Topic: ${topic}\n\n${instruction}`
+          : `Topic: ${topic}`,
+    },
   ];
 
   try {

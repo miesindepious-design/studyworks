@@ -4484,3 +4484,71 @@ select.sw-focus-select option {
 }
 .sw-profile-field input:focus { border-color: var(--sw-accent, var(--accent)); }
 .sw-profile-modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+
+/* ── 19. Tutor diagrams + follow-up interactions ───────────────────────────── */
+
+/* Model-drawn SVG diagrams rendered inline in tutor answers */
+.sw-ai-diagram {
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  background: #ffffff;
+  border: 1px solid var(--sw-line-soft, var(--border));
+  border-radius: var(--sw-r-md, 12px);
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+}
+.sw-ai-diagram svg {
+  width: 100%;
+  max-width: 680px;
+  height: auto;
+  max-height: 480px;
+}
+
+/* "Show me a diagram" / "I don't understand a part" row */
+.sw-tutor-followups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px dashed var(--sw-line-soft, var(--border));
+}
+
+/* Panel where the student quotes the part they're stuck on */
+.sw-confused-panel {
+  margin-top: 0.6rem;
+  padding: 0.75rem;
+  background: var(--sw-panel-2, var(--surface-2));
+  border: 1px solid var(--sw-line-soft, var(--border));
+  border-radius: var(--sw-r-md, 12px);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.sw-confused-panel .textarea { font-size: 0.875rem; }
+
+/* The "you asked about" recap on follow-up answers */
+.sw-tutor-asked {
+  margin: 0 0 0.6rem;
+  padding: 0.55rem 0.75rem;
+  background: var(--sw-panel-2, var(--surface-2));
+  border-left: 3px solid var(--sw-accent, var(--accent));
+  border-radius: var(--sw-r-sm, 8px);
+  font-size: 0.8125rem;
+}
+.sw-tutor-asked-label {
+  display: block;
+  font-weight: 700;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--sw-text-2, var(--text-2));
+  margin-bottom: 0.25rem;
+}
+.sw-tutor-asked blockquote {
+  margin: 0.25rem 0;
+  font-style: italic;
+  color: var(--sw-text, var(--text));
+}
+.sw-tutor-asked p { margin: 0.25rem 0 0; color: var(--sw-text-2, var(--text-2)); }

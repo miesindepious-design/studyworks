@@ -17,7 +17,101 @@
  * so model output can never inject markup into the page.
  */
 
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, createElement, type ReactNode } from 'react';
+
+/* ── Diagrams ─────────────────────────────────────────────────────────────── */
+
+/**
+ * Tags the tutor's SVG diagrams may use. Anything else — <script>,
+ * <foreignObject>, <image>, <use>, <a>… — is dropped wholesale, so a
+ * model can never smuggle markup into the page.
+ */
+const SVG_TAGS = new Set([
+  'svg', 'g', 'defs', 'marker', 'clipPath',
+  'path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon',
+  'text', 'tspan', 'title', 'desc',
+  'linearGradient', 'radialGradient', 'stop', 'pattern',
+]);
+
+/**
+ * Attributes those tags may carry, as JSX names (camelCase). Hyphenated
+ * SVG names are converted; anything outside this list is stripped.
+ */
+const SVG_ATTRS = new Set([
+  'viewBox', 'xmlns', 'width', 'height', 'preserveAspectRatio', 'fill', 'stroke',
+  'strokeWidth', 'strokeLinecap', 'strokeLinejoin', 'strokeDasharray',
+  'fillOpacity', 'strokeOpacity', 'opacity', 'd', 'x', 'y', 'x1', 'x2', 'y1', 'y2',
+  'cx', 'cy', 'r', 'rx', 'ry', 'points', 'transform', 'dx', 'dy', 'textAnchor',
+  'dominantBaseline', 'fontFamily', 'fontSize', 'fontWeight', 'fontStyle',
+  'textDecoration', 'textLength', 'lengthAdjust', 'letterSpacing', 'wordSpacing',
+  'gradientUnits', 'gradientTransform', 'spreadMethod', 'offset', 'stopColor',
+  'stopOpacity', 'patternUnits', 'patternContentUnits', 'patternTransform',
+  'markerWidth', 'markerHeight', 'refX', 'refY', 'orient', 'markerUnits',
+  'markerEnd', 'markerStart', 'markerMid', 'clipPath', 'clipRule', 'clipPathUnits',
+  'overflow', 'color', 'paintOrder', 'shapeRendering', 'strokeMiterlimit',
+  'vectorEffect', 'display', 'rotate', 'startOffset', 'side', 'spacing',
+]);
+
+/** Hyphenated SVG attribute → JSX name ('stroke-width' → 'strokeWidth'). */
+function toJsxAttr(name: string): string | null {
+  if (name === 'class') return 'className';
+  if (name === 'style') return null;             // inline styles are not worth the risk
+  if (name.startsWith('on')) return null;        // event handlers, always
+  if (name.includes('href')) return null;        // external / xlink references
+  const camel = name.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+  return SVG_ATTRS.has(camel) ? camel : null;
+}
+
+/**
+ * Parse a model-produced SVG string and rebuild it as a React element tree,
+ * keeping only whitelisted tags and attributes. Unsafe nodes (and their
+ * children) disappear entirely.
+ */
+export function svgToReact(svgText: string): ReactNode | null {
+  let doc: Document;
+  try {
+    doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
+  } catch {
+    return null;
+  }
+  const root = doc.documentElement;
+  // XML parse errors surface as a <parsererror> element (Chrome/Firefox).
+  if (!root || root.getElementsByTagName('parsererror').length > 0
+      || (root.tagName.toLowerCase() === 'parsererror')) {
+    return null;
+  }
+
+  const build = (node: Element, depth: number): ReactNode | null => {
+    const tag = node.tagName;
+    // React needs the exact case; lowercase output from the parser is mapped.
+    const proper = /^[a-z]+$/.test(tag)
+      ? (SVG_TAGS.has(tag) ? tag : null)
+      : (SVG_TAGS.has(tag) ? tag : null);
+    if (!proper || !SVG_TAGS.has(tag) || depth > 12) return null;
+
+    const props: Record<string, unknown> = { key: undefined };
+    for (const attr of Array.from(node.attributes)) {
+      const jsx = toJsxAttr(attr.name);
+      if (jsx) props[jsx] = attr.value;
+    }
+
+    const children: ReactNode[] = [];
+    for (const child of Array.from(node.childNodes)) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        const t = child.textContent ?? '';
+        if (t.trim()) children.push(t);
+      } else if (child.nodeType === Node.ELEMENT_NODE) {
+        const el = build(child as Element, depth + 1);
+        if (el !== null) children.push(el);
+      }
+    }
+
+    return createElement(tag, props, children.length > 0 ? children : undefined);
+  };
+
+  const rendered = build(root, 0);
+  return rendered;
+}
 
 /* ── LaTeX → unicode ──────────────────────────────────────────────────────── */
 
@@ -403,11 +497,26 @@ export function renderAiText(input: string): ReactNode {
     // Fenced code
     if (/^```/.test(trimmed)) {
       flushPara();
-      const lang = trimmed.slice(3).trim();
+      const lang = trimmed.slice(3).trim().toLowerCase();
       const body: string[] = [];
       i++;
       while (i < lines.length && !/^```/.test(lines[i].trim())) body.push(lines[i++]);
       i++; // closing fence
+
+      // An SVG diagram from the tutor — sanitize and render it inline as a
+      // figure instead of showing the raw source as a code block.
+      if (lang === 'svg') {
+        const svgNode = svgToReact(body.join('\n'));
+        if (svgNode !== null) {
+          blocks.push(
+            <figure key={`d${key++}`} className="sw-ai-diagram">
+              {svgNode}
+            </figure>,
+          );
+          continue;
+        }
+      }
+
       blocks.push(
         <pre key={`c${key++}`} data-lang={lang || undefined}>
           <code>{body.join('\n')}</code>

@@ -76,17 +76,80 @@ $$6CO_2 + 6H_2O \\rightarrow C_6H_{12}O_6 + 6O_2$$
 
 So the answer is simple: light in, sugar out.`;
 
+const PHOTOSYNTHESIS_DIAGRAM = `<svg viewBox="0 0 680 300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="pv-arrow" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#555"/>
+    </marker>
+  </defs>
+  <rect x="240" y="110" width="200" height="80" rx="12" fill="#dcfce7" stroke="#15803d" stroke-width="2"/>
+  <text x="270" y="145" font-size="15" font-weight="bold" fill="#14532d">Chloroplast</text>
+  <text x="268" y="170" font-size="12" fill="#166534">in the leaf cell</text>
+  <rect x="20" y="40" width="150" height="46" rx="10" fill="#fef9c3" stroke="#ca8a04" stroke-width="2"/>
+  <text x="42" y="68" font-size="14" fill="#422006">Sunlight</text>
+  <rect x="20" y="210" width="150" height="46" rx="10" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+  <text x="30" y="230" font-size="13" fill="#1e3a8a">Water (H2O)</text>
+  <text x="34" y="248" font-size="11" fill="#1e40af">from the roots</text>
+  <rect x="510" y="40" width="150" height="46" rx="10" fill="#fee2e2" stroke="#dc2626" stroke-width="2"/>
+  <text x="528" y="68" font-size="14" fill="#7f1d1d">Oxygen (O2)</text>
+  <rect x="510" y="210" width="150" height="46" rx="10" fill="#f3e8ff" stroke="#9333ea" stroke-width="2"/>
+  <text x="524" y="230" font-size="13" fill="#581c87">Glucose</text>
+  <text x="536" y="248" font-size="11" fill="#6b21a8">stored energy</text>
+  <path d="M170 63 L 240 120" stroke="#555" stroke-width="2" marker-end="url(#pv-arrow)"/>
+  <path d="M170 233 L 240 180" stroke="#555" stroke-width="2" marker-end="url(#pv-arrow)"/>
+  <path d="M440 120 L 510 63" stroke="#555" stroke-width="2" marker-end="url(#pv-arrow)"/>
+  <path d="M440 180 L 510 233" stroke="#555" stroke-width="2" marker-end="url(#pv-arrow)"/>
+  <text x="185" y="82" font-size="11" fill="#555">light energy</text>
+  <text x="180" y="218" font-size="11" fill="#555">absorbed</text>
+  <text x="452" y="82" font-size="11" fill="#555">by-product</text>
+  <text x="448" y="218" font-size="11" fill="#555">sugar made</text>
+  <text x="230" y="290" font-size="12" fill="#555">6CO2 + 6H2O -> C6H12O6 + 6O2</text>
+</svg>`;
+
+const DIAGRAM_TUTOR_ANSWER = `Here is the diagram of photosynthesis you asked for.
+
+\`\`\`svg
+${PHOTOSYNTHESIS_DIAGRAM}
+\`\`\`
+
+**How to read it:** sunlight and water arrive at the chloroplast (green box) — the factory where the light reactions run. Oxygen leaves as a by-product, and glucose is the sugar that stores the captured energy.
+
+The two inputs on the left, two outputs on the right — that's the whole reaction in one picture.`;
+
+const PART_EXPLANATION = `Let's slow down on just that step.
+
+**Restating the part:** the light reactions split water and use the released electrons to make ATP and NADPH.
+
+**Step by step:**
+1. Chlorophyll absorbs a photon — an electron gets excited and leaves the molecule.
+2. That electron travels down the electron transport chain, losing energy at each step.
+3. The lost energy pumps protons (H+) across the thylakoid membrane, building a gradient.
+4. The protons flow back through ATP synthase — like water through a turbine — producing ATP.
+5. Water fills the electron gap: 2H2O -> 4H+ + 4e- + O2. That's where the oxygen comes from.
+
+**Why it matters:** every ATP your cells spend was charged by this process in the chloroplast.`;
+
 if (typeof window !== 'undefined') {
   const realFetch = window.fetch.bind(window);
   window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     if (url.includes('/api/ai/tutor')) {
+      // The instruction rider tells the preview which answer to serve:
+      // diagram ask, explain-a-part ask, or the default messy lesson.
+      let body: any = null;
+      try { body = init?.body ? JSON.parse(String(init.body)) : null; } catch { body = null; }
+      const instruction: string | undefined = body?.instruction;
+      const response = instruction?.includes('SVG diagram')
+        ? DIAGRAM_TUTOR_ANSWER
+        : instruction?.includes('does not understand a specific part')
+          ? PART_EXPLANATION
+          : MESSY_TUTOR_ANSWER;
       return Promise.resolve(new Response(
         JSON.stringify({
           topic: 'Photosynthesis',
           mode: 'lesson',
           educationLevel: null,
-          response: MESSY_TUTOR_ANSWER,
+          response,
           keyPoints: [
             { point: 'Photosynthesis converts light energy into chemical energy stored in glucose.', why: 'It is the single idea the whole chapter is built on.', importance: 'must-know' },
             { point: 'The light reactions happen in the thylakoid membrane and produce ATP and NADPH.', why: 'You must know where each stage happens for diagram questions.', importance: 'must-know' },

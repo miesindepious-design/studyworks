@@ -182,6 +182,8 @@ export interface TutorRequest {
   educationLevel?: string | null;
   history?: { role: 'system' | 'user' | 'assistant'; content: string }[];
   lastAnswer?: string | null;
+  /** Free-text rider on the topic — "draw the diagram", "explain this part". */
+  instruction?: string | null;
   /** Documents uploaded for this session (text already extracted in the browser). */
   documents?: TutorDocument[];
   /** Compact digest of the uploaded material, produced by the analyzer. */
@@ -219,6 +221,7 @@ export async function serverTutor(body: TutorRequest): Promise<TutorResponse> {
     educationLevel: body.educationLevel ?? null,
     history: body.history ?? [],
     lastAnswer: body.lastAnswer ?? null,
+    instruction: body.instruction ?? null,
     documents: body.documents ?? [],
     documentBrief: body.documentBrief ?? null,
   });
