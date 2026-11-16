@@ -155,12 +155,16 @@ if (typeof window !== 'undefined') {
     if (url.includes('/api/ai/tutor')) {
       // The instruction rider tells the preview which answer to serve:
       // diagram ask, explain-a-part ask, or the default messy lesson.
+      // Match loosely — keying off one exact phrase meant that rewording
+      // the button's instruction silently served the wrong answer.
       let body: any = null;
       try { body = init?.body ? JSON.parse(String(init.body)) : null; } catch { body = null; }
-      const instruction: string | undefined = body?.instruction;
-      const response = instruction?.includes('asked for a diagram')
+      const instruction: string = body?.instruction ?? '';
+      const isPartAsk = instruction.includes('does not understand a specific part');
+      const isDiagramAsk = !isPartAsk && /diagram/i.test(instruction);
+      const response = isDiagramAsk
         ? (DIAGRAM_KIND === 'line' ? LINE_DIAGRAM_TUTOR_ANSWER : DIAGRAM_TUTOR_ANSWER)
-        : instruction?.includes('does not understand a specific part')
+        : isPartAsk
           ? PART_EXPLANATION
           : MESSY_TUTOR_ANSWER;
       return Promise.resolve(new Response(
