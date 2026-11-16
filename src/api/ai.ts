@@ -182,6 +182,25 @@ export interface TutorRequest {
   educationLevel?: string | null;
   history?: { role: 'system' | 'user' | 'assistant'; content: string }[];
   lastAnswer?: string | null;
+  /** Documents uploaded for this session (text already extracted in the browser). */
+  documents?: TutorDocument[];
+  /** Compact digest of the uploaded material, produced by the analyzer. */
+  documentBrief?: string | null;
+}
+
+/** A file the student attached to the tutor. */
+export interface TutorDocument {
+  name: string;
+  text: string;
+}
+
+export type KeyPointImportance = 'must-know' | 'should-know' | 'good-to-know';
+
+/** One "you must know this" point, with why it matters. */
+export interface KeyPoint {
+  point: string;
+  why: string;
+  importance: KeyPointImportance;
 }
 
 export interface TutorResponse {
@@ -189,6 +208,8 @@ export interface TutorResponse {
   mode: 'lesson' | 'simpler' | 'deeper' | 'quiz';
   educationLevel: string | null;
   response: string;
+  /** The important points for this topic — rendered as a revision panel. */
+  keyPoints?: KeyPoint[];
 }
 
 export async function serverTutor(body: TutorRequest): Promise<TutorResponse> {
@@ -198,7 +219,48 @@ export async function serverTutor(body: TutorRequest): Promise<TutorResponse> {
     educationLevel: body.educationLevel ?? null,
     history: body.history ?? [],
     lastAnswer: body.lastAnswer ?? null,
+    documents: body.documents ?? [],
+    documentBrief: body.documentBrief ?? null,
   });
+  return res;
+}
+
+// ── Document analysis ────────────────────────────────────────────────────────
+
+export interface DocumentOutlineItem {
+  heading: string;
+  detail: string;
+}
+
+export interface GlossaryItem {
+  term: string;
+  meaning: string;
+}
+
+/** The briefing the tutor builds from an uploaded file. */
+export interface DocumentAnalysis {
+  title: string;
+  overview: string;
+  keyPoints: KeyPoint[];
+  outline: DocumentOutlineItem[];
+  glossary: GlossaryItem[];
+  questions: string[];
+}
+
+/**
+ * Turn uploaded files into study material: an explanation of the document,
+ * the important points the student must know, its structure, key vocabulary
+ * and likely exam questions.
+ */
+export async function serverAnalyzeDocuments(
+  documents: TutorDocument[],
+  educationLevel?: string | null,
+): Promise<DocumentAnalysis> {
+  const res = await apiPost<DocumentAnalysis & { error?: string }>('/api/ai/document/analyze', {
+    documents,
+    educationLevel: educationLevel ?? null,
+  });
+  if (res.error) throw new Error(res.error);
   return res;
 }
 

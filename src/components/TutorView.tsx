@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { serverTutor, saveUserProfile } from '../api/ai';
+import { serverTutor, serverAnalyzeDocuments, saveUserProfile } from '../api/ai';
+import type { KeyPoint, DocumentAnalysis, TutorDocument } from '../api/ai';
 import type { Note } from '../types';
 import { renderAiText, toPlainText } from '../utils/aiText';
+import { extractTextFromFile } from '../utils/extractText';
+import KeyPointsPanel from './KeyPointsPanel';
+import DocumentBriefing from './DocumentBriefing';
+import TutorDocuments, { type AttachedDoc } from './TutorDocuments';
 import {
   pickBestVoice, splitForSpeech, stripEmoji,
   SPEECH_RATES, SPEECH_SPEED_LABELS, type SpeechSpeed,
@@ -28,6 +33,12 @@ interface ChatTurn {
   response: string;
   at: Date;
   difficulty?: 'easy' | 'medium' | 'hard';
+  /** The important points the tutor pulled out of this reply. */
+  keyPoints?: KeyPoint[];
+  /** Set when this turn is the briefing built from an uploaded document. */
+  analysis?: DocumentAnalysis;
+  /** True when the turn came from an uploaded file rather than a topic. */
+  fromDocument?: boolean;
 }
 
 interface TopicGroup {
@@ -54,6 +65,26 @@ const DIFFICULTY_LABELS: Record<string, { label: string; color: string }> = {
   medium: { label: 'Medium', color: 'var(--warning)' },
   hard:   { label: 'Hard',   color: 'var(--danger)' },
 };
+
+// Upload limits — a batch of textbook chapters is plenty.
+const MAX_DOCS = 10;
+const MAX_DOC_BYTES = 40 * 1024 * 1024;
+
+/**
+ * Condense a document briefing into the context that rides along with every
+ * follow-up question. It carries the overview and the key points, so the
+ * tutor stays grounded in the file without resending the whole document.
+ */
+function buildDocumentBrief(analysis: DocumentAnalysis): string {
+  const points = analysis.keyPoints
+    .map(p => `- (${p.importance}) ${p.point}${p.why ? ` — ${p.why}` : ''}`)
+    .join('\n');
+  return [
+    `Document title: ${analysis.title}`,
+    analysis.overview ? `Overview:\n${analysis.overview.slice(0, 2500)}` : '',
+    points ? `Key points:\n${points}` : '',
+  ].filter(Boolean).join('\n\n');
+}
 
 function groupHistoryByTopic(history: ChatTurn[]): TopicGroup[] {
   const map = new Map<string, TopicGroup>();
@@ -118,6 +149,12 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
       return saved && saved in SPEECH_RATES ? saved : 'normal';
     } catch { return 'normal'; }
   });
+
+  // ── Uploaded documents ─────────────────────────────────────────────────────
+  const [docs, setDocs] = useState<AttachedDoc[]>([]);
+  const [analyzing, setAnalyzing] = useState(false);
+  // The most recent document briefing — used as context for follow-ups.
+  const [docAnalysis, setDocAnalysis] = useState<DocumentAnalysis | null>(null);
 
   const recognitionRef = useRef<any>(null);
   const voiceModeRef = useRef(false);
@@ -371,6 +408,18 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
     return () => { if (typingRef.current) clearTimeout(typingRef.current); };
   }, [loading]);
 
+  // The documents and the briefing that ride along with every question.
+  const tutorDocs = useMemo<TutorDocument[]>(
+    () => docs
+      .filter(d => d.status === 'ready' && d.text.trim().length > 0)
+      .map(d => ({ name: d.name, text: d.text })),
+    [docs],
+  );
+  const documentBrief = useMemo(
+    () => (docAnalysis ? buildDocumentBrief(docAnalysis) : null),
+    [docAnalysis],
+  );
+
   const send = useCallback(async (mode: TutorMode, payloadTopic?: string) => {
     const effectiveTopic = payloadTopic || topic.trim();
     if (!effectiveTopic) { addToast('Enter a topic first.', 'info'); return; }
@@ -389,6 +438,8 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
         educationLevel: level,
         history: history.map(h => ({ role: 'assistant', content: h.response })),
         lastAnswer: mode === 'quiz' ? answer || undefined : undefined,
+        documents: tutorDocs,
+        documentBrief,
       });
 
       // Adaptive difficulty: adjust based on quiz performance for this topic
@@ -413,6 +464,7 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
         topic: effectiveTopic,
         question: mode === 'quiz' ? answer || undefined : undefined,
         response: res.response,
+        keyPoints: res.keyPoints,
         at: new Date(),
         difficulty: newDifficulty,
       };
@@ -429,7 +481,111 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
     } finally {
       setLoading(false);
     }
-  }, [topic, unlocked, level, history, answer, addToast, setCurrentView, speakText]);
+  }, [topic, unlocked, level, history, answer, addToast, setCurrentView, speakText, tutorDocs, documentBrief]);
+
+  /** Read the dropped / browsed files locally and keep their text in memory. */
+  const handleFiles = useCallback(async (incoming: File[]) => {
+    if (!unlocked) {
+      addToast('Connect your free AI Studio key in Settings to use document analysis.', 'info');
+      setCurrentView('settings');
+      return;
+    }
+    const room = MAX_DOCS - docs.length;
+    if (room <= 0) {
+      addToast(`You can attach up to ${MAX_DOCS} files at a time.`, 'info');
+      return;
+    }
+    const files = incoming.slice(0, room);
+    const slots: AttachedDoc[] = files.map(file => ({
+      id: crypto.randomUUID(),
+      name: file.name,
+      size: file.size,
+      text: '',
+      truncated: false,
+      status: 'reading',
+    }));
+    setDocs(prev => [...prev, ...slots]);
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const slot = slots[i];
+      if (file.size > MAX_DOC_BYTES) {
+        setDocs(prev => prev.map(d => d.id === slot.id
+          ? { ...d, status: 'error', error: 'File is larger than 40 MB.' }
+          : d));
+        continue;
+      }
+      try {
+        const res = await extractTextFromFile(file);
+        if (!res.text.trim()) throw new Error('No readable text in this file.');
+        setDocs(prev => prev.map(d => d.id === slot.id
+          ? { ...d, text: res.text, pages: res.pageCount, truncated: res.truncated, kind: res.kind, status: 'ready' }
+          : d));
+      } catch (err: any) {
+        setDocs(prev => prev.map(d => d.id === slot.id
+          ? { ...d, status: 'error', error: err?.message || 'Could not read this file.' }
+          : d));
+      }
+    }
+  }, [unlocked, docs.length, addToast, setCurrentView]);
+
+  const removeDoc = useCallback((id: string) => {
+    setDocs(prev => {
+      const next = prev.filter(d => d.id !== id);
+      // Nothing left to ground the lesson in — drop the briefing context so
+      // follow-up questions go back to general knowledge.
+      if (!next.some(d => d.status === 'ready' && d.text.trim().length > 0)) {
+        setDocAnalysis(null);
+      }
+      return next;
+    });
+  }, []);
+
+  /** Ask the tutor to read the attached files and pull out what matters. */
+  const handleAnalyze = useCallback(async () => {
+    const ready = docs.filter(d => d.status === 'ready' && d.text.trim().length > 0);
+    if (ready.length === 0) return;
+    if (!unlocked) {
+      addToast('Connect your free AI Studio key in Settings to use document analysis.', 'info');
+      setCurrentView('settings');
+      return;
+    }
+    setAnalyzing(true);
+    setError(null);
+    try {
+      const analysis = await serverAnalyzeDocuments(
+        ready.map(d => ({ name: d.name, text: d.text })),
+        level,
+      );
+      const topic = (analysis.title || ready[0].name).trim();
+      const turn: ChatTurn = {
+        id: crypto.randomUUID(),
+        mode: 'lesson',
+        topic,
+        response: analysis.overview || '',
+        keyPoints: analysis.keyPoints,
+        analysis,
+        fromDocument: true,
+        at: new Date(),
+        difficulty: 'medium',
+      };
+      setHistory(prev => [...prev, turn]);
+      setDocAnalysis(analysis);
+      setActiveTopic(topic);
+      setTopic(topic);
+      addToast(
+        `Analyzed ${ready.length} document${ready.length === 1 ? '' : 's'} — ${analysis.keyPoints.length} key point${analysis.keyPoints.length === 1 ? '' : 's'} found.`,
+        'success',
+      );
+      if (voiceModeRef.current) speakText(analysis.overview || '');
+    } catch (err: any) {
+      const msg = err.message || 'Document analysis failed.';
+      setError(msg);
+      addToast(msg, 'error');
+    } finally {
+      setAnalyzing(false);
+    }
+  }, [docs, unlocked, level, addToast, setCurrentView, speakText]);
 
   // Keep the refs pointing at the latest callbacks
   sendRef.current = send;
@@ -462,7 +618,28 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
       const topicTurns = history.filter(h => h.topic === activeTopic);
       if (topicTurns.length === 0) { addToast('Nothing to save for this topic.', 'info'); return; }
       // Save plain prose — the raw markdown only reads badly later.
-      const content = topicTurns.map(t => `[${t.mode.toUpperCase()}] ${toPlainText(t.response)}`).join('\n\n---\n\n');
+      const content = topicTurns.map(t => {
+        const blocks = [`[${t.mode.toUpperCase()}] ${toPlainText(t.response)}`];
+        // The key points are the part worth revising from — keep them.
+        if (t.keyPoints && t.keyPoints.length > 0) {
+          const points = t.keyPoints
+            .map(p => `- (${p.importance}) ${p.point}${p.why ? ` — ${p.why}` : ''}`)
+            .join('\n');
+          blocks.push(`[KEY POINTS]\n${points}`);
+        }
+        if (t.analysis) {
+          if (t.analysis.outline.length > 0) {
+            blocks.push(`[OUTLINE]\n${t.analysis.outline.map(o => `- ${o.heading}${o.detail ? ` — ${o.detail}` : ''}`).join('\n')}`);
+          }
+          if (t.analysis.glossary.length > 0) {
+            blocks.push(`[VOCABULARY]\n${t.analysis.glossary.map(g => `- ${g.term}: ${g.meaning}`).join('\n')}`);
+          }
+          if (t.analysis.questions.length > 0) {
+            blocks.push(`[LIKELY EXAM QUESTIONS]\n${t.analysis.questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`);
+          }
+        }
+        return blocks.join('\n\n');
+      }).join('\n\n---\n\n');
       if (onSaveNote) {
         await onSaveNote({
           title: `AI Tutor: ${activeTopic}`,
@@ -605,7 +782,8 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
         <div className="card empty-state" style={{ padding: '3rem 2rem' }}>
           <div className="empty-state-icon">{isTyping ? '🤔' : '🎓'}</div>
           <h3>{isTyping ? 'Thinking...' : 'Start a lesson'}</h3>
-          <p>Enter any topic above and press <strong>Teach me</strong> to begin. Try "Cell division" or "Supply and demand".</p>
+          <p>Enter any topic above and press <strong>Teach me</strong> to begin. Try "Cell division" or "Supply and demand".<br />
+            You can also drop a document below — the tutor reads it and shows you the points you must know.</p>
           {isTyping && (
             <div style={{ marginTop: '1rem', display: 'flex', gap: '0.35rem' }}>
               <span style={{ animation: 'bounce 1.4s infinite ease-in-out both', fontSize: '1.2rem' }}>.</span>
@@ -622,7 +800,11 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
         <div className="card-header" style={{ marginBottom: '0.5rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             <span className="card-title" style={{ fontSize: '0.95rem' }}>{turn.topic}</span>
-            <span className="tag" style={{ textTransform: 'capitalize' }}>{turn.mode}</span>
+            {turn.fromDocument ? (
+              <span className="tag info">📄 Document briefing</span>
+            ) : (
+              <span className="tag" style={{ textTransform: 'capitalize' }}>{turn.mode}</span>
+            )}
             {turn.difficulty && (
               <span className="tag" style={{ background: 'var(--surface-2)', color: DIFFICULTY_LABELS[turn.difficulty]?.color || 'var(--text-2)' }}>
                 {DIFFICULTY_LABELS[turn.difficulty]?.label || turn.difficulty}
@@ -631,8 +813,21 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
           </div>
           <span className="text-xs text-muted">{formatTime(turn.at)}</span>
         </div>
-        {/* Formatted, symbol-free answer */}
-        {renderAiText(turn.response)}
+
+        {turn.analysis ? (
+          <DocumentBriefing analysis={turn.analysis} />
+        ) : (
+          <>
+            {/* Formatted, symbol-free answer */}
+            {renderAiText(turn.response)}
+            {/* The important points for this topic — same panel the document
+                briefing uses, so revision looks consistent everywhere. */}
+            {turn.keyPoints && turn.keyPoints.length > 0 && (
+              <KeyPointsPanel points={turn.keyPoints} compact />
+            )}
+          </>
+        )}
+
         {turn.mode === 'quiz' && (
           <div style={{ marginTop: '0.75rem' }}>
             <textarea
@@ -688,7 +883,8 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
           <span className="sw-label">Create</span>
           <h2>AI Tutor</h2>
           <p className="text-sm text-muted">
-            Ask anything about your coursework and get an explanation at your level.
+            Ask anything about your coursework and get an explanation at your level — or upload your
+            notes and get the important points pulled out for you.
           </p>
         </div>
         <span className="tag">{tier === 'pro' ? '⭐ Pro' : unlocked ? '🔑 Your key' : 'Free'}</span>
@@ -743,6 +939,18 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
           {voiceControls}
 
           {modeControls}
+
+          {/* Document upload — the tutor reads the file and pulls out the
+              points that matter before it starts teaching. */}
+          <TutorDocuments
+            docs={docs}
+            onFiles={handleFiles}
+            onRemove={removeDoc}
+            onAnalyze={handleAnalyze}
+            analyzing={analyzing}
+            disabled={!unlocked}
+            disabledReason="Connect your free Google AI Studio key in Settings to analyze documents."
+          />
 
           {suggestedTopics.length > 0 && (
             <div style={{ marginTop: '0.75rem' }}>

@@ -17,6 +17,10 @@ import { prisma } from '../lib/prisma.js';
 import { encryptApiKey, decryptApiKey } from '../lib/encryption.js';
 import { SYSTEM_BASE, loadAIConfig, callProvider, getServerAIFallback } from '../lib/aiProvider.js';
 import { DEFAULT_GEMINI_MODEL } from '../lib/gemini.js';
+import {
+  KEY_POINTS_INSTRUCTION, extractKeyPointsBlock, parseKeyPoints,
+  type KeyPoint,
+} from '../lib/keyPoints.js';
 import { studentProfileBits, studentPromptContext } from '../lib/studentProfile.js';
 
 export const aiRouter = new Hono();
@@ -445,11 +449,55 @@ const TutorRequestBody = z.object({
     content: z.string(),
   })).default([]),
   lastAnswer: z.string().optional().nullable(),
+  // Documents the student uploaded for this session. The text was extracted
+  // in the browser (PDF/DOCX/PPTX/OCR); the server only proxies it.
+  documents: z.array(z.object({
+    name: z.string(),
+    text: z.string(),
+  })).max(10).default([]),
+  // The briefing produced by /api/ai/document/analyze — a compact digest of
+  // the uploaded material (overview + key points) that is cheap to send with
+  // every follow-up question.
+  documentBrief: z.string().optional().nullable(),
 });
+
+/**
+ * Ask the model for the key points of a passage it has just written.
+ *
+ * This is the fallback for the rare reply that forgot the machine-readable
+ * block — a second, cheap call (low thinking, JSON mode) recovers the points
+ * so the "Key points" panel is never silently empty.
+ */
+async function fallbackKeyPoints(
+  cfg: { provider: string; model: string; apiKey: string },
+  passage: string,
+  audience: string,
+): Promise<KeyPoint[]> {
+  try {
+    const raw = await callProvider({
+      provider: cfg.provider, model: cfg.model, apiKey: cfg.apiKey,
+      messages: [
+        { role: 'system', content: SYSTEM_BASE },
+        {
+          role: 'user',
+          content: `Extract the 4-8 most important points a ${audience} student must know from the study material below.
+Return JSON: { "keyPoints": [ { "point": string, "why": string, "importance": "must-know" | "should-know" | "good-to-know" } ] }
+
+Material:
+${passage.slice(0, 12000)}`,
+        },
+      ],
+      temperature: 0.2, maxTokens: 900, jsonMode: true, thinking: 'low',
+    });
+    return parseKeyPoints(raw);
+  } catch {
+    return [];
+  }
+}
 
 aiRouter.post('/tutor', requireAI, zValidator('json', TutorRequestBody), async c => {
   const user = c.get('user');
-  const { topic, mode, educationLevel, history, lastAnswer } = c.req.valid('json');
+  const { topic, mode, educationLevel, history, lastAnswer, documents, documentBrief } = c.req.valid('json');
 
   let cfg;
   try { cfg = await loadAIConfig(user.id); }
@@ -496,8 +544,35 @@ aiRouter.post('/tutor', requireAI, zValidator('json', TutorRequestBody), async c
 - Use ordinary words for symbols: "less than or equal to", "approximately", "therefore".
 - Never repeat a heading marker, never output raw table pipe rows without a header row.`;
 
+  // ── Uploaded document context ───────────────────────────────────────────────
+  // When the student attached files, the lesson must be grounded in them
+  // rather than in general knowledge.
+  const docs = documents ?? [];
+  let documentContext = '';
+  if (docs.length > 0) {
+    const budget = 60_000; // ~15k tokens of source material per request
+    let used = 0;
+    const excerpts: string[] = [];
+    for (const doc of docs) {
+      if (used >= budget) break;
+      const room = budget - used;
+      const slice = doc.text.slice(0, room);
+      used += slice.length;
+      excerpts.push(`--- ${doc.name} ---\n${slice}`);
+    }
+    const brief = documentBrief ? `\n\nBriefing from the document analysis:\n${documentBrief.slice(0, 6000)}` : '';
+    documentContext = `\n\nThe student uploaded the following document(s). Ground your answer in them and refer to them by name.\n${brief}\n\n${excerpts.join('\n\n')}`;
+  }
+
+  // The key-points block is what powers the "Key points to remember" panel.
+  // A quiz doesn't need one — it produces questions, not revision notes.
+  const wantsKeyPoints = mode !== 'quiz';
+
   const messages = [
-    { role: 'system', content: `${SYSTEM_BASE}\nYou are an expert AI tutor. ${modeInstructions[mode]}${studentContext}\n${FORMAT_RULES}` },
+    {
+      role: 'system',
+      content: `${SYSTEM_BASE}\nYou are an expert AI tutor. ${modeInstructions[mode]}${studentContext}\n${FORMAT_RULES}${wantsKeyPoints ? `\n${KEY_POINTS_INSTRUCTION}` : ''}${documentContext}`,
+    },
     ...history,
     { role: 'user', content: lastAnswer ? `Student answer: ${lastAnswer}\nContinue the tutoring session appropriately.` : `Topic: ${topic}` },
   ];
@@ -515,16 +590,167 @@ aiRouter.post('/tutor', requireAI, zValidator('json', TutorRequestBody), async c
       thinking: mode === 'quiz' ? 'low' : 'medium',
     });
 
+    // Split the machine-readable key-points block out of the reply so the
+    // user never sees the raw markers, and so the UI can render the points
+    // as a structured panel.
+    const extracted = extractKeyPointsBlock(raw);
+    let keyPoints = extracted.keyPoints;
+
+    // Rare fallback: the model forgot the block — ask again, cheaply.
+    if (wantsKeyPoints && keyPoints.length === 0) {
+      keyPoints = await fallbackKeyPoints(cfg, extracted.text || raw, audience);
+    }
+
     return c.json({
       topic,
       mode,
       educationLevel: effectiveLevel,
-      response: raw.trim(),
+      response: extracted.text,
+      keyPoints,
     });
   } catch (e) {
     return c.json({ error: (e as Error).message }, 502);
   }
 });
+
+// ── POST /api/ai/document/analyze — turn an uploaded file into study material ──
+// The browser extracts the text (PDF/DOCX/PPTX/OCR); the server asks the
+// model to turn it into a briefing: an explanation, the important points the
+// student must know, the structure of the document, key vocabulary and likely
+// exam questions.
+const DocumentBody = z.object({
+  documents: z.array(z.object({
+    name: z.string().min(1),
+    text: z.string().min(1),
+  })).min(1).max(10),
+  educationLevel: z.string().optional().nullable(),
+});
+
+aiRouter.post('/document/analyze', requireAI, zValidator('json', DocumentBody), async c => {
+  const user = c.get('user');
+  const { documents, educationLevel } = c.req.valid('json');
+
+  let cfg;
+  try { cfg = await loadAIConfig(user.id); }
+  catch (e) { return c.json({ error: (e as Error).message }, 400); }
+
+  const profileBits = studentProfileBits(user);
+  const audience = profileBits.length > 0
+    ? profileBits.join(', ')
+    : (educationLevel ?? 'college level');
+
+  // Keep the request under control — a long chapter still fits comfortably.
+  const budget = 120_000;
+  let used = 0;
+  const sources: string[] = [];
+  for (const doc of documents) {
+    if (used >= budget) break;
+    const room = budget - used;
+    const slice = doc.text.slice(0, room);
+    used += slice.length;
+    sources.push(`--- ${doc.name} ---\n${slice}`);
+  }
+
+  const prompt = `Analyse the study material a student uploaded and turn it into revision notes.
+Return JSON only, with this exact shape:
+{
+  "title": string,
+  "overview": string,
+  "keyPoints": [ { "point": string, "why": string, "importance": "must-know" | "should-know" | "good-to-know" } ],
+  "outline": [ { "heading": string, "detail": string } ],
+  "glossary": [ { "term": string, "meaning": string } ],
+  "questions": [ string ]
+}
+
+Rules:
+- "title": a short, specific title for the material (max 8 words).
+- "overview": 3-6 paragraphs of markdown explaining what the material covers, how it is organised, and how a student should revise it. Use "##" headings and bullet lists. Write formulas as plain readable text ("E = mc^2", "a/b"), never LaTeX.
+- "keyPoints": 5-12 points, ordered most important first. Each "point" is one sentence a student can memorise; "why" explains what it unlocks or what breaks if they get it wrong. Mark the core examinable ideas "must-know", supporting detail "should-know", and extras "good-to-know".
+- "outline": the document's structure, 3-10 entries, each with a one-line detail.
+- "glossary": 0-12 terms that a student at this level would need defined. Omit the section's entries if the document has no specialist vocabulary.
+- "questions": 5-8 likely exam questions on this material.
+- Never invent content that is not in the material. If the material is incomplete, say so in the overview.
+- Never use LaTeX, "$", or symbol soup.
+
+Student level: ${audience}.`;
+
+  try {
+    const raw = await callProvider({
+      provider: cfg.provider, model: cfg.model, apiKey: cfg.apiKey,
+      messages: [
+        { role: 'system', content: SYSTEM_BASE },
+        { role: 'user', content: `${prompt}\n\nMaterial:\n\n${sources.join('\n\n')}` },
+      ],
+      temperature: 0.4, maxTokens: 6000, jsonMode: true, thinking: 'medium',
+    });
+
+    const parsed = parseDocumentAnalysis(raw);
+    return c.json(parsed);
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 502);
+  }
+});
+
+/**
+ * Normalise the document-analysis JSON. The model occasionally wraps the
+ * payload in a code fence or returns a string where an array was asked for,
+ * so every field is coerced rather than trusted.
+ */
+function parseDocumentAnalysis(raw: string): {
+  title: string;
+  overview: string;
+  keyPoints: KeyPoint[];
+  outline: { heading: string; detail: string }[];
+  glossary: { term: string; meaning: string }[];
+  questions: string[];
+} {
+  let obj: any = null;
+  try {
+    const trimmed = raw.trim();
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    const candidate = fenced ? fenced[1].trim() : trimmed;
+    obj = JSON.parse(candidate);
+  } catch {
+    try {
+      const match = raw.match(/\{[\s\S]*\}/);
+      obj = match ? JSON.parse(match[0]) : null;
+    } catch {
+      obj = null;
+    }
+  }
+
+  if (!obj || typeof obj !== 'object') {
+    // Not JSON at all — hand the raw text back as the overview so the
+    // student still gets something useful.
+    return {
+      title: 'Uploaded material',
+      overview: raw.trim(),
+      keyPoints: [],
+      outline: [],
+      glossary: [],
+      questions: [],
+    };
+  }
+
+  const asArray = (v: any): any[] => (Array.isArray(v) ? v : []);
+
+  return {
+    title: typeof obj.title === 'string' && obj.title.trim()
+      ? obj.title.trim()
+      : 'Uploaded material',
+    overview: typeof obj.overview === 'string' ? obj.overview.trim() : '',
+    keyPoints: parseKeyPoints(obj.keyPoints ?? obj.key_points ?? obj.points),
+    outline: asArray(obj.outline).map((o: any) => ({
+      heading: String(o?.heading ?? o?.title ?? o?.section ?? '').trim(),
+      detail: String(o?.detail ?? o?.summary ?? o?.description ?? '').trim(),
+    })).filter((o: any) => o.heading || o.detail),
+    glossary: asArray(obj.glossary).map((g: any) => ({
+      term: String(g?.term ?? g?.word ?? '').trim(),
+      meaning: String(g?.meaning ?? g?.definition ?? '').trim(),
+    })).filter((g: any) => g.term),
+    questions: asArray(obj.questions).map((q: any) => String(q?.question ?? q ?? '').trim()).filter(Boolean),
+  };
+}
 
 const ProfileBody = z.object({
   educationLevel: z.string().optional().nullable(),

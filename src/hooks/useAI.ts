@@ -26,12 +26,13 @@ import {
   smartQA                   as aiQA,
   semanticRerank,
   generateWeeklyInsights    as aiWeeklyInsights,
+  analyzeDocuments          as aiAnalyzeDocuments,
 } from '../ai/features';
 import type { GeneratedFlashcard, WeeklyInsights } from '../ai/features';
 import type { Note, Flashcard, PracticeQuestion } from '../types';
 import { toPlainText } from '../utils/text';
 import * as serverAI from '../api/ai';
-import type { ServerAIConfig } from '../api/ai';
+import type { ServerAIConfig, DocumentAnalysis, TutorDocument } from '../api/ai';
 
 export type { GeneratedFlashcard, WeeklyInsights };
 // The client-side `generatePracticeQuestions` returns GeneratedPracticeQuestion
@@ -73,6 +74,8 @@ export interface UseAIResult {
   semanticSearch:            (query: string, notes: Note[]) => Promise<Note[]>;
   generateWeeklyInsights:    (notes: Note[], flashcards: Flashcard[]) => Promise<WeeklyInsights>;
   runCustomPrompt:           (prompt: string, context: string) => Promise<string>;
+  /** Turn uploaded documents into a briefing + the points the student must know. */
+  analyzeDocuments:          (documents: TutorDocument[], level?: string | null) => Promise<DocumentAnalysis>;
 }
 
 /** Map server config → local AIConfig shape (with a placeholder key). */
@@ -238,6 +241,15 @@ export function useAI(): UseAIResult {
     return aiSummary(prompt, toPlainText(context), effective);
   }, [source, effective, isReady]);
 
+  const analyzeDocuments = useCallback(async (
+    documents: TutorDocument[],
+    level?: string | null,
+  ): Promise<DocumentAnalysis> => {
+    if (!isReady) throw new Error('AI not configured');
+    if (source === 'server') return serverAI.serverAnalyzeDocuments(documents, level);
+    return aiAnalyzeDocuments(documents, effective, level) as Promise<DocumentAnalysis>;
+  }, [source, effective, isReady]);
+
   return {
     config: {
       provider:              effective.provider,
@@ -261,5 +273,6 @@ export function useAI(): UseAIResult {
     semanticSearch,
     generateWeeklyInsights,
     runCustomPrompt,
+    analyzeDocuments,
   };
 }

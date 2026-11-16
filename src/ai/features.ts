@@ -281,3 +281,153 @@ export async function runCustomPrompt(
   });
   return text.trim();
 }
+
+// ── Document analysis ─────────────────────────────────────────────────────────
+// The browser extracts the text from an uploaded file (PDF/DOCX/PPTX/OCR) and
+// asks the model to turn it into revision notes: an explanation, the points
+// the student must know, the document's structure, key vocabulary and likely
+// exam questions.
+//
+// This is the client-side (local key) path. The server proxy has its own
+// equivalent at POST /api/ai/document/analyze.
+
+export interface ClientKeyPoint {
+  point: string;
+  why: string;
+  importance: 'must-know' | 'should-know' | 'good-to-know';
+}
+
+export interface ClientDocumentAnalysis {
+  title: string;
+  overview: string;
+  keyPoints: ClientKeyPoint[];
+  outline: { heading: string; detail: string }[];
+  glossary: { term: string; meaning: string }[];
+  questions: string[];
+}
+
+const IMPORTANCE_ALIASES: Record<string, ClientKeyPoint['importance']> = {
+  'must-know': 'must-know', 'must know': 'must-know', 'mustknow': 'must-know',
+  essential: 'must-know', critical: 'must-know', core: 'must-know', high: 'must-know',
+  'should-know': 'should-know', 'should know': 'should-know', important: 'should-know',
+  medium: 'should-know', secondary: 'should-know',
+  'good-to-know': 'good-to-know', 'good to know': 'good-to-know', 'nice-to-know': 'good-to-know',
+  extra: 'good-to-know', optional: 'good-to-know', low: 'good-to-know',
+};
+
+function normalizeImportance(value: unknown): ClientKeyPoint['importance'] {
+  if (typeof value !== 'string') return 'should-know';
+  const key = value.trim().toLowerCase().replace(/[_–—]/g, '-');
+  if (IMPORTANCE_ALIASES[key]) return IMPORTANCE_ALIASES[key];
+  // "nice to know" → "nice-to-know", "must know" → "must-know".
+  const hyphenated = key.replace(/\s+/g, '-');
+  if (IMPORTANCE_ALIASES[hyphenated]) return IMPORTANCE_ALIASES[hyphenated];
+  for (const alias of Object.keys(IMPORTANCE_ALIASES)) {
+    if (key.includes(alias)) return IMPORTANCE_ALIASES[alias];
+  }
+  return 'should-know';
+}
+
+export async function analyzeDocuments(
+  documents: { name: string; text: string }[],
+  config: AIConfig,
+  level?: string | null,
+): Promise<ClientDocumentAnalysis> {
+  const budget = 120_000;
+  let used = 0;
+  const sources: string[] = [];
+  for (const doc of documents) {
+    if (used >= budget) break;
+    const slice = doc.text.slice(0, budget - used);
+    used += slice.length;
+    sources.push(`--- ${doc.name} ---\n${slice}`);
+  }
+
+  const raw = await chatComplete({
+    ...cfg(config),
+    jsonMode: true,
+    messages: [
+      { role: 'system', content: SYSTEM_BASE },
+      {
+        role: 'user',
+        content: `Analyse the study material a student uploaded and turn it into revision notes.
+Return JSON only, with this exact shape:
+{
+  "title": string,
+  "overview": string,
+  "keyPoints": [ { "point": string, "why": string, "importance": "must-know" | "should-know" | "good-to-know" } ],
+  "outline": [ { "heading": string, "detail": string } ],
+  "glossary": [ { "term": string, "meaning": string } ],
+  "questions": [ string ]
+}
+
+Rules:
+- "title": a short, specific title for the material (max 8 words).
+- "overview": 3-6 paragraphs of markdown explaining what the material covers and how to revise it. Write formulas as plain readable text ("E = mc^2"), never LaTeX.
+- "keyPoints": 5-12 points, most important first. Mark the core examinable ideas "must-know", supporting detail "should-know", extras "good-to-know".
+- "outline": the document's structure, 3-10 entries.
+- "glossary": 0-12 terms the student would need defined.
+- "questions": 5-8 likely exam questions.
+- Never invent content that is not in the material.
+
+Student level: ${level || 'college level'}.
+
+Material:
+
+${sources.join('\n\n')}`,
+      },
+    ],
+    temperature: 0.4,
+    maxTokens: 6000,
+    thinking: 'medium',
+  });
+
+  let obj: any = null;
+  try {
+    const trimmed = raw.trim();
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    obj = JSON.parse(fenced ? fenced[1].trim() : trimmed);
+  } catch {
+    try {
+      const match = raw.match(/\{[\s\S]*\}/);
+      obj = match ? JSON.parse(match[0]) : null;
+    } catch { obj = null; }
+  }
+
+  if (!obj || typeof obj !== 'object') {
+    return {
+      title: 'Uploaded material',
+      overview: raw.trim(),
+      keyPoints: [], outline: [], glossary: [], questions: [],
+    };
+  }
+
+  const arr = (v: any): any[] => (Array.isArray(v) ? v : []);
+  return {
+    title: typeof obj.title === 'string' && obj.title.trim() ? obj.title.trim() : 'Uploaded material',
+    overview: typeof obj.overview === 'string' ? obj.overview.trim() : '',
+    keyPoints: arr(obj.keyPoints ?? obj.key_points ?? obj.points)
+      .filter((p: any) => p && typeof p === 'object')
+      .map((p: any) => ({
+        point: String(p.point ?? p.text ?? p.title ?? '').trim(),
+        why: String(p.why ?? p.reason ?? p.explanation ?? '').trim(),
+        importance: normalizeImportance(p.importance ?? p.priority ?? p.level),
+      }))
+      .filter((p: ClientKeyPoint) => !!p.point),
+    outline: arr(obj.outline)
+      .map((o: any) => ({
+        heading: String(o?.heading ?? o?.title ?? '').trim(),
+        detail: String(o?.detail ?? o?.summary ?? '').trim(),
+      }))
+      .filter((o: any) => o.heading || o.detail),
+    glossary: arr(obj.glossary)
+      .map((g: any) => ({
+        term: String(g?.term ?? g?.word ?? '').trim(),
+        meaning: String(g?.meaning ?? g?.definition ?? '').trim(),
+      }))
+      .filter((g: any) => g.term),
+    questions: arr(obj.questions)
+      .map((q: any) => String(q?.question ?? q ?? '').trim())
+      .filter(Boolean),
+  };
+}

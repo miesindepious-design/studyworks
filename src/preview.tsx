@@ -87,6 +87,46 @@ if (typeof window !== 'undefined') {
           mode: 'lesson',
           educationLevel: null,
           response: MESSY_TUTOR_ANSWER,
+          keyPoints: [
+            { point: 'Photosynthesis converts light energy into chemical energy stored in glucose.', why: 'It is the single idea the whole chapter is built on.', importance: 'must-know' },
+            { point: 'The light reactions happen in the thylakoid membrane and produce ATP and NADPH.', why: 'You must know where each stage happens for diagram questions.', importance: 'must-know' },
+            { point: 'The Calvin cycle fixes carbon dioxide in the chloroplast stroma.', why: 'Confusing the two stages is the most common exam trap.', importance: 'should-know' },
+            { point: 'Chlorophyll absorbs red and blue light but reflects green light.', why: 'Explains why leaves look green — a favourite short question.', importance: 'good-to-know' },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ));
+    }
+    // Document analysis — a representative briefing for the uploaded file.
+    if (url.includes('/api/ai/document/analyze')) {
+      return Promise.resolve(new Response(
+        JSON.stringify({
+          title: 'Photosynthesis and Plant Energy',
+          overview: '## What this chapter covers\nThis chapter explains how plants convert light energy into chemical energy, and how that energy powers everything else a plant does.\n\n## How to revise it\nLearn the two stages in order, then practise drawing the pathway from memory.',
+          keyPoints: [
+            { point: 'Light energy is converted into chemical energy stored in glucose.', why: 'The central claim of the whole chapter.', importance: 'must-know' },
+            { point: 'The light reactions produce ATP and NADPH in the thylakoid membrane.', why: 'You need both products and their location for diagram questions.', importance: 'must-know' },
+            { point: 'The Calvin cycle fixes carbon dioxide into G3P in the stroma.', why: 'Mixing up the two stages is the most common exam trap.', importance: 'must-know' },
+            { point: 'Chlorophyll absorbs red and blue light but reflects green.', why: 'A short question that appears almost every year.', importance: 'should-know' },
+            { point: 'Photolysis of water releases oxygen as a by-product.', why: 'Explains where the oxygen you breathe comes from.', importance: 'should-know' },
+            { point: 'Limiting factors are carbon dioxide concentration and light intensity.', why: 'Sets up the classic graph questions.', importance: 'good-to-know' },
+          ],
+          outline: [
+            { heading: 'Light-dependent reactions', detail: 'In the thylakoid membrane; splits water and makes ATP and NADPH.' },
+            { heading: 'The Calvin cycle', detail: 'In the stroma; fixes carbon dioxide into G3P using ATP and NADPH.' },
+            { heading: 'Limiting factors', detail: 'How carbon dioxide and light intensity change the rate.' },
+          ],
+          glossary: [
+            { term: 'Thylakoid', meaning: 'A membrane sac inside the chloroplast where the light reactions happen.' },
+            { term: 'Stroma', meaning: 'The fluid around the thylakoids where the Calvin cycle happens.' },
+            { term: 'Photolysis', meaning: 'The splitting of water by light, which releases oxygen.' },
+          ],
+          questions: [
+            'Explain the light-dependent reactions and where they occur.',
+            'Why are leaves green?',
+            'Compare the light reactions and the Calvin cycle in a table.',
+            'How does increasing carbon dioxide affect the rate of photosynthesis?',
+          ],
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       ));
