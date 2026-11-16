@@ -222,3 +222,23 @@ export interface DeckProgress {
   due: number;
   progress: number;
 }
+
+// ── Document library ──────────────────────────────────────────────────────────
+import type { DocumentAnalysis } from './api/ai';
+
+/** A document the student uploaded (via AI Tutor or the Notes library). */
+export interface StudyDocument {
+  id: string;
+  name: string;
+  kind: 'pdf' | 'docx' | 'pptx' | 'image' | 'html' | 'text';
+  size: number;
+  /** Extracted plain text — the AI reads this, not the raw file. */
+  text: string;
+  pages?: number;
+  truncated: boolean;
+  /** Filled in after the tutor analyses the document. */
+  analysis?: DocumentAnalysis | null;
+  source: 'tutor' | 'library';
+  createdAt: Date;
+  updatedAt: Date;
+}

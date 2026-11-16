@@ -100,9 +100,16 @@ export async function resetPassword(token: string, newPassword: string): Promise
 }
 
 // ── Update profile ────────────────────────────────────────────────────────────
-export async function updateProfile(name: string): Promise<AuthUser> {
+// Better Auth's update-user route accepts `name` and `image` (a URL or data
+// URL — we send a small resized data URL from the client).
+export async function updateProfile(
+  name: string,
+  image?: string | null,
+): Promise<AuthUser> {
+  const body: Record<string, unknown> = { name };
+  if (image !== undefined) body.image = image; // null clears the picture
   return apiFetch<AuthUser>('/auth/update-user', {
     method: 'POST',
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(body),
   });
 }

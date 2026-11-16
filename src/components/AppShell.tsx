@@ -15,6 +15,8 @@ import {
   IconSearch, IconBell, IconCrown, IconChevronRight, IconLogout,
   IconShield, IconDashboard,
 } from './icons';
+import ProfilePopover from './ProfilePopover';
+import type { AuthUser } from '../api/auth';
 
 interface AppShellProps {
   currentView: View;
@@ -34,6 +36,14 @@ interface AppShellProps {
   onOpenPricing: () => void;
   onSignOut: () => void;
   isAdmin?: boolean;
+  /** Signed-in user record — enables the profile popover on avatar click. */
+  profileUser?: AuthUser | null;
+  /** Label shown in the profile card ("Free plan" / "Pro plan"). */
+  tierLabel?: string;
+  /** Called after the user saves their profile (new name/image). */
+  onProfileSaved?: (user: AuthUser) => void;
+  /** Toast sink for profile edit feedback. */
+  addToast?: (msg: string, type?: 'success' | 'error' | 'info') => void;
   /** Extra controls rendered at the end of the topbar action row. */
   topbarExtra?: ReactNode;
   /** Extra controls rendered at the bottom of the sidebar. */
@@ -46,10 +56,12 @@ export default function AppShell(props: AppShellProps) {
     currentView, onNavigate, userName, userEmail, userSub, tier, trialDaysLeft,
     totalItems, notesCount, dueFlashcards, accentId, onAccentChange,
     onOpenCommandPalette, onOpenPricing, onSignOut, isAdmin,
+    profileUser, tierLabel, onProfileSaved, addToast,
     topbarExtra, sidebarExtra, children,
   } = props;
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   const go = (view: View) => {
     onNavigate(view);
@@ -156,7 +168,9 @@ export default function AppShell(props: AppShellProps) {
           {sidebarExtra}
 
           <div className="sw-account">
-            <div className="sw-account-avatar">{initials}</div>
+            {props.profileUser?.image
+              ? <img src={props.profileUser.image} alt={initials} className="sw-account-avatar" style={{ objectFit: 'cover' }} />
+              : <div className="sw-account-avatar">{initials}</div>}
             <div className="sw-account-text">
               <div className="sw-account-name">{userName}</div>
               <div className="sw-account-sub">{userSub || userEmail}</div>
@@ -222,9 +236,33 @@ export default function AppShell(props: AppShellProps) {
               ))}
             </div>
 
-            <button type="button" className="sw-avatar" title={userName} aria-label="Account">
-              {initials}
-            </button>
+            <div style={{ position: 'relative' }}>
+              <button
+                type="button"
+                className="sw-avatar"
+                title={userName}
+                aria-label="Account — open profile"
+                aria-expanded={profileOpen}
+                onClick={() => profileUser ? setProfileOpen(o => !o) : onSignOut()}
+              >
+                {profileUser?.image
+                  ? <img src={profileUser.image} alt={initials} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                  : initials}
+              </button>
+              {profileOpen && profileUser && (
+                <ProfilePopover
+                  user={profileUser}
+                  tierLabel={tierLabel || (tier === 'pro' ? 'Pro plan' : 'Free plan')}
+                  onClose={() => setProfileOpen(false)}
+                  onSignOut={() => { setProfileOpen(false); onSignOut(); }}
+                  onSaved={u => {
+                    setProfileOpen(false);
+                    onProfileSaved?.(u);
+                  }}
+                  addToast={addToast || (() => {})}
+                />
+              )}
+            </div>
 
             {topbarExtra}
           </div>

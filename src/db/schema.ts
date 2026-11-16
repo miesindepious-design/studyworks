@@ -2,6 +2,7 @@ import { openDB, DBSchema, IDBPDatabase } from 'idb';
 import type {
   Note, Contact, Flashcard, Folder, PracticeQuestion, SavedSearch,
   Achievement, StudyGoal, StudyTimerSession, NoteVersion, StudyGroup, SessionStat,
+  StudyDocument,
 } from '../types';
 
 // ── DB version history ────────────────────────────────────────────────────────
@@ -9,9 +10,10 @@ import type {
 // v2 — added `streaks` store (current streak, longest streak, daily counts)
 // v3 — added `note_versions` store for version history snapshots
 // v4 — added `flashcard_sessions` store for persisted review session stats
+// v5 — added `documents` store (the uploaded-document library under Notes)
 
 const DB_NAME    = 'studyworks-db';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 // Streak data is a singleton with a fixed id.
 export interface StreakData {
@@ -89,6 +91,10 @@ export interface StudyWorksDB extends DBSchema {
     key: string;
     value: SessionStat;
     indexes: { by_date: string };
+  };
+  documents: {
+    key: string;
+    value: StudyDocument;
   };
 }
 
@@ -175,6 +181,10 @@ export async function getDB(): Promise<IDBPDatabase<StudyWorksDB>> {
           const fsStore = db.createObjectStore('flashcard_sessions', { keyPath: 'id' });
           fsStore.createIndex('by_date', 'date', { unique: false });
         }
+      }
+      // v4 → v5: add documents store (uploaded-document library)
+      if (oldVersion < 5) {
+        ensureStore(db, 'documents', 'id');
       }
     },
   });

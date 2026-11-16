@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { serverTutor, serverAnalyzeDocuments, saveUserProfile } from '../api/ai';
 import type { KeyPoint, DocumentAnalysis, TutorDocument } from '../api/ai';
-import type { Note } from '../types';
+import type { Note, StudyDocument } from '../types';
 import { renderAiText, toPlainText } from '../utils/aiText';
 import { extractTextFromFile } from '../utils/extractText';
 import KeyPointsPanel from './KeyPointsPanel';
@@ -21,6 +21,10 @@ interface Props {
   addToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
   notes?: Note[];
   onSaveNote?: (note: { title: string; content: string; tags?: string[] }) => void;
+  /** Save uploaded files into the document library under Notes. */
+  addDocuments?: (docs: StudyDocument[]) => void;
+  /** Patch a library document (e.g. attach its analysis). */
+  updateDocument?: (id: string, patch: Partial<StudyDocument>) => void;
 }
 
 type TutorMode = 'lesson' | 'simpler' | 'deeper' | 'quiz';
@@ -120,7 +124,7 @@ function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, notes = [], onSaveNote }: Props) {
+export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, notes = [], onSaveNote, addDocuments, updateDocument }: Props) {
   // A user who connected their own AI Studio key gets the Tutor on any plan.
   const unlocked = aiUnlocked ?? tier === 'pro';
   const [level, setLevel] = useState<string | null>(null);
@@ -481,7 +485,7 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
     } finally {
       setLoading(false);
     }
-  }, [topic, unlocked, level, history, answer, addToast, setCurrentView, speakText, tutorDocs, documentBrief]);
+  }, [topic, unlocked, level, history, answer, addToast, setCurrentView, speakText, tutorDocs, documentBrief, updateDocument]);
 
   /** Read the dropped / browsed files locally and keep their text in memory. */
   const handleFiles = useCallback(async (incoming: File[]) => {
@@ -496,6 +500,7 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
       return;
     }
     const files = incoming.slice(0, room);
+    const savedLibrary: StudyDocument[] = [];
     const slots: AttachedDoc[] = files.map(file => ({
       id: crypto.randomUUID(),
       name: file.name,
@@ -521,13 +526,28 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
         setDocs(prev => prev.map(d => d.id === slot.id
           ? { ...d, text: res.text, pages: res.pageCount, truncated: res.truncated, kind: res.kind, status: 'ready' }
           : d));
+        // Keep it in the library so the student can come back to it under Notes.
+        savedLibrary.push({
+          id: slot.id,
+          name: file.name,
+          kind: res.kind || 'text',
+          size: file.size,
+          text: res.text,
+          pages: res.pageCount,
+          truncated: res.truncated,
+          analysis: null,
+          source: 'tutor',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
       } catch (err: any) {
         setDocs(prev => prev.map(d => d.id === slot.id
           ? { ...d, status: 'error', error: err?.message || 'Could not read this file.' }
           : d));
       }
     }
-  }, [unlocked, docs.length, addToast, setCurrentView]);
+    if (savedLibrary.length > 0) addDocuments?.(savedLibrary);
+  }, [unlocked, docs.length, addToast, setCurrentView, addDocuments]);
 
   const removeDoc = useCallback((id: string) => {
     setDocs(prev => {
@@ -573,6 +593,10 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
       setDocAnalysis(analysis);
       setActiveTopic(topic);
       setTopic(topic);
+      // Attach the briefing to the library entry so it shows up under Notes.
+      if (ready.length > 0 && updateDocument) {
+        updateDocument(ready[0].id, { analysis, updatedAt: new Date() });
+      }
       addToast(
         `Analyzed ${ready.length} document${ready.length === 1 ? '' : 's'} — ${analysis.keyPoints.length} key point${analysis.keyPoints.length === 1 ? '' : 's'} found.`,
         'success',
@@ -585,7 +609,7 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
     } finally {
       setAnalyzing(false);
     }
-  }, [docs, unlocked, level, addToast, setCurrentView, speakText]);
+  }, [docs, unlocked, level, addToast, setCurrentView, speakText, updateDocument]);
 
   // Keep the refs pointing at the latest callbacks
   sendRef.current = send;

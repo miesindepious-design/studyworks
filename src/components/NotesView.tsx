@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { Note, Flashcard, Folder, PracticeQuestion, SavedSearch, NoteVersion, PersonalNote } from '../types';
+import { Note, Flashcard, Folder, PracticeQuestion, SavedSearch, NoteVersion, PersonalNote, StudyDocument } from '../types';
 import type { UseAIResult } from '../hooks/useAI';
 import { renderLinkedContent } from '../utils/noteLinker';
 import { matchesSmartFilter, previewSmartFilter } from '../utils/smartFolders';
@@ -16,6 +16,7 @@ import { useDebounce } from '../hooks/useDebounce';
 import { saveVersion, getVersionsForNote } from '../utils/noteVersions';
 import { noteToMarkdown, noteToPlainText, downloadTextFile, copyToClipboard } from '../utils/exportMarkdown';
 import RichTextEditor from './RichTextEditor';
+import DocumentsPanel from './DocumentsPanel';
 import ConfirmModal from './ConfirmModal';
 
 type Tier = 'free' | 'pro';
@@ -43,6 +44,8 @@ interface NotesViewProps {
   setSavedSearches: (searches: SavedSearch[]) => void;
   ai: UseAIResult;
   loadStarterPack: () => void;
+  documents: StudyDocument[];
+  setDocuments: (docs: StudyDocument[]) => void;
 }
 
 // helper: read current flashcards from the prop before append
@@ -66,8 +69,11 @@ export default function NotesView({
   folders, setFolders, practiceQuestions, setPracticeQuestions,
   incrementQaQueries, qaQueriesThisMonth,
   savedSearches, setSavedSearches, ai, loadStarterPack,
+  documents, setDocuments,
 }: NotesViewProps) {
   const [title, setTitle] = useState('');
+  // Segmented tabs: the classic notes library vs the uploaded-document library.
+  const [tab, setTab] = useState<'notes' | 'documents'>('notes');
   const [content, setContent] = useState('');
   const [type, setType] = useState<'note' | 'article' | 'idea' | 'project'>('note');
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
@@ -650,6 +656,116 @@ export default function NotesView({
   const backlinks = (note: Note) => findBacklinks(note, notes);
   const formatBytes = (b: number) => b < 1024 ? `${b} B` : b < 1048576 ? `${(b/1024).toFixed(1)} KB` : `${(b/1048576).toFixed(1)} MB`;
 
+  // The page header is shared by both tabs (title/copy switch with `tab`).
+  const pageHeader = (
+      <div className="page-header">
+        <div>
+          <span className="sw-label">Study</span>
+          <h2>{tab === 'documents' ? 'Document Library' : 'Notes & Knowledge Base'}</h2>
+          <p className="text-sm text-muted">
+            {tab === 'documents'
+              ? `${documents.length} uploaded document${documents.length === 1 ? '' : 's'}`
+              : `${filteredNotes.length} note${filteredNotes.length === 1 ? '' : 's'} in ${selectedFolder ? folders.find(f => f.id === selectedFolder)?.name || 'this folder' : 'your library'}`}
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          <div className="sw-seg" role="tablist" aria-label="Notes sections">
+            <button
+              role="tab"
+              aria-selected={tab === 'notes'}
+              className={`sw-seg-btn${tab === 'notes' ? ' is-active' : ''}`}
+              onClick={() => setTab('notes')}
+            >📝 Notes</button>
+            <button
+              role="tab"
+              aria-selected={tab === 'documents'}
+              className={`sw-seg-btn${tab === 'documents' ? ' is-active' : ''}`}
+              onClick={() => setTab('documents')}
+            >📄 Documents <span className="sw-seg-count">{documents.length}</span></button>
+          </div>
+          {tab === 'notes' && (<>
+          {ai.isReady
+            ? <span className="tag success" title={`Provider: ${ai.config.provider} · Model: ${ai.config.model}`}>
+                🤖 {ai.config.provider === 'gemini' ? 'Gemini' : 'OpenAI'} on
+              </span>
+            : <span className="tag" title="Configure AI in Settings → ⚙️" style={{ cursor: 'pointer' }} onClick={() => setCurrentView('settings')}>
+                🤖 AI off
+              </span>
+          }
+          {tier === 'pro' && savedSearches.length > 0 && (
+            <button className="btn btn-secondary" onClick={() => setShowSavedSearches(o => !o)}>🔖 Saved Searches</button>
+          )}
+          {tier === 'pro' && (
+            <button className="btn btn-secondary" onClick={() => setShowQa(o => !o)}>{showQa ? 'Hide Q&A' : '🤖 Ask Your Brain'}</button>
+          )}
+          {tier === 'pro' && filteredNotes.length > 0 && (
+            <button className="btn btn-secondary" title="Export visible notes as PDF" onClick={async () => { try { await exportNotesToPDF(filteredNotes); addToast('📄 PDF downloaded.', 'success'); } catch (err: any) { addToast(`PDF export failed: ${err.message}`, 'error'); } }}>🖨️ PDF</button>
+          )}
+          <button className="btn btn-secondary" onClick={() => setShowUrlSave(o => !o)}>{showUrlSave ? '✕ Close URL' : '🔗 Save from URL'}</button>
+          <button className="btn btn-primary" onClick={() => importInputRef.current?.click()} title="Import a PDF or PPTX and turn it into flashcards">📥 Import</button>
+          <button className="btn btn-secondary" onClick={() => setFocusMode(f => !f)} title={focusMode ? 'Exit focus mode' : 'Enter focus mode — distraction-free editing'}>{focusMode ? '✕ Exit Focus' : '🧘 Focus Mode'}</button>
+          <input ref={importInputRef} type="file" accept=".pdf,.pptx,image/*,audio/*" onChange={handleImport} style={{ display: 'none' }} />
+          <div style={{ position: 'relative' }}>
+            <button className="btn btn-primary" data-copilot="new-note" onClick={() => { if (!editingNote) setFormOpen(o => !o); }}>
+              {formOpen ? '✕ Close' : '+ New Note'}
+            </button>
+            <button
+              className="btn btn-primary"
+              style={{ paddingInline: '0.5rem', marginLeft: '0.25rem' }}
+              title="New from template"
+              onClick={() => setShowTemplateMenu(o => !o)}
+            >▾</button>
+            {showTemplateMenu && (
+              <div className="card" style={{ position: 'absolute', right: 0, top: '110%', zIndex: 50, padding: '0.75rem', boxShadow: 'var(--shadow-lg)', minWidth: 'min(520px, calc(100vw - 48px))' }}>
+                <p className="text-xs text-muted" style={{ padding: '0 0.25rem 0.5rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Choose a template</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.5rem' }}>
+                  {NOTE_TEMPLATES.map(t => (
+                    <button
+                      key={t.id}
+                      className="btn btn-ghost btn-sm"
+                      style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem', padding: '0.6rem 0.75rem', height: 'auto', textAlign: 'left' }}
+                      onClick={() => {
+                        const note = t.build(selectedFolder);
+                        setNotes([note, ...notes]);
+                        setShowTemplateMenu(false);
+                        addToast(`Created ${t.label} template`, 'success');
+                      }}
+                    >
+                      <span style={{ fontSize: '1.25rem' }}>{t.icon}</span>
+                      <span style={{ fontWeight: 600, fontSize: '0.8rem' }}>{t.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          </>
+        )}
+      </div>
+      </div>  );
+
+  // ── Documents tab ─────────────────────────────────────────────────────────
+  // The uploaded-document library gets its own surface (same header, different
+  // body) so the notes machinery below stays untouched.
+  if (tab === 'documents') {
+    return (
+      <div className="notes-view">
+        {pageHeader}
+        <DocumentsPanel
+          documents={documents}
+          setDocuments={setDocuments}
+          ai={ai}
+          practiceQuestions={practiceQuestions}
+          setPracticeQuestions={setPracticeQuestions}
+          flashcards={flashcards}
+          setFlashcards={setFlashcards}
+          addToast={addToast}
+          setCurrentView={setCurrentView}
+        />
+      </div>
+    );
+  }
+
   return (
     <div>
       {/* Focus mode styles */}
@@ -778,72 +894,8 @@ export default function NotesView({
           />
         );
       })()}
-      <div className="page-header">
-        <div>
-          <span className="sw-label">Study</span>
-          <h2>Notes &amp; Knowledge Base</h2>
-          <p className="text-sm text-muted">
-            {filteredNotes.length} note{filteredNotes.length === 1 ? '' : 's'} in {selectedFolder ? folders.find(f => f.id === selectedFolder)?.name || 'this folder' : 'your library'}
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-          {ai.isReady
-            ? <span className="tag success" title={`Provider: ${ai.config.provider} · Model: ${ai.config.model}`}>
-                🤖 {ai.config.provider === 'gemini' ? 'Gemini' : 'OpenAI'} on
-              </span>
-            : <span className="tag" title="Configure AI in Settings → ⚙️" style={{ cursor: 'pointer' }} onClick={() => setCurrentView('settings')}>
-                🤖 AI off
-              </span>
-          }
-          {tier === 'pro' && savedSearches.length > 0 && (
-            <button className="btn btn-secondary" onClick={() => setShowSavedSearches(o => !o)}>🔖 Saved Searches</button>
-          )}
-          {tier === 'pro' && (
-            <button className="btn btn-secondary" onClick={() => setShowQa(o => !o)}>{showQa ? 'Hide Q&A' : '🤖 Ask Your Brain'}</button>
-          )}
-          {tier === 'pro' && filteredNotes.length > 0 && (
-            <button className="btn btn-secondary" title="Export visible notes as PDF" onClick={async () => { try { await exportNotesToPDF(filteredNotes); addToast('📄 PDF downloaded.', 'success'); } catch (err: any) { addToast(`PDF export failed: ${err.message}`, 'error'); } }}>🖨️ PDF</button>
-          )}
-          <button className="btn btn-secondary" onClick={() => setShowUrlSave(o => !o)}>{showUrlSave ? '✕ Close URL' : '🔗 Save from URL'}</button>
-          <button className="btn btn-primary" onClick={() => importInputRef.current?.click()} title="Import a PDF or PPTX and turn it into flashcards">📥 Import</button>
-          <button className="btn btn-secondary" onClick={() => setFocusMode(f => !f)} title={focusMode ? 'Exit focus mode' : 'Enter focus mode — distraction-free editing'}>{focusMode ? '✕ Exit Focus' : '🧘 Focus Mode'}</button>
-          <input ref={importInputRef} type="file" accept=".pdf,.pptx,image/*,audio/*" onChange={handleImport} style={{ display: 'none' }} />
-          <div style={{ position: 'relative' }}>
-            <button className="btn btn-primary" data-copilot="new-note" onClick={() => { if (!editingNote) setFormOpen(o => !o); }}>
-              {formOpen ? '✕ Close' : '+ New Note'}
-            </button>
-            <button
-              className="btn btn-primary"
-              style={{ paddingInline: '0.5rem', marginLeft: '0.25rem' }}
-              title="New from template"
-              onClick={() => setShowTemplateMenu(o => !o)}
-            >▾</button>
-            {showTemplateMenu && (
-              <div className="card" style={{ position: 'absolute', right: 0, top: '110%', zIndex: 50, padding: '0.75rem', boxShadow: 'var(--shadow-lg)', minWidth: 'min(520px, calc(100vw - 48px))' }}>
-                <p className="text-xs text-muted" style={{ padding: '0 0.25rem 0.5rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Choose a template</p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.5rem' }}>
-                  {NOTE_TEMPLATES.map(t => (
-                    <button
-                      key={t.id}
-                      className="btn btn-ghost btn-sm"
-                      style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem', padding: '0.6rem 0.75rem', height: 'auto', textAlign: 'left' }}
-                      onClick={() => {
-                        const note = t.build(selectedFolder);
-                        setNotes([note, ...notes]);
-                        setShowTemplateMenu(false);
-                        addToast(`Created ${t.label} template`, 'success');
-                      }}
-                    >
-                      <span style={{ fontSize: '1.25rem' }}>{t.icon}</span>
-                      <span style={{ fontWeight: 600, fontSize: '0.8rem' }}>{t.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-      </div>
-      </div>
+      {pageHeader}
+
 
       {tier === 'free' && totalItems >= 40 && (
             <div className="limit-warning">

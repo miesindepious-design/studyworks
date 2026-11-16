@@ -4,7 +4,7 @@
  */
 
 import { getDB } from './schema';
-import type { Note, Contact, Flashcard, Folder, PracticeQuestion, SavedSearch } from '../types';
+import type { Note, Contact, Flashcard, Folder, PracticeQuestion, SavedSearch, StudyDocument } from '../types';
 
 // ── Generic helpers ───────────────────────────────────────────────────────────
 async function getAll<T>(store: Parameters<Awaited<ReturnType<typeof getDB>>['getAll']>[0]): Promise<T[]> {
@@ -85,6 +85,15 @@ export const savedSearchesDB = {
   delete:  (id: string)                => del('saved_searches', id),
   putAll:  (items: SavedSearch[])      => putAll('saved_searches', items),
   clear:   ()                          => clear('saved_searches'),
+};
+
+// ── Documents (uploaded-document library) ─────────────────────────────────────
+export const documentsDB = {
+  getAll:  ()                        => getAll<StudyDocument>('documents'),
+  put:     (doc: StudyDocument)      => put('documents', doc),
+  delete:  (id: string)              => del('documents', id),
+  putAll:  (items: StudyDocument[])  => putAll('documents', items),
+  clear:   ()                        => clear('documents'),
 };
 
 // ── Settings ──────────────────────────────────────────────────────────────────

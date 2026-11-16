@@ -564,6 +564,10 @@ export default function App() {
         onOpenCommandPalette={() => setCmdkOpen(true)}
         onOpenPricing={() => setCurrentView('pricing')}
         onSignOut={handleSignOut}
+        profileUser={session.user}
+        tierLabel={tier === 'pro' ? 'Pro plan' : 'Free plan'}
+        onProfileSaved={(u) => session.setUser(u)}
+        addToast={addToast}
         isAdmin={isAdmin}
         topbarExtra={(
           <>
@@ -649,6 +653,7 @@ export default function App() {
               practiceQuestions={db.practiceQuestions} setPracticeQuestions={db.setPracticeQuestions}
               incrementQaQueries={incrementQaQueries} qaQueriesThisMonth={db.qaQueriesThisMonth}
               savedSearches={db.savedSearches} setSavedSearches={db.setSavedSearches}
+              documents={db.documents} setDocuments={db.setDocuments}
               ai={ai}
               loadStarterPack={db.loadStarterPack}
             />
@@ -693,6 +698,12 @@ export default function App() {
               setCurrentView={navigateTo}
               addToast={addToast}
               notes={notesUR.state}
+              addDocuments={(docs) => {
+                db.setDocuments([...docs, ...db.documents]);
+              }}
+              updateDocument={(id, patch) => {
+                db.setDocuments(db.documents.map(d => d.id === id ? { ...d, ...patch } : d));
+              }}
               onSaveNote={(note) => {
                 notesUR.set([{
                   id: crypto.randomUUID(),

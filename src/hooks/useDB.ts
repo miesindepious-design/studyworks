@@ -17,9 +17,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { migrateFromLocalStorage } from '../db/migration';
 import {
   notesDB, contactsDB, flashcardsDB, foldersDB,
-  practiceQuestionsDB, savedSearchesDB, settingsDB,
+  practiceQuestionsDB, savedSearchesDB, documentsDB, settingsDB,
 } from '../db/helpers';
-import type { Note, Contact, Flashcard, Folder, PracticeQuestion, SavedSearch } from '../types';
+import type { Note, Contact, Flashcard, Folder, PracticeQuestion, SavedSearch, StudyDocument } from '../types';
 import { buildStarterPack } from '../lib/studentTemplates';
 
 export type DBStatus = 'loading' | 'ready' | 'error';
@@ -34,6 +34,7 @@ export interface UseDBResult {
   folders:           Folder[];
   practiceQuestions: PracticeQuestion[];
   savedSearches:     SavedSearch[];
+  documents:         StudyDocument[];
 
   // Settings
   theme:    string;
@@ -51,6 +52,7 @@ export interface UseDBResult {
   setFolders:           (next: Folder[])           => void;
   setPracticeQuestions: (next: PracticeQuestion[]) => void;
   setSavedSearches:     (next: SavedSearch[])      => void;
+  setDocuments:         (next: StudyDocument[])    => void;
 
   setTheme:             (v: string) => void;
   setAccent:            (v: string) => void;
@@ -119,6 +121,7 @@ export function useDB(): UseDBResult {
   const [folders,           setFoldersState]           = useState<Folder[]>([{ id: 'default', name: 'All Items', createdAt: new Date() }]);
   const [practiceQuestions, setPracticeQuestionsState] = useState<PracticeQuestion[]>([]);
   const [savedSearches,     setSavedSearchesState]     = useState<SavedSearch[]>([]);
+  const [documents,         setDocumentsState]         = useState<StudyDocument[]>([]);
 
   const [theme,    setThemeState]    = useState('system');
   const [accent,   setAccentState]   = useState('sunset');
@@ -136,6 +139,7 @@ export function useDB(): UseDBResult {
   const foldersRef           = useRef<Folder[]>([]);
   const practiceQuestionsRef = useRef<PracticeQuestion[]>([]);
   const savedSearchesRef     = useRef<SavedSearch[]>([]);
+  const documentsRef         = useRef<StudyDocument[]>([]);
 
   // ── Boot: migrate then load ──────────────────────────────────────────────
   useEffect(() => {
@@ -144,13 +148,14 @@ export function useDB(): UseDBResult {
       try {
         await migrateFromLocalStorage();
 
-        const [n, c, f, fo, pq, ss] = await Promise.all([
+        const [n, c, f, fo, pq, ss, docs] = await Promise.all([
           notesDB.getAll(),
           contactsDB.getAll(),
           flashcardsDB.getAll(),
           foldersDB.getAll(),
           practiceQuestionsDB.getAll(),
           savedSearchesDB.getAll(),
+          documentsDB.getAll(),
         ]);
 
         const [
@@ -173,6 +178,7 @@ export function useDB(): UseDBResult {
         setFoldersState(fo.length ? fo : [{ id: 'default', name: 'All Items', createdAt: new Date() }]);
         setPracticeQuestionsState(pq);
         setSavedSearchesState(ss);
+        setDocumentsState(docs);
 
         notesRef.current             = n;
         contactsRef.current          = c;
@@ -180,6 +186,7 @@ export function useDB(): UseDBResult {
         foldersRef.current           = fo.length ? fo : [{ id: 'default', name: 'All Items', createdAt: new Date() }];
         practiceQuestionsRef.current = pq;
         savedSearchesRef.current     = ss;
+        documentsRef.current         = docs;
 
         if (themeVal)    setThemeState(themeVal);
         if (accentVal)   setAccentState(accentVal);
@@ -250,6 +257,14 @@ export function useDB(): UseDBResult {
       console.error('[StudyWorks] savedSearches diff persist failed:', err));
   }, []);
 
+  const setDocuments = useCallback((next: StudyDocument[]) => {
+    const prev = documentsRef.current;
+    documentsRef.current = next;
+    setDocumentsState(next);
+    diffAndPersist(documentsDB, prev, next).catch(err =>
+      console.error('[StudyWorks] documents diff persist failed:', err));
+  }, []);
+
   // Append the exam-prep starter pack (subject folders + sample notes +
   // flashcards) without clobbering anything the user already has.
   const loadStarterPack = useCallback(() => {
@@ -299,10 +314,10 @@ export function useDB(): UseDBResult {
 
   return {
     status,
-    notes, contacts, flashcards, folders, practiceQuestions, savedSearches,
+    notes, contacts, flashcards, folders, practiceQuestions, savedSearches, documents,
     theme, accent, tier, xp, onboardingDone,
     aiSummariesThisMonth, qaQueriesThisMonth,
-    setNotes, setContacts, setFlashcards, setFolders, setPracticeQuestions, setSavedSearches,
+    setNotes, setContacts, setFlashcards, setFolders, setPracticeQuestions, setSavedSearches, setDocuments,
     setTheme, setAccent, setTier, setXp, setOnboardingDone,
     setAiSummariesThisMonth, setQaQueriesThisMonth,
     loadStarterPack,

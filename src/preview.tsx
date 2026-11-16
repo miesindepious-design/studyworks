@@ -29,7 +29,7 @@ import PricingView from './components/PricingView';
 import AdminDashboard from './components/AdminDashboard';
 import ShortcutsModal from './components/ShortcutsModal';
 import Onboarding from './components/Onboarding';
-import type { Note, Contact, Flashcard, Folder, PracticeQuestion, SavedSearch } from './types';
+import type { Note, Contact, Flashcard, Folder, PracticeQuestion, SavedSearch, StudyDocument } from './types';
 import type { UseAIResult } from './hooks/useAI';
 import { PAGE_TITLES } from './config/nav';
 
@@ -160,6 +160,57 @@ const folders: Folder[] = [
   { id: 'f1', name: 'Cognitive psychology', createdAt: new Date(now - 40 * day) },
   { id: 'f2', name: 'Linear algebra', createdAt: new Date(now - 30 * day) },
   { id: 'f3', name: 'Design thinking', createdAt: new Date(now - 20 * day) },
+];
+
+const documents: StudyDocument[] = [
+  {
+    id: 'doc-1',
+    name: 'Biology — Chapter 4: Cell Structure.pdf',
+    kind: 'pdf',
+    size: 1_240_000,
+    text: 'Cells are the basic structural units of living organisms. The cell membrane, cytoplasm, nucleus and organelles each play a role. Mitochondria produce ATP through cellular respiration. Ribosomes synthesise proteins. Plant cells additionally contain chloroplasts and a cellulose cell wall.## Analysed briefing (from AI Tutor)\nOverview: Chapter 4 covers the structure and function of eukaryotic cells, comparing plant and animal cells and walking through each organelle.\n\nKey points://n- (must-know) The cell membrane is a selectively permeable phospholipid bilayer — it controls what enters and leaves the cell, which is why transport mechanisms are heavily examined.\n- (must-know) Mitochondria are the site of aerobic respiration and produce ATP.\n- (should-know) Ribosomes build proteins; rough ER folds and ships them.\n\nOutline://n1. Cell theory\n2. Membrane structure and transport\n3. Organelles and their functions\n\nGlossary://n- Osmosis: diffusion of water across a semi-permeable membrane.\n\nExam questions://n1. Explain how the structure of the cell membrane relates to its function.\n',
+    pages: 24,
+    truncated: false,
+    analysis: {
+      title: 'Biology — Chapter 4: Cell Structure',
+      overview: 'Chapter 4 covers the structure and function of eukaryotic cells, comparing plant and animal cells and walking through every organelle you need to label on an exam diagram.',
+      keyPoints: [
+        { point: 'The cell membrane is a selectively permeable phospholipid bilayer.', why: 'It controls what enters and leaves the cell — transport is a favourite exam topic.', importance: 'must-know' },
+        { point: 'Mitochondria are the site of aerobic respiration and produce ATP.', why: 'Energy transfer questions come up almost every year.', importance: 'must-know' },
+        { point: 'Ribosomes build proteins; rough ER folds and ships them.', why: 'Common mix-up with smooth ER — know the difference.', importance: 'should-know' },
+        { point: 'Only plant cells have chloroplasts and a cellulose cell wall.', why: 'The classic plant-vs-animal cell comparison.', importance: 'good-to-know' },
+      ],
+      outline: [
+        { heading: 'Cell theory', detail: 'All living things are made of cells; cells come from pre-existing cells.' },
+        { heading: 'Membrane structure and transport', detail: 'Diffusion, osmosis, active transport.' },
+        { heading: 'Organelles and their functions', detail: 'Nucleus, mitochondria, ribosomes, ER, chloroplasts, vacuole.' },
+      ],
+      glossary: [
+        { term: 'Osmosis', meaning: 'Diffusion of water across a semi-permeable membrane.' },
+        { term: 'Organelle', meaning: 'A specialised structure inside a cell with a specific job.' },
+      ],
+      questions: [
+        'Explain how the structure of the cell membrane relates to its function.',
+        'Compare plant and animal cells.',
+      ],
+    },
+    source: 'tutor' as const,
+    createdAt: new Date('2026-11-14T09:00:00'),
+    updatedAt: new Date('2026-11-15T17:30:00'),
+  },
+  {
+    id: 'doc-2',
+    name: 'History — Cold War timelines.docx',
+    kind: 'docx',
+    size: 480_000,
+    text: 'The Cold War (1947–1991) was a period of geopolitical tension between the USA and the USSR. Key events: the Truman Doctrine (1947), the Berlin Blockade (1948–49), the Cuban Missile Crisis (1962), détente, and the fall of the Berlin Wall (1989).',
+    pages: 8,
+    truncated: false,
+    analysis: null,
+    source: 'library' as const,
+    createdAt: new Date('2026-11-15T11:20:00'),
+    updatedAt: new Date('2026-11-15T11:20:00'),
+  },
 ];
 
 const notes: Note[] = Array.from({ length: 14 }, (_, i) => ({
@@ -304,6 +355,7 @@ function Preview() {
   const [questions, setQuestions] = useState(practiceQuestions);
   const [searches, setSearches] = useState(savedSearches);
   const [folderList, setFolderList] = useState(folders);
+  const [docs, setDocs] = useState<StudyDocument[]>(documents);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const shared = {
@@ -326,6 +378,7 @@ function Preview() {
           incrementAiSummaries={noop} aiSummariesThisMonth={12}
           incrementQaQueries={noop} qaQueriesThisMonth={4}
           ai={mockAI} loadStarterPack={noop}
+          documents={docs} setDocuments={setDocs}
           {...shared}
         />
       );
@@ -409,6 +462,12 @@ function Preview() {
       onOpenCommandPalette={noop}
       onOpenPricing={noop}
       onSignOut={noop}
+      profileUser={{
+        id: 'u1', email: 'alex@studyworks.app', name: 'Alex Morgan',
+        emailVerified: true, tier: 'PRO', image: null,
+        createdAt: new Date().toISOString(),
+      }}
+      tierLabel="Pro plan"
       sidebarExtra={(
         <div className="sw-side-deck">
           <div className="sw-side-deck-row">
