@@ -23,7 +23,7 @@ export interface CreateRoomBody {
 }
 
 export function createGameRoom(body: CreateRoomBody) {
-  return apiPost<{ code: string; roomId: string; questionCount: number }>('/api/game/rooms', body);
+  return apiPost<{ code: string; roomId: string; questionCount: number; lobbyCode: string | null }>('/api/game/rooms', body);
 }
 
 export function getGameRoom(code: string) {

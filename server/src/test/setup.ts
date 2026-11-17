@@ -29,10 +29,14 @@ export const prismaMock = {
   practiceQuestion: { findMany: vi.fn(), upsert: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), count: vi.fn() },
   savedSearch:      { findMany: vi.fn(), upsert: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), count: vi.fn() },
   aISettings:       { findUnique: vi.fn(), upsert: vi.fn() },
-  user:             { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
+  user:             { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), count: vi.fn(), delete: vi.fn() },
   highlight:        { findMany: vi.fn(), create: vi.fn(), delete: vi.fn() },
   personalNote:     { findMany: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
-  attachment:       { findMany: vi.fn(), create: vi.fn(), delete: vi.fn() },
+  attachment:       { findMany: vi.fn(), create: vi.fn(), delete: vi.fn(), count: vi.fn() },
+  supportTicket:    { count: vi.fn() },
+  gameRoom:         { count: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
+  gamePlayer:       { count: vi.fn(), findMany: vi.fn(), create: vi.fn() },
+  lobby:            { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
 };
 
 vi.mock('../lib/prisma.js', () => ({ prisma: prismaMock }));

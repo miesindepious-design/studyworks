@@ -19,6 +19,7 @@ import SettingsView from './components/SettingsView';
 import StudyRoom from './components/StudyRoom';
 import TutorView from './components/TutorView';
 import MultiplayerQuiz from './components/MultiplayerQuiz';
+import LobbyView from './components/LobbyView';
 import AuthPage from './components/AuthPage';
 import ConfirmModal from './components/ConfirmModal';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -198,6 +199,17 @@ export default function App() {
   );
   const [currentView, setCurrentView] = useState<View>('dashboard');
 
+  // A lobby code the player arrived with (?lobby=123456 in the URL, or a code
+  // restored from sessionStorage after they signed in). Held here so the
+  // deep link survives the auth gate: the lobby screen only renders once
+  // the user is authenticated.
+  const [pendingLobbyCode, setPendingLobbyCode] = useState<string | null>(null);
+
+  // Set when the player is referred from a lobby into a live session. The
+  // target screens read these to join the session automatically.
+  const [pendingQuizRoom, setPendingQuizRoom] = useState<string | null>(null);
+  const [pendingStudyRoom, setPendingStudyRoom] = useState<{ id: string; url: string | null } | null>(null);
+
   // ── Theme (apply immediately from IDB value once loaded) ──────────────────
   const theme = (db.theme as Theme) || 'system';
 
@@ -274,6 +286,18 @@ export default function App() {
   // ── Helpers ───────────────────────────────────────────────────────────────
   const navigateTo  = (view: string) => setCurrentView(view as View);
   const tier        = (db.tier as Tier) || 'free';
+
+  // ── Lobby referral ─────────────────────────────────────────────────────────
+  // The lobby screen tells us what kind of session a code points at; these
+  // hand the player over to it.
+  const enterQuizFromLobby = (roomCode: string) => {
+    setPendingQuizRoom(roomCode);
+    setCurrentView('multiplayer');
+  };
+  const enterStudyFromLobby = (voiceRoomId: string, roomUrl: string | null) => {
+    setPendingStudyRoom({ id: voiceRoomId, url: roomUrl });
+    setCurrentView('studyRoom');
+  };
   // Days remaining in the 7-day trial (0 once it's over or never started).
   const trialDaysLeft = (() => {
     if (!trialEndsAt) return 0;
@@ -348,6 +372,18 @@ export default function App() {
       window.history.replaceState({}, '', '/');
     }
 
+    // ?lobby=123456 — the shareable lobby link. The player may not be
+    // signed in yet, so stash the code in sessionStorage: the lobby screen
+    // only renders after auth, and the code has to survive that round trip.
+    const lobbyParam = params.get('lobby');
+    if (lobbyParam && /^\d{6}$/.test(lobbyParam.trim())) {
+      const code = lobbyParam.trim();
+      try { sessionStorage.setItem('studyworks:pendingLobby', code); } catch {}
+      setPendingLobbyCode(code);
+      setCurrentView('lobby');
+      window.history.replaceState({}, '', '/');
+    }
+
     // Save-from-URL deep link (browser extension / share target):
     // /?save=<encoded-url> switches to Notes and stashes the URL for the
     // NotesView to clip once the app is ready.
@@ -367,6 +403,19 @@ export default function App() {
     window.addEventListener('sw-reminder-click', handler);
     return () => window.removeEventListener('sw-reminder-click', handler);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A player who followed a share link while signed out lands back here
+  // after signing in. Pick the stashed code up then.
+  useEffect(() => {
+    if (session.status !== 'authenticated') return;
+    if (pendingLobbyCode) return;
+    let stashed: string | null = null;
+    try { stashed = sessionStorage.getItem('studyworks:pendingLobby'); } catch {}
+    if (stashed && /^\d{6}$/.test(stashed)) {
+      setPendingLobbyCode(stashed);
+      setCurrentView('lobby');
+    }
+  }, [session.status, pendingLobbyCode]);
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   // Built from the shared registry (src/config/shortcuts.ts) so a rebind in
@@ -689,6 +738,20 @@ export default function App() {
               setCurrentView={navigateTo}
               addToast={addToast}
               signalingUrl={typeof import.meta.env.VITE_VOICE_SIGNALING_URL === 'string' && import.meta.env.VITE_VOICE_SIGNALING_URL ? import.meta.env.VITE_VOICE_SIGNALING_URL : window.location.origin}
+              joinRoom={pendingStudyRoom}
+              onRoomConsumed={() => setPendingStudyRoom(null)}
+            />
+          )}
+          {currentView === 'lobby' && (
+            <LobbyView
+              code={pendingLobbyCode}
+              onCodeConsumed={(code) => {
+                setPendingLobbyCode(code);
+                try { sessionStorage.removeItem('studyworks:pendingLobby'); } catch {}
+              }}
+              onEnterQuiz={enterQuizFromLobby}
+              onEnterStudy={enterStudyFromLobby}
+              addToast={addToast}
             />
           )}
           {currentView === 'tutor' && (
@@ -746,6 +809,8 @@ export default function App() {
               tier={tier}
               setCurrentView={navigateTo}
               addToast={addToast}
+              initialRoomCode={pendingQuizRoom}
+              onRoomConsumed={() => setPendingQuizRoom(null)}
             />
           )}
           {currentView === 'timer' && (

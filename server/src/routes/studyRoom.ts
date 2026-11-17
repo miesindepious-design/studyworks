@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { requireAuth } from '../lib/session.js';
+import { createLobbyForSession } from '../lib/lobby.js';
 
 const CreateBody = z.object({
   // Name is optional: the frontend sends `undefined` when the input is empty,
@@ -50,18 +51,42 @@ studyRoomRouter.use('/*', requireAuth);
 
 studyRoomRouter.post('/', zValidator('json', CreateBody), async c => {
   const user = c.get('user');
-  const { name, maxParticipants } = c.req.valid('json');
+  const { name, maxParticipants } = await c.req.valid('json');
 
   const roomName = `studyworks-${user.id}-${Date.now().toString(36)}`;
   const daily = await createDailyRoom(roomName, maxParticipants);
 
+  // The room id doubles as the voice-room key (`voice-<id>`) that the client
+  // hands to the signaling server, so a joiner who arrives through a lobby
+  // lands in the same voice room as the host.
+  const roomId = daily?.id ?? roomName;
+
+  // Every room gets a lobby: the six-digit code, share link and QR code that
+  // let a friend land straight in this session. A failure here must not
+  // block the room from being created.
+  let lobbyCode: string | null = null;
+  try {
+    const lobby = await createLobbyForSession({
+      hostId: user.id,
+      kind: 'study',
+      title: name || 'Study room',
+      targetCode: roomId,
+      targetUrl: daily?.url ?? null,
+      maxParticipants,
+    });
+    lobbyCode = lobby.code;
+  } catch (err) {
+    console.error('[studyRoom] failed to create lobby for room', roomName, err);
+  }
+
   return c.json({
-    id: daily?.id ?? roomName,
+    id: roomId,
     name: name || `Study room`,
     url: daily?.url ?? null,
     roomName,
     provider: daily ? 'daily' : 'local',
     maxParticipants,
+    lobbyCode,
     createdAt: new Date().toISOString(),
   }, 201);
 });

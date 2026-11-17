@@ -125,6 +125,17 @@ export function IconQuiz(p: IconProps) {
   );
 }
 
+export function IconLobby(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M3 20V9l9-5 9 5v11" />
+      <path d="M3 20h18" />
+      <path d="M9.5 20v-5.5a2.5 2.5 0 0 1 5 0V20" />
+      <path d="M12 4v3.5" />
+    </Svg>
+  );
+}
+
 export function IconPricing(p: IconProps) {
   return (
     <Svg {...p}>

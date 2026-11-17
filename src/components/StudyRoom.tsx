@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createStudyRoom } from '../api/studyRoom';
 import VoiceChat from './VoiceChat';
+import LobbyShare from './LobbyShare';
 
 interface Props {
   userId: string;
@@ -9,6 +10,10 @@ interface Props {
   setCurrentView: (v: string) => void;
   addToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
   signalingUrl?: string;
+  /** A study session the player was referred to from a lobby. */
+  joinRoom?: { id: string; url: string | null } | null;
+  /** Called once the referred session has been taken off the queue. */
+  onRoomConsumed?: () => void;
 }
 
 type StudyPhase = 'idle' | 'creating' | 'ready' | 'error';
@@ -24,7 +29,7 @@ interface Participant {
   status: 'me' | 'connected' | 'muted' | 'deafened';
 }
 
-export default function StudyRoom({ userId, userName, tier, setCurrentView, addToast, signalingUrl }: Props) {
+export default function StudyRoom({ userId, userName, tier, setCurrentView, addToast, signalingUrl, joinRoom, onRoomConsumed }: Props) {
   const [phase, setPhase]               = useState<StudyPhase>('idle');
   const [roomName, setRoomName]         = useState('');
   const [room, setRoom]                 = useState<{ id: string; name: string; url: string | null; provider: string; maxParticipants: number } | null>(null);
@@ -36,6 +41,8 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
   const [timerRunning, setTimerRunning] = useState(false);
   const [tipsOpen, setTipsOpen]         = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  /** The six-digit lobby code for the room this client is hosting. */
+  const [lobbyCode, setLobbyCode]     = useState<string | null>(null);
 
   // ── Real participant list ─────────────────────────────────────────────────
   // Starts with just the current user. Remote peers are added/removed as they
@@ -48,6 +55,30 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
   const initParticipants = useCallback(() => {
     setParticipants([{ id: userId, name: userName, status: 'me' }]);
   }, [userId, userName]);
+
+  // ── Join a session the player was referred to from a lobby ─────────────────
+  // The lobby resolves a six-digit code to a study session and hands us the
+  // voice room id. Adopting it drops us straight into that session's room —
+  // the room id doubles as the voice room key, so everyone lands together.
+  const joinedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const target = joinRoom;
+    if (!target?.id) return;
+    // Guard against re-running when the parent re-renders with the same target.
+    if (joinedRef.current === target.id) return;
+    joinedRef.current = target.id;
+
+    setRoom({
+      id: target.id,
+      name: 'Study Room',
+      url: target.url ?? null,
+      provider: target.url ? 'daily' : 'local',
+      maxParticipants: 6,
+    });
+    setPhase('ready');
+    initParticipants();
+    onRoomConsumed?.();
+  }, [joinRoom, initParticipants, onRoomConsumed]);
 
   // VoiceChat fires custom DOM events so StudyRoom can reflect real peer state
   // without needing to share a socket ref.
@@ -138,6 +169,7 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
     try {
       const res = await createStudyRoom({ name: roomName || undefined, maxParticipants: 6 });
       setRoom({ id: res.id, name: res.name, url: res.url, provider: res.provider, maxParticipants: res.maxParticipants });
+      setLobbyCode(res.lobbyCode ?? null);
       setPhase('ready');
       initParticipants();
       addToast('Study room created!', 'success');
@@ -166,6 +198,8 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
   const reset = () => {
     setPhase('idle');
     setRoom(null);
+    setLobbyCode(null);
+    joinedRef.current = null;
     setRoomName('');
     setGoals('');
     setSessionNotes('');
@@ -357,6 +391,18 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
             </p>
           )}
         </div>
+
+        {/* The lobby: a six-digit code, a share link and a QR code — all three
+            point at the same lobby, so friends can use whichever is easiest. */}
+        {lobbyCode && (
+          <div style={{ marginBottom: '1rem' }}>
+            <LobbyShare
+              code={lobbyCode}
+              label="Share this lobby"
+              hint="Friends who join with this code are referred straight into this study session."
+            />
+          </div>
+        )}
 
         {/* Tips accordion */}
         <div className="accordion">

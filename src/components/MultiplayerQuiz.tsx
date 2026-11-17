@@ -4,6 +4,7 @@ import {
   createGameRoom, getGameRoom, getGameTicket, startGameRoom, listMyGameRooms,
 } from '../api/game';
 import Celebration from './Celebration';
+import LobbyShare from './LobbyShare';
 import type { PowerUpState, GameHistoryEntry, LobbyReaction } from '../types';
 
 interface Props {
@@ -13,6 +14,10 @@ interface Props {
   tier: string;
   setCurrentView: (v: string) => void;
   addToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
+  /** A room code the player was referred to from a lobby — joined automatically. */
+  initialRoomCode?: string | null;
+  /** Called once the referred room has been taken off the queue. */
+  onRoomConsumed?: () => void;
 }
 
 interface ChatLine { id: number; userId: string; name: string; text: string; mine: boolean; }
@@ -20,12 +25,14 @@ interface ScoreRow { userId: string; name: string; xp: number; ready?: boolean; 
 
 type Phase = 'lobby' | 'live' | 'finished';
 
-export default function MultiplayerQuiz({ db, userId, userName, tier, setCurrentView, addToast }: Props) {
+export default function MultiplayerQuiz({ db, userId, userName, tier, setCurrentView, addToast, initialRoomCode, onRoomConsumed }: Props) {
   const [phase, setPhase] = useState<Phase>('lobby');
   const [myRooms, setMyRooms] = useState<Array<{ code: string; status: string; source: string; host: string; questionCount: number }>>([]);
   const [joinCode, setJoinCode] = useState('');
   const [creating, setCreating] = useState(false);
   const [perQuestionSec, setPerQuestionSec] = useState(15);
+  /** The six-digit lobby code for the room this client is hosting. */
+  const [lobbyCode, setLobbyCode] = useState<string | null>(null);
 
   const [players, setPlayers] = useState<ScoreRow[]>([]);
   const [question, setQuestion] = useState<{ index: number; total: number; prompt: string; options: string[]; questionId: string; deadline: number; explanation?: string } | null>(null);
@@ -188,7 +195,8 @@ export default function MultiplayerQuiz({ db, userId, userName, tier, setCurrent
     if (tier !== 'pro') { addToast('Multiplayer quiz is a Pro feature!', 'info'); setCurrentView('pricing'); return; }
     setCreating(true);
     try {
-      const { code } = await createGameRoom({ source: 'flashcards', perQuestionSec });
+      const { code, lobbyCode } = await createGameRoom({ source: 'flashcards', perQuestionSec });
+      setLobbyCode(lobbyCode ?? null);
       await connect(code);
       refreshMyRooms();
       addToast(`Room ${code} created — share the code!`, 'success');
@@ -207,6 +215,35 @@ export default function MultiplayerQuiz({ db, userId, userName, tier, setCurrent
       addToast(e?.message || 'Room not found', 'error');
     }
   };
+
+  // ── Join a room the player was referred to from a lobby ────────────────────
+  // The lobby screen resolves a six-digit code to a room and sends the
+  // player here; joining it automatically is the whole point of the link.
+  const autoJoinedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const code = initialRoomCode?.trim().toUpperCase();
+    if (!code) return;
+    // Guard against a double-join when the effect re-runs.
+    if (autoJoinedRef.current === code) return;
+    autoJoinedRef.current = code;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        await getGameRoom(code);
+        if (cancelled) return;
+        // Keep the join field in step so the rest of the component (start,
+        // spectate, power-ups) knows which room it is in.
+        setJoinCode(code);
+        await connect(code);
+        onRoomConsumed?.();
+      } catch (e: any) {
+        addToast(e?.message || 'Could not join that room', 'error');
+        onRoomConsumed?.();
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [initialRoomCode, connect, addToast, onRoomConsumed]);
 
   const handleStart = async () => {
     if (!hostId) return;
@@ -420,6 +457,18 @@ export default function MultiplayerQuiz({ db, userId, userName, tier, setCurrent
             : <p className="text-muted">Waiting for the host to start…</p>}
           <div style={{ marginTop: '1rem' }}><button className="btn btn-ghost btn-sm" onClick={leaveGame}>Leave</button></div>
         </div>
+
+        {/* The six-digit lobby code, the share link and the QR code all point at
+            the same lobby, so a friend can use whichever is easiest. */}
+        {lobbyCode && (
+          <div style={{ marginTop: '1rem' }}>
+            <LobbyShare
+              code={lobbyCode}
+              label="Share this lobby"
+              hint={`Friends who join with this code are referred straight into room ${code}.`}
+            />
+          </div>
+        )}
       </div>
     );
   }

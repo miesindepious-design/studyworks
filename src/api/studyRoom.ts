@@ -7,6 +7,8 @@ export interface StudyRoom {
   roomName: string;
   provider: 'daily' | 'local';
   maxParticipants: number;
+  /** Six-digit lobby code for this room — share it, the link, or the QR. */
+  lobbyCode?: string | null;
   createdAt: string;
 }
 

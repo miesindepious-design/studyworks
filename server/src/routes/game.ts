@@ -17,6 +17,7 @@ import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../lib/session.js';
 import { requirePro } from '../lib/tier.js';
 import { gameManager } from '../lib/gameManager.js';
+import { createLobbyForSession } from '../lib/lobby.js';
 import { SYSTEM_BASE, loadAIConfig, callProvider } from '../lib/aiProvider.js';
 import { studentProfileBits, studentPromptContext } from '../lib/studentProfile.js';
 
@@ -146,7 +147,24 @@ Return JSON: { "questions": [ { "prompt": "...", "options": ["...","...","...","
   gameManager.registerRoom(room.code, user.id, 'lobby', room.id);
   gameManager.loadQuestions(room.code, created, body.perQuestionSec, body.baseXp);
 
-  return c.json({ code: room.code, roomId: room.id, questionCount: created.length });
+  // Every room gets a lobby: the six-digit code, share link and QR code that
+  // let a friend land straight in this game. If the lobby can't be minted we
+  // still return the room — the game itself is unaffected.
+  let lobbyCode: string | null = null;
+  try {
+    const lobby = await createLobbyForSession({
+      hostId: user.id,
+      kind: 'quiz',
+      title: body.topic ? `Quiz: ${body.topic}` : 'Quiz Battle',
+      targetCode: room.code,
+      maxParticipants: 12,
+    });
+    lobbyCode = lobby.code;
+  } catch (err) {
+    console.error('[game] failed to create lobby for room', room.code, err);
+  }
+
+  return c.json({ code: room.code, roomId: room.id, questionCount: created.length, lobbyCode });
 });
 
 // Start the round (host only). Moves lobby -> live.

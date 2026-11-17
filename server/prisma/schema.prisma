@@ -59,6 +59,9 @@ model User {
   // Phase 3: multiplayer quiz
   gameRooms   GameRoom[]
   gamePlayers GamePlayer[]
+
+  // Phase 4: lobby
+  lobbies     Lobby[]
 }
 
 model Session {
@@ -412,6 +415,33 @@ model GameAnswer {
   player   GamePlayer    @relation(fields: [playerId], references: [id], onDelete: Cascade)
   @@index([roomId])
   @@index([playerId])
+}
+
+// ── Phase 4: Lobby (the shareable front door to a live session) ───────────────
+// Every quiz room and study room gets a Lobby. The lobby owns the six-digit
+// code that people actually share; it points at the real session so a player
+// who only has the code (or the link, or the QR) can be routed to the right
+// kind of session — a live quiz or a study room — without knowing how that
+// session is implemented.
+//
+// kind === 'quiz'  → targetCode is the GameRoom.code to join
+// kind === 'study' → targetCode is the voice room id, targetUrl the Daily URL
+model Lobby {
+  id              String   @id @default(cuid())
+  code            String   @unique // six-digit numeric join code
+  kind            String   // quiz | study
+  title           String
+  hostId          String
+  targetCode      String?  // quiz: GameRoom.code · study: voice room id
+  targetUrl       String?  // study: the Daily room URL (null in local mode)
+  maxParticipants Int      @default(6)
+  status          String   @default("open") // open | live | closed
+  createdAt       DateTime @default(now())
+  expiresAt       DateTime?
+
+  host User @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  @@index([hostId])
+  @@index([kind])
 }
 
 // ── Phase 2: Email-to-save ────────────────────────────────────────────────────
