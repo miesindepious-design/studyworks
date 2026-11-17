@@ -1233,7 +1233,7 @@ export default function NotesView({
                 )}
               </div>
 
-              <h3 style={{ fontWeight: 700, marginBottom: '0.5rem' }}>{note.title}</h3>
+              <h3 className="note-card-title" style={{ fontWeight: 700, marginBottom: '0.5rem' }}>{note.title}</h3>
 
               {/* Content with highlights */}
               <div style={{ marginBottom: '0.75rem' }}>

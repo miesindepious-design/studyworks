@@ -613,6 +613,24 @@
   border-color: var(--sw-line);
 }
 
+/* ── Note card title ──────────────────────────────────────────────────────── */
+/* Titles imported from files are often one long unbroken token
+   ("Limits_of_Functions_Lecture_Note"). Underscores are not break
+   opportunities in CSS, so the heading used to push past the card's right
+   border and over its own edge. `overflow-wrap: anywhere` lets the browser
+   break inside the token so the heading wraps inside the card. */
+.note-card-title {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Grid children default to `min-width: auto`, which lets a wide child (a long
+   title, a wide table) widen its grid track instead of shrinking to it — the
+   card then spills past the column it was given. Resetting the minimum lets
+   the track keep its size and the card's own overflow rules take effect. */
+.grid > * { min-width: 0; }
+
+
 /* ── Text utilities ───────────────────────────────────────────────────────── */
 .text-sm { font-size: 0.8125rem; }
 .text-xs { font-size: 0.6875rem; }
