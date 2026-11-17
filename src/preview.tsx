@@ -148,6 +148,26 @@ const PART_EXPLANATION = `Let's slow down on just that step.
 
 **Why it matters:** every ATP your cells spend was charged by this process in the chloroplast.`;
 
+/** Mock accounts for the admin dashboard preview. */
+const ADMIN_USERS = [
+  {
+    id: 'u-1', email: 'alex@studyworks.app', name: 'Alex (admin)', tier: 'PRO' as const,
+    emailVerified: true, createdAt: '2025-11-02T09:14:00.000Z',
+    stripeSubscriptionId: null, stripeCurrentPeriodEnd: null, stripePriceId: null,
+  },
+  {
+    id: 'u-2', email: 'student@example.com', name: 'Chidi Okonkwo', tier: 'PRO' as const,
+    emailVerified: true, createdAt: '2026-01-18T16:02:00.000Z',
+    stripeSubscriptionId: 'sub_preview_1', stripeCurrentPeriodEnd: '2026-12-01T00:00:00.000Z',
+    stripePriceId: 'price_pro_monthly',
+  },
+  {
+    id: 'u-3', email: 'nora@example.com', name: 'Nora Haddad', tier: 'FREE' as const,
+    emailVerified: true, createdAt: '2026-03-05T11:47:00.000Z',
+    stripeSubscriptionId: null, stripeCurrentPeriodEnd: null, stripePriceId: null,
+  },
+];
+
 if (typeof window !== 'undefined') {
   const realFetch = window.fetch.bind(window);
   window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
@@ -234,6 +254,37 @@ if (typeof window !== 'undefined') {
         JSON.stringify({ ok: true, provider: 'gemini', model: 'gemini-4-hydrogen', reply: 'OK' }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       ));
+    }
+    // Admin dashboard — a mock account list so the delete-account flow can be
+    // inspected without a live server or database.
+    if (url.includes('/api/admin')) {
+      const method = (init?.method ?? 'GET').toUpperCase();
+      const json = (body: unknown) => new Response(
+        JSON.stringify(body),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+      if (method === 'GET' && url.includes('/api/admin/stats')) {
+        return Promise.resolve(json({ total: 3, pro: 2, free: 1 }));
+      }
+      if (method === 'GET' && /\/api\/admin\/users\/[^/?]+$/.test(url)) {
+        return Promise.resolve(json({
+          user: ADMIN_USERS[1],
+          counts: {
+            notes: 24, folders: 5, contacts: 11, flashcards: 48, practiceQuestions: 16,
+            savedSearches: 7, attachments: 9, gameRooms: 2, supportTickets: 1,
+          },
+        }));
+      }
+      if (method === 'GET' && url.includes('/api/admin/users')) {
+        return Promise.resolve(json({ users: ADMIN_USERS }));
+      }
+      if (method === 'DELETE') {
+        return Promise.resolve(json({
+          deleted: { id: 'u-2', email: 'student@example.com' },
+          filesRemoved: 9,
+          warnings: [],
+        }));
+      }
     }
     return realFetch(input, init);
   }) as typeof window.fetch;

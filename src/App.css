@@ -1437,6 +1437,13 @@ select:focus-visible {
   padding: 1.1rem 1.25rem;
   overflow-y: auto;
 }
+/* A strip below the scrolling body for a field the user must fill in —
+   it stays on screen next to the button that uses it. */
+.modal-confirm {
+  padding: 0.9rem 1.25rem;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-0) 88%, transparent);
+}
 .modal-footer {
   display: flex;
   align-items: center;

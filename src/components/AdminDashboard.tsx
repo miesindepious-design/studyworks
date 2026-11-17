@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getAdminStats, getAdminUsers, setUserTier } from '../api/admin';
-import type { AdminUser, AdminStats } from '../api/admin';
+import {
+  deleteAdminUser,
+  getAdminStats,
+  getAdminUser,
+  getAdminUsers,
+  setUserTier,
+} from '../api/admin';
+import type { AdminUser, AdminUserDetail, AdminStats } from '../api/admin';
+import AdminDeleteUserModal from './AdminDeleteUserModal';
 
 interface Props {
   adminEmail: string;
@@ -13,6 +20,13 @@ export default function AdminDashboard({ adminEmail, addToast }: Props) {
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState('');
   const [updating, setUpdating] = useState<string | null>(null); // userId being updated
+
+  // Delete-account flow
+  const [deleteTarget, setDeleteTarget] = useState<AdminUserDetail | null>(null);
+  const [deleteLoadingId, setDeleteLoadingId] = useState<string | null>(null); // fetching the impact summary
+  const [deleting, setDeleting]           = useState(false); // the delete request is in flight
+  const [deleteError, setDeleteError]     = useState<string | null>(null);
+
   const searchTimer             = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadData = useCallback(async (q?: string) => {
@@ -66,6 +80,63 @@ export default function AdminDashboard({ adminEmail, addToast }: Props) {
   const formatDate = (iso: string) => {
     return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
+
+  // ── Delete an account ───────────────────────────────────────────────────────
+
+  /** Open the confirmation dialog, loading what would be lost first. */
+  const handleOpenDelete = async (user: AdminUser) => {
+    setDeleteError(null);
+    setDeleteTarget(null);
+    setDeleteLoadingId(user.id);
+    try {
+      const detail = await getAdminUser(user.id);
+      setDeleteTarget(detail);
+    } catch (err: any) {
+      addToast(err.message || 'Could not load the account details', 'error');
+    } finally {
+      setDeleteLoadingId(null);
+    }
+  };
+
+  const handleCloseDelete = () => {
+    if (deleting) return; // don't let the dialog vanish mid-request
+    setDeleteTarget(null);
+    setDeleteError(null);
+  };
+
+  const handleConfirmDelete = async (email: string) => {
+    if (!deleteTarget) return;
+    const target = deleteTarget;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const result = await deleteAdminUser(target.user.id, email);
+
+      // Drop the row and fix the tier counters.
+      setUsers(prev => prev.filter(u => u.id !== target.user.id));
+      setStats(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          total: prev.total - 1,
+          pro:   target.user.tier === 'PRO' ? prev.pro - 1 : prev.pro,
+          free:  target.user.tier === 'FREE' ? prev.free - 1 : prev.free,
+        };
+      });
+
+      setDeleteTarget(null);
+      addToast(`Deleted ${result.deleted.email}`, 'success');
+      for (const warning of result.warnings) addToast(warning, 'info');
+    } catch (err: any) {
+      setDeleteError(err.message || 'The account could not be deleted');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  /** The signed-in admin may not delete their own account (the server refuses too). */
+  const isAdminRow = (user: AdminUser) =>
+    user.email.toLowerCase() === adminEmail.toLowerCase();
 
   return (
     <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
@@ -188,18 +259,30 @@ export default function AdminDashboard({ adminEmail, addToast }: Props) {
 
                     {/* Action */}
                     <td style={{ padding: '0.65rem 0.75rem' }}>
-                      <button
-                        className={`btn btn-sm ${user.tier === 'PRO' ? 'btn-secondary' : 'btn-primary'}`}
-                        disabled={updating === user.id}
-                        onClick={() => handleToggleTier(user)}
-                        style={{ minWidth: '100px' }}
-                      >
-                        {updating === user.id
-                          ? 'Saving…'
-                          : user.tier === 'PRO'
-                            ? '↓ Downgrade'
-                            : '↑ Upgrade to Pro'}
-                      </button>
+                      <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                        <button
+                          className={`btn btn-sm ${user.tier === 'PRO' ? 'btn-secondary' : 'btn-primary'}`}
+                          disabled={updating === user.id}
+                          onClick={() => handleToggleTier(user)}
+                          style={{ minWidth: '100px' }}
+                        >
+                          {updating === user.id
+                            ? 'Saving…'
+                            : user.tier === 'PRO'
+                              ? '↓ Downgrade'
+                              : '↑ Upgrade to Pro'}
+                        </button>
+                        <button
+                          className="btn btn-sm btn-danger"
+                          onClick={() => handleOpenDelete(user)}
+                          disabled={deleteLoadingId === user.id || isAdminRow(user)}
+                          title={isAdminRow(user)
+                            ? 'You cannot delete your own admin account'
+                            : 'Delete this account and everything in it'}
+                        >
+                          {deleteLoadingId === user.id ? '…' : '🗑 Delete'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -211,6 +294,17 @@ export default function AdminDashboard({ adminEmail, addToast }: Props) {
           </div>
         )}
       </div>
+
+      {/* Delete confirmation */}
+      {deleteTarget && (
+        <AdminDeleteUserModal
+          detail={deleteTarget}
+          deleting={deleting}
+          error={deleteError}
+          onConfirm={handleConfirmDelete}
+          onCancel={handleCloseDelete}
+        />
+      )}
     </div>
   );
 }

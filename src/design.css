@@ -4556,7 +4556,6 @@ select.sw-focus-select option {
   padding-top: 0.6rem;
   border-top: 1px dashed var(--sw-line-soft, var(--border));
 }
-
 /* Panel where the student quotes the part they're stuck on */
 .sw-confused-panel {
   margin-top: 0.6rem;
@@ -4594,3 +4593,37 @@ select.sw-focus-select option {
   color: var(--sw-text, var(--text));
 }
 .sw-tutor-asked p { margin: 0.25rem 0 0; color: var(--sw-text-2, var(--text-2)); }
+
+/* ── Admin: delete-account dialog ───────────────────────────────────────────
+   The impact list runs in two columns so the whole summary, the warning and
+   the confirmation field fit on one screen without scrolling. A long list in
+   one column pushed the "type the email" field below the fold, which is the
+   one control the admin has to find before anything can happen. */
+.sw-delete-counts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 1.5rem;
+  row-gap: 0.1rem;
+}
+.sw-delete-count-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.12rem 0;
+  font-size: 0.875rem;
+}
+.sw-delete-count-total {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.45rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--sw-line-soft, var(--border));
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+@media (max-width: 620px) {
+  .sw-delete-counts { grid-template-columns: minmax(0, 1fr); }
+}

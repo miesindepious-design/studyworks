@@ -13,28 +13,9 @@ import { zValidator } from '@hono/zod-validator';
 import Stripe from 'stripe';
 import { requireAuth } from '../lib/session.js';
 import { prisma } from '../lib/prisma.js';
+import { getStripe, isStripeConfigured } from '../lib/stripe.js';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
-
-/**
- * Lazy Stripe client — only initialised on the first call that needs it.
- * This prevents a missing / invalid STRIPE_SECRET_KEY from crashing the
- * entire Hono app at import time and breaking every unrelated route (auth,
- * notes, sync, etc.) with a 500.
- */
-let _stripe: Stripe | null = null;
-function getStripe(): Stripe {
-  if (_stripe) return _stripe;
-  const key = process.env.STRIPE_SECRET_KEY;
-  if (!key) throw new Error('STRIPE_SECRET_KEY is not set');
-  _stripe = new Stripe(key);
-  return _stripe;
-}
-
-/** Returns true when Stripe is configured — used by routes to short-circuit gracefully. */
-function isStripeConfigured(): boolean {
-  return Boolean(process.env.STRIPE_SECRET_KEY);
-}
 
 export const stripeRouter = new Hono();
 
