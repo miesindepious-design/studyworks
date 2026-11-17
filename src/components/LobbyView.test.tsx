@@ -25,6 +25,7 @@ const { apiMock } = vi.hoisted(() => ({
   apiMock: {
     getLobby:      vi.fn(),
     listMyLobbies: vi.fn(),
+    joinLobby:     vi.fn(),
     createLobby:   vi.fn(),
   },
 }));
@@ -153,7 +154,9 @@ describe('LobbyView — resolving a code', () => {
   beforeEach(() => {
     apiMock.getLobby.mockReset();
     apiMock.listMyLobbies.mockReset();
+    apiMock.joinLobby.mockReset();
     apiMock.listMyLobbies.mockResolvedValue([]);
+    apiMock.joinLobby.mockResolvedValue({ ok: true });
     addToast.mockReset();
   });
 
@@ -220,9 +223,39 @@ describe('LobbyView — resolving a code', () => {
     await act(async () => {
       buttonByText(container, 'Enter Study Room').click();
     });
+    await flush();
 
-    expect(onEnterStudy).toHaveBeenCalledWith('voice-room-1', 'https://example.daily.co/room');
+    // Entering registers presence first, so a full room is explained here.
+    expect(apiMock.joinLobby).toHaveBeenCalledWith(CODE);
+    // The lobby code travels along so the session screen can keep presence running.
+    expect(onEnterStudy).toHaveBeenCalledWith('voice-room-1', 'https://example.daily.co/room', CODE);
     expect(onEnterQuiz).not.toHaveBeenCalled();
+
+    await act(async () => root.unmount());
+  });
+
+  it('stays on the lobby screen when the session cannot be joined', async () => {
+    apiMock.getLobby.mockResolvedValue(STUDY_LOBBY);
+    apiMock.joinLobby.mockRejectedValue(new Error('This study room is full.'));
+    const onEnterQuiz = vi.fn();
+    const onEnterStudy = vi.fn();
+
+    const { container, root } = await mount(
+      createElement(LobbyView, { onEnterQuiz, onEnterStudy, addToast }),
+    );
+
+    await joinWithCode(container, CODE);
+
+    await act(async () => {
+      buttonByText(container, 'Enter Study Room').click();
+    });
+    await flush();
+
+    // The error is explained where the player still has the code on screen,
+    // and the handoff never happens.
+    expect(addToast).toHaveBeenCalledWith('This study room is full.', 'error');
+    expect(onEnterStudy).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('Enter Study Room');
 
     await act(async () => root.unmount());
   });

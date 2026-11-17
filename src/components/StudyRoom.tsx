@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createStudyRoom } from '../api/studyRoom';
+import { closeLobby, getLobby, joinLobby, leaveLobby, type LobbyParticipantInfo } from '../api/lobby';
 import VoiceChat from './VoiceChat';
 import LobbyShare from './LobbyShare';
 
@@ -11,7 +12,7 @@ interface Props {
   addToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
   signalingUrl?: string;
   /** A study session the player was referred to from a lobby. */
-  joinRoom?: { id: string; url: string | null } | null;
+  joinRoom?: { id: string; url: string | null; lobbyCode?: string | null } | null;
   /** Called once the referred session has been taken off the queue. */
   onRoomConsumed?: () => void;
 }
@@ -41,8 +42,13 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
   const [timerRunning, setTimerRunning] = useState(false);
   const [tipsOpen, setTipsOpen]         = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
-  /** The six-digit lobby code for the room this client is hosting. */
+  /** The six-digit lobby code for the room this client is in — hosting or joining. */
   const [lobbyCode, setLobbyCode]     = useState<string | null>(null);
+  /** Who is in the session right now, as the lobby sees it (server truth). */
+  const [roster, setRoster]           = useState<LobbyParticipantInfo[]>([]);
+  /** Who hosts the session right now — the creator, or whoever took over. */
+  const [hostUserId, setHostUserId]   = useState<string | null>(null);
+  const [closingLobby, setClosingLobby] = useState(false);
 
   // ── Real participant list ─────────────────────────────────────────────────
   // Starts with just the current user. Remote peers are added/removed as they
@@ -75,17 +81,23 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
       provider: target.url ? 'daily' : 'local',
       maxParticipants: 6,
     });
+    // The referred session carries its lobby code so this screen can keep
+    // presence (roster, host handoff, close) running while the player is in.
+    setLobbyCode(target.lobbyCode ?? null);
     setPhase('ready');
     initParticipants();
     onRoomConsumed?.();
   }, [joinRoom, initParticipants, onRoomConsumed]);
 
   // VoiceChat fires custom DOM events so StudyRoom can reflect real peer state
-  // without needing to share a socket ref.
+  // without needing to share a socket ref. Mute/deafen state lands in its own
+  // map so it can overlay the server roster (which doesn't know about audio).
+  const [voiceStatus, setVoiceStatus] = useState<Record<string, Participant['status']>>({});
   useEffect(() => {
     const onJoin = (e: Event) => {
       const { playerId } = (e as CustomEvent<{ playerId: string }>).detail;
       if (playerId === userId) return;
+      setVoiceStatus(prev => ({ ...prev, [playerId]: 'connected' }));
       setParticipants(prev => {
         if (prev.some(p => p.id === playerId)) return prev;
         return [...prev, { id: playerId, name: `Peer ${playerId.slice(-4)}`, status: 'connected' }];
@@ -99,9 +111,10 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
 
     const onState = (e: Event) => {
       const { playerId, isMuted, isDeafened } = (e as CustomEvent<{ playerId: string; isMuted: boolean; isDeafened: boolean }>).detail;
+      const status: Participant['status'] = isDeafened ? 'deafened' : isMuted ? 'muted' : 'connected';
+      setVoiceStatus(prev => ({ ...prev, [playerId]: status }));
       setParticipants(prev => prev.map(p => {
         if (p.id !== playerId) return p;
-        const status: Participant['status'] = isDeafened ? 'deafened' : isMuted ? 'muted' : 'connected';
         return { ...p, status };
       }));
     };
@@ -122,6 +135,21 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
     () => participants.filter(p => p.id !== userId).map(p => p.id),
     [participants, userId],
   );
+
+  // ── Who is in the session ──────────────────────────────────────────────────
+  // Server-tracked presence is the truth when the lobby knows: it has real
+  // names, and it works even with voice chat off. The voice peer events
+  // stay as the fallback for a session without lobby tracking, and overlay
+  // the mute/deafen state either way.
+  const sessionRoster = useMemo<Participant[]>(() => {
+    const base: Participant[] = roster.length > 0
+      ? roster.map(p => ({ id: p.userId, name: p.name || 'Guest', status: 'connected' as const }))
+      : participants;
+    return base.map(p => ({
+      ...p,
+      status: p.id === userId ? 'me' as const : (voiceStatus[p.id] ?? p.status),
+    }));
+  }, [roster, participants, voiceStatus, userId]);
 
   // ── Timer ─────────────────────────────────────────────────────────────────
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -195,10 +223,28 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const reset = () => {
+  // The lobby code travels in a ref so the unmount cleanup — the "I left"
+  // call — always sees the latest value, even after a fresh session opened.
+  const lobbyCodeRef = useRef<string | null>(null);
+  useEffect(() => { lobbyCodeRef.current = lobbyCode; }, [lobbyCode]);
+
+  /**
+   * Tell the lobby we're gone. If we were hosting, the participant who has
+   * been there longest takes over; if nobody is left, the sweep closes the
+   * lobby two minutes after the last departure.
+   */
+  const reportLeave = useCallback(() => {
+    const code = lobbyCodeRef.current;
+    if (code) void leaveLobby(code).catch(() => {});
+  }, []);
+
+  const reset = useCallback(() => {
+    reportLeave();
     setPhase('idle');
     setRoom(null);
     setLobbyCode(null);
+    setRoster([]);
+    setHostUserId(null);
     joinedRef.current = null;
     setRoomName('');
     setGoals('');
@@ -207,6 +253,57 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
     setTimerMode('focus');
     setTimeLeft(FOCUS_MINUTES * 60);
     setParticipants([]);
+  }, [reportLeave]);
+
+  // ── Lobby presence ────────────────────────────────────────────────────────
+  // While a session is live, the client polls the lobby every fifteen
+  // seconds. That one poll does four jobs: it registers/renews the caller's
+  // presence on the server, it refreshes the roster and the host (so a
+  // handoff shows up without any socket plumbing), and it notices when the
+  // lobby has been closed — by the host, or by the sweep after everybody
+  // left.
+  useEffect(() => {
+    if (phase !== 'ready' || !lobbyCode) return;
+    let stopped = false;
+
+    const beat = async () => {
+      try {
+        const detail = await getLobby(lobbyCode);
+        if (stopped) return;
+        if (detail.status === 'closed') {
+          addToast('This study session has ended.', 'info');
+          reset();
+          return;
+        }
+        setHostUserId(detail.hostUserId ?? null);
+        setRoster(detail.participants ?? []);
+      } catch {
+        // Transient — the next beat retries; presence just skips a beat.
+      }
+    };
+
+    joinLobby(lobbyCode).then(beat).catch(() => {});
+    const timer = setInterval(beat, 15_000);
+    return () => { stopped = true; clearInterval(timer); };
+  }, [phase, lobbyCode, addToast, reset]);
+
+  // Leaving the session — navigating away, or the tab closing (best effort)
+  // — must reach the lobby so the host handoff and the empty sweep run.
+  useEffect(() => () => reportLeave(), [reportLeave]);
+
+  // ── Close the lobby ───────────────────────────────────────────────────────
+  // Done with the session? The host can kill the six-digit code, the share
+  // link and the QR in one move.
+  const closeLobbyNow = async () => {
+    if (!lobbyCode || closingLobby) return;
+    setClosingLobby(true);
+    try {
+      await closeLobby(lobbyCode);
+      addToast('Lobby closed — the code no longer works.', 'success');
+      reset();
+    } catch (e: any) {
+      addToast(e?.message || 'Could not close the lobby', 'error');
+    } finally { setClosingLobby(false); }
   };
 
   const inviteFriends = async () => {
@@ -254,7 +351,7 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
             <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>
               Participants
               <span className="text-muted" style={{ fontWeight: 400, fontSize: '0.8125rem', marginLeft: '0.4rem' }}>
-                ({participants.length})
+                ({sessionRoster.length})
               </span>
             </h3>
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-2)', cursor: 'pointer' }}>
@@ -267,11 +364,11 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
             </label>
           </div>
 
-          {participants.length === 0 ? (
+          {sessionRoster.length === 0 ? (
             <p className="text-sm text-muted">Waiting for participants to join…</p>
           ) : (
             <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-              {participants.map(p => (
+              {sessionRoster.map(p => (
                 <div key={p.id} style={{
                   display: 'flex', alignItems: 'center', gap: '0.5rem',
                   padding: '0.5rem 0.75rem',
@@ -281,7 +378,12 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
                 }}>
                   <div className="avatar avatar-sm">{p.name.charAt(0).toUpperCase()}</div>
                   <div>
-                    <p style={{ fontSize: '0.8125rem', fontWeight: 600 }}>{p.name}</p>
+                    <p style={{ fontSize: '0.8125rem', fontWeight: 600 }}>
+                      {p.name}
+                      {p.id === hostUserId && (
+                        <span className="tag" style={{ marginLeft: '0.4rem', background: 'var(--accent-soft)', color: 'var(--accent-ink)' }}>Host</span>
+                      )}
+                    </p>
                     <p className="text-xs text-muted">
                       {statusIcon(p.status)} {statusLabel(p.status)}
                     </p>
@@ -422,8 +524,15 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
           )}
         </div>
 
-        <div style={{ marginTop: '1rem' }}>
-          <button className="btn btn-ghost btn-sm" onClick={reset}>Create another room</button>
+        {/* Done with the session? The host closes the lobby, which kills the
+            code, the link and the QR in one move. Everyone else just leaves. */}
+        <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          <button className="btn btn-ghost btn-sm" onClick={reset}>Leave session</button>
+          {lobbyCode && (!hostUserId || hostUserId === userId) && (
+            <button className="btn btn-outline btn-sm" onClick={closeLobbyNow} disabled={closingLobby}>
+              {closingLobby ? 'Closing…' : 'Close lobby'}
+            </button>
+          )}
         </div>
       </div>
     );

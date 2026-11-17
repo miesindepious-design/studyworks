@@ -62,6 +62,7 @@ model User {
 
   // Phase 4: lobby
   lobbies     Lobby[]
+  lobbyVisits LobbyParticipant[]
 }
 
 model Session {
@@ -439,9 +440,33 @@ model Lobby {
   createdAt       DateTime @default(now())
   expiresAt       DateTime?
 
-  host User @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  host         User               @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  participants LobbyParticipant[]
   @@index([hostId])
   @@index([kind])
+}
+
+// ── Phase 4: Lobby presence ───────────────────────────────────────────────────
+// Who is actually in a lobby right now. Study sessions need this to answer
+// three questions the client can't answer on its own: who is here, who is
+// the host, and has everybody left. A participant is "active" while they
+// keep heartbeating (the lobby state poll touches lastSeenAt) and has not
+// explicitly left; the host is whoever is hosting right now — the original
+// creator until they leave, then the earliest-joined active participant.
+model LobbyParticipant {
+  id         String    @id @default(cuid())
+  lobbyId    String
+  userId     String
+  joinedAt   DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  leftAt     DateTime?
+
+  lobby Lobby @relation(fields: [lobbyId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([lobbyId, userId])
+  @@index([lobbyId])
+  @@index([userId])
 }
 
 // ── Phase 2: Email-to-save ────────────────────────────────────────────────────

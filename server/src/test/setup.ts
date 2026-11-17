@@ -37,6 +37,7 @@ export const prismaMock = {
   gameRoom:         { count: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
   gamePlayer:       { count: vi.fn(), findMany: vi.fn(), create: vi.fn() },
   lobby:            { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
+  lobbyParticipant: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
 };
 
 vi.mock('../lib/prisma.js', () => ({ prisma: prismaMock }));

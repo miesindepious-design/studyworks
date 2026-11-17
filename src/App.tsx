@@ -206,9 +206,13 @@ export default function App() {
   const [pendingLobbyCode, setPendingLobbyCode] = useState<string | null>(null);
 
   // Set when the player is referred from a lobby into a live session. The
-  // target screens read these to join the session automatically.
+  // target screens read these to join the session automatically. A referred
+  // study session carries its lobby code along so the session screen can
+  // keep presence (roster, host, close) running while the player is in it.
   const [pendingQuizRoom, setPendingQuizRoom] = useState<string | null>(null);
-  const [pendingStudyRoom, setPendingStudyRoom] = useState<{ id: string; url: string | null } | null>(null);
+  const [pendingStudyRoom, setPendingStudyRoom] = useState<{
+    id: string; url: string | null; lobbyCode?: string | null;
+  } | null>(null);
 
   // ── Theme (apply immediately from IDB value once loaded) ──────────────────
   const theme = (db.theme as Theme) || 'system';
@@ -294,9 +298,16 @@ export default function App() {
     setPendingQuizRoom(roomCode);
     setCurrentView('multiplayer');
   };
-  const enterStudyFromLobby = (voiceRoomId: string, roomUrl: string | null) => {
-    setPendingStudyRoom({ id: voiceRoomId, url: roomUrl });
+  const enterStudyFromLobby = (voiceRoomId: string, roomUrl: string | null, lobbyCode: string | null) => {
+    setPendingStudyRoom({ id: voiceRoomId, url: roomUrl, lobbyCode });
     setCurrentView('studyRoom');
+  };
+  // A newly created quiz room sends its host straight to the lobby page —
+  // the same page their invitees will see — instead of dropping them into
+  // an empty waiting room with no one to share the code with yet.
+  const openCreatedLobby = (lobbyCode: string) => {
+    setPendingLobbyCode(lobbyCode);
+    setCurrentView('lobby');
   };
   // Days remaining in the 7-day trial (0 once it's over or never started).
   const trialDaysLeft = (() => {
@@ -753,8 +764,7 @@ export default function App() {
               onEnterStudy={enterStudyFromLobby}
               addToast={addToast}
             />
-          )}
-          {currentView === 'tutor' && (
+          )}          {currentView === 'tutor' && (
             <TutorView
               tier={tier}
               aiUnlocked={tier === 'pro' || ai.hasOwnKey}
@@ -811,6 +821,7 @@ export default function App() {
               addToast={addToast}
               initialRoomCode={pendingQuizRoom}
               onRoomConsumed={() => setPendingQuizRoom(null)}
+              onCreatedLobby={openCreatedLobby}
             />
           )}
           {currentView === 'timer' && (

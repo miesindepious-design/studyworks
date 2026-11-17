@@ -30,9 +30,19 @@ export interface LobbyTarget {
   voiceRoomId?: string | null;
 }
 
+export interface LobbyParticipantInfo {
+  userId: string;
+  name: string | null;
+  joinedAt: string;
+}
+
 export interface LobbyDetail extends LobbySummary {
   sessionTitle: string;
   playerCount: number | null;
+  /** Who hosts the session right now — the creator, or whoever took over. */
+  hostUserId: string | null;
+  /** Who is actually in a study session, in join order. */
+  participants: LobbyParticipantInfo[];
   target: LobbyTarget;
 }
 
@@ -51,18 +61,34 @@ export function listMyLobbies() {
   return apiGet<MyLobby[]>('/api/lobby/mine');
 }
 
+/** Find one of my lobbies by whatever the caller cares about. */
+export async function findMyLobby(match: (l: MyLobby) => boolean): Promise<MyLobby | null> {
+  const mine = await listMyLobbies();
+  return mine.find(match) ?? null;
+}
+
 /**
- * Create a lobby for a session that was made outside the quiz/study-room
- * routes. Sessions created through those routes get a lobby automatically.
+ * Register presence in a study session. Also the shape of truth for the
+ * roster and the host — the session client polls resolve() for that.
  */
-export function createLobby(body: {
-  kind: LobbyKind;
-  title?: string;
-  targetCode?: string;
-  targetUrl?: string;
-  maxParticipants?: number;
-}) {
-  return apiPost<LobbySummary>('/api/lobby', body);
+export function joinLobby(code: string) {
+  return apiPost<{ ok: true; hostUserId: string | null; participants: LobbyParticipantInfo[] }>(
+    `/api/lobby/${encodeURIComponent(code)}/join`,
+    {},
+  );
+}
+
+/** Leave a study session. Hands the host role on if the caller was hosting. */
+export function leaveLobby(code: string) {
+  return apiPost<{ ok: true; hostUserId: string | null }>(
+    `/api/lobby/${encodeURIComponent(code)}/leave`,
+    {},
+  );
+}
+
+/** Close a lobby for good. Host-only: the code, link and QR all stop working. */
+export function closeLobby(code: string) {
+  return apiPost<{ ok: true }>(`/api/lobby/${encodeURIComponent(code)}/close`, {});
 }
 
 /**

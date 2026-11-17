@@ -18,14 +18,19 @@ import { zValidator } from '@hono/zod-validator';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../lib/session.js';
 import { rateLimit } from '../lib/rateLimit.js';
-import { isLobbyExpired, normalizeLobbyCode, createLobbyForSession } from '../lib/lobby.js';
+import {
+  isLobbyExpired, normalizeLobbyCode, createLobbyForSession,
+  joinLobbySession, leaveLobbySession, closeLobbySession,
+  ensureStudyHost, activeParticipants, touchPresence, sweepLobbies,
+} from '../lib/lobby.js';
 
 export const lobbyRouter = new Hono();
 lobbyRouter.use('/*', requireAuth);
 
 // ── Resolve a lobby code ──────────────────────────────────────────────────────
 // 20 lookups a minute per user. Enough for a person trying a few codes
-// after a typo, far too slow to walk the whole space.
+// after a typo, far too slow to walk the whole space — and comfortable
+// room for the 15-second presence poll a client in a session keeps up.
 const RESOLVE_LIMIT = 20;
 const RESOLVE_WINDOW_MS = 60_000;
 
@@ -58,6 +63,10 @@ function toLobbySummary(lobby: {
 lobbyRouter.get('/mine', async c => {
   const user = c.get('user');
 
+  // Sweeping here too means the host's own list is the first place a
+  // finished game or an emptied study room shows up as closed.
+  await sweepLobbies();
+
   const lobbies = await prisma.lobby.findMany({
     where: { hostId: user.id },
     orderBy: { createdAt: 'desc' },
@@ -75,6 +84,9 @@ lobbyRouter.get('/mine', async c => {
 });
 
 // ── Resolve a lobby code ──────────────────────────────────────────────────────
+// This read does double duty as the client's presence heartbeat: a session
+// client polls it every fifteen seconds, and each poll refreshes that
+// caller's lastSeenAt so the roster and the host handoff stay honest.
 lobbyRouter.get('/:code', async c => {
   const user = c.get('user');
 
@@ -85,6 +97,10 @@ lobbyRouter.get('/:code', async c => {
       retryAfter: limit.resetAtMs,
     }, 429);
   }
+
+  // Lazily close what's finished or empty before the lookup, so the lobby a
+  // player is about to see reflects reality.
+  await sweepLobbies();
 
   const code = normalizeLobbyCode(c.req.param('code') ?? '');
   if (!code) {
@@ -122,10 +138,37 @@ lobbyRouter.get('/:code', async c => {
     playerCount = room.players.length;
   }
 
+  // Study sessions track attendance; quizzes track players in the game
+  // room itself, so the lobby roster is a study-only thing.
+  let hostUserId: string = lobby.hostId;
+  let participants: Array<{ userId: string; name: string | null; joinedAt: string }> = [];
+  if (lobby.kind === 'study') {
+    await touchPresence(lobby.id, user.id);
+    hostUserId = await ensureStudyHost(lobby.id, lobby.hostId);
+    participants = (await activeParticipants(lobby.id)).map(p => ({
+      userId: p.userId,
+      name: p.user.name,
+      joinedAt: p.joinedAt.toISOString(),
+    }));
+  }
+
+  // The displayed host follows whoever hosts right now — a promoted
+  // participant hosts the session from here on, not the original creator.
+  let hostName = lobby.host?.name ?? null;
+  if (lobby.kind === 'study' && hostUserId !== lobby.hostId) {
+    const currentHost = await prisma.user.findUnique({
+      where: { id: hostUserId },
+      select: { name: true },
+    });
+    hostName = currentHost?.name ?? hostName;
+  }
+
   return c.json({
-    ...toLobbySummary({ ...lobby, status }),
+    ...toLobbySummary({ ...lobby, status, host: { name: hostName } }),
     sessionTitle,
     playerCount,
+    hostUserId,
+    participants,
     // Where the client should send the player once they arrive.
     // For a study room the voice room id travels with the link: the client
     // hands it to the signaling server so the joiner lands in the same
@@ -134,6 +177,95 @@ lobbyRouter.get('/:code', async c => {
       ? { kind: 'quiz' as const, roomCode: lobby.targetCode }
       : { kind: 'study' as const, roomUrl: lobby.targetUrl, voiceRoomId: lobby.targetCode },
   });
+});
+
+// ── Join a study session through its lobby ────────────────────────────────────
+// Registers the caller's presence so the roster, the host handoff and the
+// empty-room sweep all see them. Quiz lobbies don't take attendance here —
+// a quiz's players live in the game room itself.
+lobbyRouter.post('/:code/join', async c => {
+  const user = c.get('user');
+
+  const code = normalizeLobbyCode(c.req.param('code') ?? '');
+  if (!code) {
+    return c.json({ error: 'Lobby codes are six digits.' }, 400);
+  }
+
+  const lobby = await prisma.lobby.findUnique({ where: { code } });
+  if (!lobby) {
+    return c.json({ error: 'No lobby found with that code.' }, 404);
+  }
+  if (isLobbyExpired(lobby)) {
+    return c.json({ error: 'This lobby has expired. Ask the host for a new code.' }, 410);
+  }
+  if (lobby.status === 'closed') {
+    return c.json({ error: 'This lobby has been closed by the host.' }, 410);
+  }
+  if (lobby.kind !== 'study') {
+    return c.json({ error: 'Quiz lobbies track players in the game room itself.' }, 400);
+  }
+
+  const here = await activeParticipants(lobby.id);
+  const alreadyIn = here.some(p => p.userId === user.id);
+  if (!alreadyIn && here.length >= lobby.maxParticipants) {
+    return c.json({ error: 'This study room is full.' }, 409);
+  }
+
+  await joinLobbySession(lobby.id, user.id);
+  const hostUserId = await ensureStudyHost(lobby.id, lobby.hostId);
+  const participants = (await activeParticipants(lobby.id)).map(p => ({
+    userId: p.userId,
+    name: p.user.name,
+    joinedAt: p.joinedAt.toISOString(),
+  }));
+
+  return c.json({ ok: true as const, hostUserId, participants });
+});
+
+// ── Leave a study session ─────────────────────────────────────────────────────
+// Marks the caller gone. If they were the host, the participant who has
+// been there longest takes over, so the session outlives its creator.
+lobbyRouter.post('/:code/leave', async c => {
+  const user = c.get('user');
+
+  const code = normalizeLobbyCode(c.req.param('code') ?? '');
+  if (!code) {
+    return c.json({ error: 'Lobby codes are six digits.' }, 400);
+  }
+
+  const lobby = await prisma.lobby.findUnique({ where: { code } });
+  if (!lobby) {
+    return c.json({ error: 'No lobby found with that code.' }, 404);
+  }
+
+  const { hostUserId } = await leaveLobbySession(lobby.id, user.id);
+  return c.json({ ok: true as const, hostUserId });
+});
+
+// ── Close a lobby ─────────────────────────────────────────────────────────────
+// Host-only. One call kills the code, the link and the QR together: every
+// resolve afterwards reports the lobby closed, so nobody new can arrive.
+lobbyRouter.post('/:code/close', async c => {
+  const user = c.get('user');
+
+  const code = normalizeLobbyCode(c.req.param('code') ?? '');
+  if (!code) {
+    return c.json({ error: 'Lobby codes are six digits.' }, 400);
+  }
+
+  const lobby = await prisma.lobby.findUnique({ where: { code } });
+  if (!lobby) {
+    return c.json({ error: 'No lobby found with that code.' }, 404);
+  }
+
+  const result = await closeLobbySession(lobby.id, user.id);
+  if (!result.ok) {
+    if (result.reason === 'not-host') {
+      return c.json({ error: 'Only the host can close this lobby.' }, 403);
+    }
+    return c.json({ error: 'No lobby found with that code.' }, 404);
+  }
+  return c.json({ ok: true as const });
 });
 
 // ── Create a lobby directly ───────────────────────────────────────────────────

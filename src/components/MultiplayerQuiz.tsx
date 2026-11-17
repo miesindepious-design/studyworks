@@ -3,6 +3,7 @@ import { GameSocket, ServerMessage } from '../lib/wsClient';
 import {
   createGameRoom, getGameRoom, getGameTicket, startGameRoom, listMyGameRooms,
 } from '../api/game';
+import { closeLobby, findMyLobby } from '../api/lobby';
 import Celebration from './Celebration';
 import LobbyShare from './LobbyShare';
 import type { PowerUpState, GameHistoryEntry, LobbyReaction } from '../types';
@@ -18,6 +19,8 @@ interface Props {
   initialRoomCode?: string | null;
   /** Called once the referred room has been taken off the queue. */
   onRoomConsumed?: () => void;
+  /** Sends the host to the lobby page of a room they just created. */
+  onCreatedLobby?: (lobbyCode: string) => void;
 }
 
 interface ChatLine { id: number; userId: string; name: string; text: string; mine: boolean; }
@@ -25,7 +28,7 @@ interface ScoreRow { userId: string; name: string; xp: number; ready?: boolean; 
 
 type Phase = 'lobby' | 'live' | 'finished';
 
-export default function MultiplayerQuiz({ db, userId, userName, tier, setCurrentView, addToast, initialRoomCode, onRoomConsumed }: Props) {
+export default function MultiplayerQuiz({ db, userId, userName, tier, setCurrentView, addToast, initialRoomCode, onRoomConsumed, onCreatedLobby }: Props) {
   const [phase, setPhase] = useState<Phase>('lobby');
   const [myRooms, setMyRooms] = useState<Array<{ code: string; status: string; source: string; host: string; questionCount: number }>>([]);
   const [joinCode, setJoinCode] = useState('');
@@ -196,9 +199,20 @@ export default function MultiplayerQuiz({ db, userId, userName, tier, setCurrent
     setCreating(true);
     try {
       const { code, lobbyCode } = await createGameRoom({ source: 'flashcards', perQuestionSec });
+      refreshMyRooms();
+      if (lobbyCode) {
+        // The lobby is the front door: creating a room lands the host on
+        // its lobby page — the same page their invitees will see — where
+        // the code, the link and the QR are all in one place. Entering from
+        // there joins the room.
+        onCreatedLobby?.(lobbyCode);
+        addToast(`Room ${code} created — share the lobby!`, 'success');
+        return;
+      }
+      // No lobby (its minting failed, which never blocks the room itself):
+      // fall back to the in-room waiting area.
       setLobbyCode(lobbyCode ?? null);
       await connect(code);
-      refreshMyRooms();
       addToast(`Room ${code} created — share the code!`, 'success');
     } catch (e: any) {
       addToast(e?.message || 'Could not create room', 'error');
@@ -254,6 +268,38 @@ export default function MultiplayerQuiz({ db, userId, userName, tier, setCurrent
   const currentCodeRef = useRef('');
   const joinCodeOrCurrent = () => currentCodeRef.current || joinCode.trim().toUpperCase();
   useEffect(() => { if (connected) currentCodeRef.current = joinCode.trim().toUpperCase(); }, [connected, joinCode]);
+
+  // ── Recover the lobby code for the room we're hosting ──────────────────────
+  // A host who reaches the waiting room through the lobby (created → lobby →
+  // enter) or re-enters later doesn't hold the lobby code in state. The
+  // lobbies they host know it, matched by room code — that's what keeps the
+  // share panel and the close button working no matter how they got here.
+  useEffect(() => {
+    if (!connected || phase !== 'lobby' || lobbyCode) return;
+    const roomCode = currentCodeRef.current || joinCode.trim().toUpperCase();
+    if (!roomCode) return;
+    let cancelled = false;
+    findMyLobby(l => l.target.kind === 'quiz' && l.target.roomCode === roomCode)
+      .then(l => { if (!cancelled && l) setLobbyCode(l.code); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [connected, phase, lobbyCode, joinCode]);
+
+  // ── Close the lobby ────────────────────────────────────────────────────────
+  // Done with the room? One call kills the six-digit code, the share link
+  // and the QR together, so nobody new can arrive afterwards.
+  const [closingLobby, setClosingLobby] = useState(false);
+  const closeLobbyNow = async () => {
+    if (!lobbyCode || closingLobby) return;
+    setClosingLobby(true);
+    try {
+      await closeLobby(lobbyCode);
+      addToast('Lobby closed — the code no longer works.', 'success');
+      leaveGame();
+    } catch (e: any) {
+      addToast(e?.message || 'Could not close the lobby', 'error');
+    } finally { setClosingLobby(false); }
+  };
 
   const sendAnswer = (idx: number) => {
     if (!question || answeredRef.current || revealed) return;
@@ -453,7 +499,16 @@ export default function MultiplayerQuiz({ db, userId, userName, tier, setCurrent
             {players.length === 0 && <p className="text-muted text-sm">No one here yet…</p>}
           </div>
           {isHost
-            ? <button className="btn btn-primary" onClick={handleStart} disabled={players.length < 1}>Start game ▶</button>
+            ? (
+              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+                <button className="btn btn-primary" onClick={handleStart} disabled={players.length < 1}>Start game ▶</button>
+                {lobbyCode && (
+                  <button className="btn btn-outline" onClick={closeLobbyNow} disabled={closingLobby}>
+                    {closingLobby ? 'Closing…' : 'Close lobby'}
+                  </button>
+                )}
+              </div>
+            )
             : <p className="text-muted">Waiting for the host to start…</p>}
           <div style={{ marginTop: '1rem' }}><button className="btn btn-ghost btn-sm" onClick={leaveGame}>Leave</button></div>
         </div>

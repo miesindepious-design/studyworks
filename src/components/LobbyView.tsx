@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getLobby, listMyLobbies, type LobbyDetail, type MyLobby } from '../api/lobby';
+import { getLobby, listMyLobbies, joinLobby, type LobbyDetail, type MyLobby } from '../api/lobby';
 import LobbyShare from './LobbyShare';
 
 /**
@@ -21,7 +21,7 @@ interface Props {
   onCodeConsumed?: (code: string | null) => void;
   /** Navigate to the session the lobby points at. */
   onEnterQuiz: (roomCode: string) => void;
-  onEnterStudy: (voiceRoomId: string, roomUrl: string | null) => void;
+  onEnterStudy: (voiceRoomId: string, roomUrl: string | null, lobbyCode: string | null) => void;
   addToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }
 
@@ -72,7 +72,7 @@ export default function LobbyView({
     onCodeConsumed?.(null);
   }, [code, resolve, onCodeConsumed]);
 
-  const enter = () => {
+  const enter = async () => {
     if (!lobby) return;
     if (lobby.status === 'closed') {
       addToast('That session has already ended.', 'info');
@@ -81,7 +81,20 @@ export default function LobbyView({
     if (lobby.target.kind === 'quiz' && lobby.target.roomCode) {
       onEnterQuiz(lobby.target.roomCode);
     } else if (lobby.target.kind === 'study') {
-      onEnterStudy(lobby.target.voiceRoomId ?? '', lobby.target.roomUrl ?? null);
+      // Register presence before handing the player over: a full room or a
+      // lobby the host has closed is explained here, where the player still
+      // has the code on screen, rather than inside the session screen.
+      try {
+        await joinLobby(lobby.code);
+      } catch (err: any) {
+        addToast(err?.message || 'Could not join that session.', 'error');
+        return;
+      }
+      onEnterStudy(
+        lobby.target.voiceRoomId ?? '',
+        lobby.target.roomUrl ?? null,
+        lobby.code,
+      );
     }
   };
 
