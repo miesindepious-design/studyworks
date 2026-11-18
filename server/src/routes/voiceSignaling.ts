@@ -9,6 +9,17 @@ import { Server as SocketServer, Socket } from 'socket.io';
 
 const socketPlayerMap = new Map<string, { playerId: string; roomId: string }>();
 
+/** Everyone currently in a room, minus one player id. */
+function peersInRoom(roomId: string, exceptPlayerId?: string): string[] {
+  const ids = new Set<string>();
+  for (const info of socketPlayerMap.values()) {
+    if (info.roomId !== roomId) continue;
+    if (exceptPlayerId && info.playerId === exceptPlayerId) continue;
+    ids.add(info.playerId);
+  }
+  return Array.from(ids);
+}
+
 function getAllowedOrigins(): string | string[] {
   const raw = process.env.VOICE_ALLOWED_ORIGINS;
   if (!raw) return '*';
@@ -29,6 +40,14 @@ export function attachVoiceSignaling(server: unknown): void {
     socket.on('voice:join', ({ playerId, roomId }: { playerId: string; roomId: string }) => {
       socketPlayerMap.set(socket.id, { playerId, roomId });
       socket.join(roomId);
+
+      // Peer discovery. Without this the room is silent: a client only calls
+      // peers it already knows about, and the only thing that used to reveal
+      // a peer was the offer that never came — so both sides waited forever.
+      // The newcomer is told who is already here, and the room is told that
+      // the newcomer is here.
+      socket.emit('voice:peers', { peers: peersInRoom(roomId, playerId) });
+      socket.to(roomId).emit('voice:peer_joined', { playerId });
     });
 
     socket.on('voice:signal', ({ targetPlayerId, signal, roomId, senderPlayerId }: {

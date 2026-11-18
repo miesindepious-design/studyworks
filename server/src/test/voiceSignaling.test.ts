@@ -13,6 +13,7 @@ import { attachVoiceSignaling } from '../routes/voiceSignaling.js';
 
 const VOICE_PATH = '/socket.io/voice';
 const ROOM = 'test-room';
+const DISCOVERY_ROOM = 'discovery-room';
 
 let server: Server;
 let port: number;
@@ -131,5 +132,62 @@ describe('voice signaling', () => {
 
     await new Promise(r => setTimeout(r, 600));
     expect(leaked).toBe(false);
+  });
+
+  // Peer discovery is what makes a room usable at all: a client only calls
+  // peers it knows about, so if the server never says who else is present,
+  // both sides sit there waiting for an offer that neither sends.
+  it('tells a joining client who else is already in the room', async () => {
+    const a = connect();
+    await waitFor(() => (a.connected ? true : undefined));
+    a.emit('voice:join', { playerId: 'peer-first', roomId: DISCOVERY_ROOM });
+    await new Promise(r => setTimeout(r, 300));
+
+    const b = connect();
+    await waitFor(() => (b.connected ? true : undefined));
+
+    const received = waitFor<any>(() => (b as any).__lastPeers ?? undefined);
+    (b as any).on('voice:peers', (payload: any) => { (b as any).__lastPeers = payload; });
+
+    b.emit('voice:join', { playerId: 'peer-second', roomId: DISCOVERY_ROOM });
+
+    const peers = await received;
+    expect(peers.peers).toContain('peer-first');
+    expect(peers.peers).not.toContain('peer-second');
+  });
+
+  it('announces a new arrival to the peers already in the room', async () => {
+    const a = connect();
+    await waitFor(() => (a.connected ? true : undefined));
+    a.emit('voice:join', { playerId: 'announce-first', roomId: DISCOVERY_ROOM });
+    await new Promise(r => setTimeout(r, 300));
+
+    const received = waitFor<any>(() => (a as any).__lastJoin ?? undefined);
+    (a as any).on('voice:peer_joined', (payload: any) => { (a as any).__lastJoin = payload; });
+
+    const b = connect();
+    await waitFor(() => (b.connected ? true : undefined));
+    b.emit('voice:join', { playerId: 'announce-second', roomId: DISCOVERY_ROOM });
+
+    const joined = await received;
+    expect(joined.playerId).toBe('announce-second');
+  });
+
+  it('does not leak peers from another room into the peer list', async () => {
+    const a = connect();
+    await waitFor(() => (a.connected ? true : undefined));
+    a.emit('voice:join', { playerId: 'stranger', roomId: 'some-other-room' });
+    await new Promise(r => setTimeout(r, 300));
+
+    const b = connect();
+    await waitFor(() => (b.connected ? true : undefined));
+
+    const received = waitFor<any>(() => (b as any).__lastPeers ?? undefined);
+    (b as any).on('voice:peers', (payload: any) => { (b as any).__lastPeers = payload; });
+
+    b.emit('voice:join', { playerId: 'insider', roomId: DISCOVERY_ROOM });
+
+    const peers = await received;
+    expect(peers.peers).not.toContain('stranger');
   });
 });

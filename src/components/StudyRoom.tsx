@@ -130,11 +130,16 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
   }, [userId]);
 
   // Stable peer id list for VoiceChat (excludes self — VoiceChat uses it to
-  // decide who to call). Derived from participants so it stays in sync.
-  const peerIds = useMemo(
-    () => participants.filter(p => p.id !== userId).map(p => p.id),
-    [participants, userId],
-  );
+  // decide who to call). Derived from the lobby roster — the server's view of
+  // who is in the session — merged with peers the voice layer discovered, so
+  // a call goes out even if one of the two lists is late.
+  const peerIds = useMemo(() => {
+    const ids = [
+      ...roster.map(p => p.userId),
+      ...participants.map(p => p.id),
+    ].filter(id => id && id !== userId);
+    return Array.from(new Set(ids));
+  }, [roster, participants, userId]);
 
   // ── Who is in the session ──────────────────────────────────────────────────
   // Server-tracked presence is the truth when the lobby knows: it has real

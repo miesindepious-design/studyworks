@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /**
  * Voice chat — P2P WebRTC audio with two signaling paths:
@@ -59,6 +59,11 @@ export default function VoiceChat({
   const [micError, setMicError] = useState<string | null>(null);
   // Surface which signaling path is live so the UI can reassure the user.
   const [signalingMode, setSignalingMode] = useState<SignalingMode>('socket');
+  // Peers the signaling server told us about. The parent component learns
+  // about peers through the lobby roster, which is polled — too slow, and
+  // separate from the voice room. The voice layer keeps its own list so it
+  // can call a peer the moment the server reveals it.
+  const [discoveredPeers, setDiscoveredPeers] = useState<string[]>([]);
 
   const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnections = useRef<Record<string, RTCPeerConnection>>({});
@@ -68,6 +73,20 @@ export default function VoiceChat({
   const modeRef = useRef<SignalingMode>('socket');
   const trysteroRoomRef = useRef<{ leave: () => void; addStream: (s: MediaStream, o?: any) => Promise<void[]>; removeStream: (s: MediaStream, o?: any) => void } | null>(null);
   const deafenedRef = useRef(false);
+  /** Peers we already offered to — keeps two offers from colliding. */
+  const initiatedRef = useRef<Set<string>>(new Set());
+
+  // Everyone we could call: the parent's peer list plus whoever the signaling
+  // server has told us about.
+  const effectivePeerIds = useMemo(() => {
+    const ids = [...peerIds, ...discoveredPeers].filter(id => id && id !== myPlayerId);
+    return Array.from(new Set(ids));
+  }, [peerIds, discoveredPeers, myPlayerId]);
+
+  // Read through a ref so a changing peer list doesn't tear down and re-open
+  // the signaling socket on every roster poll.
+  const peerIdsRef = useRef<string[]>([]);
+  peerIdsRef.current = effectivePeerIds;
 
   const attachRemoteAudio = useCallback((peerId: string, stream: MediaStream) => {
     let audioEl = remoteAudiosRef.current[peerId];
@@ -75,11 +94,19 @@ export default function VoiceChat({
       audioEl = new Audio();
       audioEl.autoplay = true;
       audioEl.setAttribute('playsinline', 'true');
+      // A detached element is refused by strict autoplay policies, so keep
+      // it in the document — hidden, but present.
+      audioEl.style.display = 'none';
+      document.body.appendChild(audioEl);
       remoteAudiosRef.current[peerId] = audioEl;
     }
     audioEl.srcObject = stream;
     audioEl.muted = deafenedRef.current;
-    audioEl.play().catch(() => {});
+    audioEl.play().catch((err: any) => {
+      // Refused until the user interacts with the page; the unlock handler
+      // retries on the next click.
+      console.warn('[VoiceChat] remote audio not playing yet:', err?.name);
+    });
   }, []);
 
   const cleanupVoice = useCallback(() => {
@@ -99,9 +126,11 @@ export default function VoiceChat({
       try {
         a.pause();
         a.srcObject = null;
+        a.remove();
       } catch {}
     });
     remoteAudiosRef.current = {};
+    initiatedRef.current.clear();
 
     // Leave the Trystero room if the P2P fallback was active
     if (trysteroRoomRef.current) {
@@ -175,27 +204,43 @@ export default function VoiceChat({
     }
   }, []);
 
+  /** Offer to one peer. Exactly one side offers — id order decides — so the
+   *  two clients never send competing offers at the same moment. */
+  const callPeer = useCallback(async (targetId: string) => {
+    if (!targetId || targetId === myPlayerId) return;
+    if (modeRef.current !== 'socket') return;
+
+    const pc = createPeerConnection(targetId);
+
+    const isInitiator = myPlayerId < targetId;
+    if (!isInitiator) return;
+    if (initiatedRef.current.has(targetId)) return;
+    initiatedRef.current.add(targetId);
+
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      (socketRef.current as any)?.emit?.('voice:signal', {
+        roomId,
+        senderPlayerId: myPlayerId,
+        targetPlayerId: targetId,
+        signal: { sdp: pc.localDescription },
+      });
+    } catch (e) {
+      initiatedRef.current.delete(targetId);
+      console.warn('[VoiceChat] failed to send offer:', e);
+    }
+  }, [createPeerConnection, myPlayerId, roomId]);
+
   const startVoiceSession = useCallback(async () => {
     if (modeRef.current !== 'socket') return;
     const stream = await ensureLocalStream();
     if (!stream) return;
 
-    for (const targetId of peerIds) {
-      if (!targetId || targetId === myPlayerId) continue;
-      const pc = createPeerConnection(targetId);
-      const isInitiator = myPlayerId < targetId;
-      if (isInitiator) {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        (socketRef.current as any)?.emit?.('voice:signal', {
-          roomId,
-          senderPlayerId: myPlayerId,
-          targetPlayerId: targetId,
-          signal: { sdp: pc.localDescription },
-        });
-      }
+    for (const targetId of peerIdsRef.current) {
+      await callPeer(targetId);
     }
-  }, [createPeerConnection, ensureLocalStream, myPlayerId, peerIds, roomId]);
+  }, [callPeer, ensureLocalStream]);
 
   // ── P2P fallback (Trystero over Nostr relays — free, serverless) ──────────
   const startP2PFallback = useCallback(async () => {
@@ -380,6 +425,24 @@ export default function VoiceChat({
           }
         });
 
+        // The server reveals who else is in the room. This is what lets a
+        // client call a peer it had no other way of knowing about.
+        (socket as any).on('voice:peers', ({ peers }: any) => {
+          if (cancelled || !Array.isArray(peers)) return;
+          const fresh = peers.filter((p: string) => p && p !== myPlayerId);
+          if (!fresh.length) return;
+          setDiscoveredPeers(prev => Array.from(new Set([...prev, ...fresh])));
+          fresh.forEach((p: string) => {
+            window.dispatchEvent(new CustomEvent('voice:peer_joined', { detail: { playerId: p } }));
+          });
+        });
+
+        (socket as any).on('voice:peer_joined', ({ playerId }: any) => {
+          if (cancelled || !playerId || playerId === myPlayerId) return;
+          setDiscoveredPeers(prev => (prev.includes(playerId) ? prev : [...prev, playerId]));
+          window.dispatchEvent(new CustomEvent('voice:peer_joined', { detail: { playerId } }));
+        });
+
         // Signaling server unreachable → fall back to free serverless
         // signaling (Trystero) so voice still works.
         (socket as any).on('connect_error', () => {
@@ -402,9 +465,17 @@ export default function VoiceChat({
           window.dispatchEvent(new CustomEvent('voice:peer_state', { detail: { playerId, isMuted, isDeafened } }));
         });
 
-        // Relay peer disconnection to StudyRoom
+        // Relay peer disconnection to StudyRoom, and forget the peer so a
+        // rejoin counts as a fresh call instead of a duplicate offer.
         (socket as any).on('voice:peer_left', ({ playerId }: any) => {
           if (cancelled) return;
+          setDiscoveredPeers(prev => prev.filter(p => p !== playerId));
+          initiatedRef.current.delete(playerId);
+          const pc = peerConnections.current[playerId];
+          if (pc) {
+            try { pc.close(); } catch {}
+            delete peerConnections.current[playerId];
+          }
           window.dispatchEvent(new CustomEvent('voice:peer_left', { detail: { playerId } }));
         });
       } catch (e) {
@@ -434,33 +505,27 @@ export default function VoiceChat({
       window.removeEventListener('touchstart', unlockAudio);
       window.removeEventListener('click', unlockAudio);
     };
-    // startVoiceSession / startP2PFallback are stable per (peerIds, roomId)
+    // startVoiceSession / startP2PFallback are stable for the life of the
+    // socket — a changing peer list must not reconnect it.
   }, [cleanupVoice, createPeerConnection, isVoiceActive, myPlayerId, roomId, signalingUrl, startP2PFallback, startVoiceSession]);
 
-  // When new peers appear in socket mode, call them.
+  // When new peers appear in socket mode, call them. The stream is fetched
+  // here rather than read from a ref, because a peer can be discovered
+  // before the microphone is ready — and a ref read would then skip the
+  // call for good.
   useEffect(() => {
-    if (!isVoiceActive || modeRef.current !== 'socket' || !localStreamRef.current) return;
+    if (!isVoiceActive || modeRef.current !== 'socket') return;
+    const targets = effectivePeerIds.filter(id => id && id !== myPlayerId);
+    if (!targets.length) return;
 
-    peerIds.forEach(async (targetId) => {
-      if (!targetId || targetId === myPlayerId || peerConnections.current[targetId]) return;
-      const pc = createPeerConnection(targetId);
-      const isInitiator = myPlayerId < targetId;
-      if (isInitiator) {
-        try {
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          (socketRef.current as any)?.emit?.('voice:signal', {
-            roomId,
-            senderPlayerId: myPlayerId,
-            targetPlayerId: targetId,
-            signal: { sdp: pc.localDescription },
-          });
-        } catch (e) {
-          console.warn('Failed to send offer:', e);
-        }
+    (async () => {
+      const stream = await ensureLocalStream();
+      if (!stream) return;
+      for (const targetId of targets) {
+        await callPeer(targetId);
       }
-    });
-  }, [peerIds.join(','), createPeerConnection, isVoiceActive, myPlayerId, roomId]); // eslint-disable-line react-hooks/exhaustive-deps
+    })().catch(() => {});
+  }, [effectivePeerIds.join(','), callPeer, ensureLocalStream, isVoiceActive]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isVoiceActive) return null;
 
