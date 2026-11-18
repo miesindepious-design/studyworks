@@ -5,16 +5,75 @@
  * The user's API key is stored encrypted in Postgres (AISettings.encryptedApiKey)
  * and decrypted at call-time. A server-managed key (env AI_API_KEY) is the
  * fallback when the user has not configured their own.
+ *
+ * Server-managed keys come from a pool (see aiKeyPool.ts): several keys, one
+ * per Google Cloud project, so a crowded model or an exhausted daily quota on
+ * one key is stepped over instead of taking every AI feature down with it.
  */
 import { prisma } from './prisma.js';
 import { decryptApiKey } from './encryption.js';
 import { buildGenerationConfig, DEFAULT_GEMINI_MODEL, type ThinkingLevel } from './gemini.js';
+import { getServerKeyPool, type FailureKind } from './aiKeyPool.js';
 
 export const SYSTEM_BASE = `You are an expert study assistant embedded in StudyWorks, a learning app.
 Be concise, accurate, and focused. Never add disclaimers or meta-commentary.`;
 
+/**
+ * A provider call that failed, with enough structure to decide whether
+ * another key could do better. The message stays in the shape the UI has
+ * always shown ("Gemini 503: The model is overloaded…").
+ */
+export class ProviderError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+    public readonly kind: FailureKind,
+    public readonly retryDelayMs?: number,
+  ) {
+    super(message);
+    this.name = 'ProviderError';
+  }
+}
+
+/** Gemini sends retryDelay as "27s"; turn it into milliseconds. */
+function parseRetryDelay(value: unknown): number | undefined {
+  if (typeof value !== 'string') return undefined;
+  const m = /^(\d+(?:\.\d+)?)s$/.exec(value.trim());
+  if (!m) return undefined;
+  return Math.round(parseFloat(m[1]) * 1000);
+}
+
+/**
+ * Decide what a failure means for the key that produced it.
+ *
+ * The distinction that matters: "this request was wrong" (another key will
+ * fail the same way — stop trying) versus "this key or project is in
+ * trouble" (another key may well work — keep going).
+ */
+function classify(status: number, message: string, retryDelay?: unknown): { kind: FailureKind; retryDelayMs?: number } {
+  const lower = (message || '').toLowerCase();
+  const retryDelayMs = parseRetryDelay(retryDelay);
+
+  if (status === 429) return { kind: 'rate-limited', retryDelayMs };
+  if (status === 503) return { kind: 'overloaded', retryDelayMs };
+  if (status === 500 || status === 502 || status === 504) return { kind: 'transient', retryDelayMs };
+  if (status === 401 || status === 403) return { kind: 'auth' };
+  if (status === 400) {
+    // "API key not valid" is the key's fault, not the request's.
+    if (lower.includes('api key') || lower.includes('api_key_invalid')) return { kind: 'auth' };
+    return { kind: 'invalid-request' };
+  }
+  // "The model is overloaded" sometimes arrives with a 429 and no status
+  // hint, and "overloaded" is what the user actually sees.
+  if (lower.includes('overloaded')) return { kind: 'overloaded', retryDelayMs };
+  return { kind: 'transient', retryDelayMs };
+}
+
 export function getServerAIFallback() {
-  const apiKey = process.env.AI_API_KEY?.trim();
+  const pool = getServerKeyPool();
+  // preferred() rotates through the pool so the day's quota is spread over
+  // every key rather than draining the first one.
+  const apiKey = pool.preferred() ?? pool.fallbackKey();
   if (!apiKey) return null;
   const provider = (process.env.AI_PROVIDER || 'gemini') as 'gemini' | 'openai';
   // Gemini 4 Hydrogen is the first Gemini 4 model on the free tier.
@@ -53,7 +112,9 @@ export async function loadAIConfig(userId: string) {
 }
 
 // ── Generic provider proxy ────────────────────────────────────────────────────
-export async function callProvider(opts: {
+
+/** One attempt against one key. Throws ProviderError on failure. */
+async function callProviderOnce(opts: {
   provider:    string;
   model:       string;
   apiKey:      string;
@@ -61,10 +122,6 @@ export async function callProvider(opts: {
   temperature?: number;
   maxTokens?:  number;
   jsonMode?:   boolean;
-  /**
-   * How hard the model should think. Gemini 4 defaults to "high"; cheap
-   * calls ask for less. Ignored by models without the dial.
-   */
   thinking?:   ThinkingLevel;
 }): Promise<string> {
   if (opts.provider === 'gemini') {
@@ -105,7 +162,11 @@ export async function callProvider(opts: {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(`Gemini ${res.status}: ${(err as any)?.error?.message ?? res.statusText}`);
+      const message = (err as any)?.error?.message ?? res.statusText;
+      // Gemini puts its own advice in the error details: "27s".
+      const retryDelay = (err as any)?.error?.details?.find?.((d: any) => d?.retryDelay)?.retryDelay;
+      const { kind, retryDelayMs } = classify(res.status, message, retryDelay);
+      throw new ProviderError(res.status, `Gemini ${res.status}: ${message}`, kind, retryDelayMs);
     }
     const data = await res.json();
     // A reply can arrive as several parts (thinking + text, or a text block
@@ -133,11 +194,113 @@ export async function callProvider(opts: {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(`OpenAI ${res.status}: ${(err as any)?.error?.message ?? res.statusText}`);
+      const message = (err as any)?.error?.message ?? res.statusText;
+      const { kind, retryDelayMs } = classify(res.status, message);
+      throw new ProviderError(res.status, `OpenAI ${res.status}: ${message}`, kind, retryDelayMs);
     }
     const data = await res.json();
     return data?.choices?.[0]?.message?.content ?? '';
   }
 
   throw new Error(`Unknown provider: ${opts.provider}`);
+}
+
+/**
+ * Models to try when every key has failed for the current one.
+ *
+ * A second key does not help when the model itself is out of capacity for
+ * everyone — that condition is model-side, not key-side. Dropping to a
+ * different model does. Free-tier Gemini models that are safe to fall back
+ * to are listed in AI_FALLBACK_MODELS.
+ */
+function fallbackModels(provider: string): string[] {
+  if (provider !== 'gemini') return [];
+  const raw = process.env.AI_FALLBACK_MODELS || '';
+  return raw
+    .split(/[\s,;]+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Call the provider, stepping over keys that are busy.
+ *
+ * A server-managed key belongs to a pool, so a crowded model or an
+ * exhausted quota on one key is retried on the next one instead of failing
+ * the request. A key the user brought themselves is used alone — their
+ * quota is theirs — but if it fails in a way another key could survive,
+ * the server pool can still cover the request (set AI_POOL_FALLBACK=0 to
+ * turn that off).
+ *
+ * When every key has failed for a model, the fallback models get a turn.
+ */
+export async function callProvider(opts: {
+  provider:    string;
+  model:       string;
+  apiKey:      string;
+  messages:    { role: string; content: string }[];
+  temperature?: number;
+  maxTokens?:  number;
+  jsonMode?:   boolean;
+  thinking?:   ThinkingLevel;
+}): Promise<string> {
+  const pool    = getServerKeyPool();
+  const pooled  = pool.has(opts.apiKey);
+  const fallBackAllowed = (process.env.AI_POOL_FALLBACK ?? '1') !== '0';
+
+  const models = [opts.model, ...fallbackModels(opts.provider).filter(m => m !== opts.model)];
+
+  let lastError: unknown;
+
+  for (let m = 0; m < models.length; m++) {
+    const model = models[m];
+
+    // Recomputed per model: a key that just failed should not be the first
+    // one tried again on the fallback model.
+    const primary   = pooled ? pool.candidates(opts.apiKey) : [opts.apiKey];
+    const borrowed  = (!pooled && fallBackAllowed && pool.size > 0)
+      ? pool.candidates().filter(k => k !== opts.apiKey)
+      : [];
+    const chain = [...primary, ...borrowed];
+
+    let requestRejected = false;
+
+    for (let i = 0; i < chain.length; i++) {
+      const key = chain[i];
+      try {
+        const text = await callProviderOnce({ ...opts, model, apiKey: key });
+        pool.reportSuccess(key);
+        return text;
+      } catch (err) {
+        lastError = err;
+        const pe = err instanceof ProviderError ? err : null;
+        const kind: FailureKind = pe?.kind ?? 'transient';
+        pool.reportFailure(key, kind, pe?.retryDelayMs);
+
+        if (kind === 'invalid-request') {
+          // The request itself is wrong — another key, another model, same
+          // outcome. Stop.
+          requestRejected = true;
+          break;
+        }
+        if (i < chain.length - 1) {
+          // Fingerprint only — the key itself never reaches a log.
+          const label = pool.has(key) ? pool.fingerprintOf(key) : 'user key';
+          console.warn(
+            `[ai] ${opts.provider} key ${label} failed (${kind}) — trying another key.`,
+          );
+        }
+        // Otherwise keep going: the next key may well work.
+      }
+    }
+
+    if (requestRejected) break;
+    if (m < models.length - 1) {
+      console.warn(
+        `[ai] ${opts.provider} model ${model} failed on every key — trying ${models[m + 1]}.`,
+      );
+    }
+  }
+
+  throw lastError;
 }
