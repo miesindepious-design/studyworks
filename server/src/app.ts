@@ -23,6 +23,9 @@ import { gameRouter } from './routes/game.js';
 import { studyRoomRouter } from './routes/studyRoom.js';
 import { lobbyRouter } from './routes/lobby.js';
 import { adminRouter } from './routes/admin.js';
+import { progressionRouter } from './routes/progression.js';
+import { duelsRouter } from './routes/duels.js';
+import { examsRouter } from './routes/exams.js';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
@@ -78,6 +81,11 @@ app.route('/api/study-room', studyRoomRouter);
 
 // Phase 4: lobby — the shareable front door to a live session
 app.route('/api/lobby',   lobbyRouter);
+
+// Phase 5: progression (XP, quests, achievements, season), duels and exams
+app.route('/api/progression', progressionRouter);
+app.route('/api/duels',       duelsRouter);
+app.route('/api/exams',       examsRouter);
 
 // Admin
 app.route('/api/admin', adminRouter);

@@ -853,3 +853,102 @@ aiRouter.put('/profile', zValidator('json', ProfileBody), async c => {
 
   return c.json({ user: updated });
 });
+
+// ── POST /api/ai/mnemonic ─────────────────────────────────────────────────────
+// A card the student keeps failing gets a memory hook: a short, weird story
+// or rhyme that encodes the answer. Deliberately simple to generate so the
+// model does not wander into essays.
+aiRouter.post('/mnemonic', requireAI, zValidator('json', z.object({
+  question: z.string().min(1).max(500),
+  answer:   z.string().min(1).max(500),
+  topic:    z.string().max(120).optional(),
+})), async c => {
+  const user = c.get('user');
+  const { question, answer, topic } = c.req.valid('json');
+
+  let cfg;
+  try { cfg = await loadAIConfig(user.id); }
+  catch (e) { return c.json({ error: (e as Error).message }, 400); }
+
+  const studentCtx = studentPromptContext(studentProfileBits(user));
+
+  try {
+    const raw = await callProvider({
+      provider: cfg.provider, model: cfg.model, apiKey: cfg.apiKey,
+      messages: [
+        { role: 'system', content: `${SYSTEM_BASE}${studentCtx}` },
+        {
+          role: 'user',
+          content: `Write a memory hook for this flashcard.
+${topic ? `Topic: ${topic}\n` : ''}Question: ${question}
+Answer: ${answer}
+
+Rules:
+- One vivid image, story, acronym or rhyme that encodes the answer.
+- Under 30 words. One or two sentences.
+- No preamble, no explanation of the technique, no quotes.
+- It must actually make the answer memorable, not just restate it.
+Return JSON: { "mnemonic": "..." }`,
+        },
+      ],
+      temperature: 0.8, maxTokens: 300, jsonMode: true, thinking: 'low',
+    });
+    const parsed = JSON.parse(raw);
+    const mnemonic = String(parsed.mnemonic ?? '').trim();
+    if (!mnemonic) return c.json({ error: 'The model did not return a mnemonic' }, 502);
+    return c.json({ mnemonic });
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 502);
+  }
+});
+
+// ── POST /api/ai/cloze ────────────────────────────────────────────────────────
+// Turn a passage into cloze-deletion cards: the answer is hidden inside the
+// sentence, which is a much stronger memory exercise than question/answer.
+aiRouter.post('/cloze', requireAI, zValidator('json', z.object({
+  title:   z.string().max(300).default(''),
+  content: z.string().min(20).max(20000),
+  count:   z.number().int().min(1).max(20).default(5),
+})), async c => {
+  const user = c.get('user');
+  const { title, content, count } = c.req.valid('json');
+
+  let cfg;
+  try { cfg = await loadAIConfig(user.id); }
+  catch (e) { return c.json({ error: (e as Error).message }, 400); }
+
+  const studentCtx = studentPromptContext(studentProfileBits(user));
+
+  try {
+    const raw = await callProvider({
+      provider: cfg.provider, model: cfg.model, apiKey: cfg.apiKey,
+      messages: [
+        { role: 'system', content: `${SYSTEM_BASE}${studentCtx}` },
+        {
+          role: 'user',
+          content: `Turn this passage into exactly ${count} cloze-deletion flashcards.
+${title ? `Title: ${title}\n` : ''}Passage:
+${content}
+
+Rules:
+- Each card's "question" is a sentence from the passage with exactly one key term replaced by {{c1}}.
+- The key term must be the single most exam-worthy word or phrase in that sentence.
+- The card's "answer" is the missing term only.
+- Keep the surrounding sentence short (under 30 words) and self-contained.
+- No numbering, no commentary.
+Return JSON: { "cards": [ { "question": "... {{c1}} ...", "answer": "..." } ] }`,
+        },
+      ],
+      temperature: 0.4, maxTokens: 4096, jsonMode: true, thinking: 'low',
+    });
+    const parsed = JSON.parse(raw);
+    const cards = (parsed.cards ?? [])
+      .filter((x: any) => typeof x?.question === 'string' && typeof x?.answer === 'string' && x.question.includes('{{c1}}'))
+      .slice(0, count)
+      .map((x: any) => ({ question: x.question.trim(), answer: x.answer.trim() }));
+    if (cards.length === 0) return c.json({ error: 'No usable cloze cards were produced' }, 502);
+    return c.json({ cards });
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 502);
+  }
+});

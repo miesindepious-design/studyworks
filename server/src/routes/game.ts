@@ -20,6 +20,7 @@ import { gameManager } from '../lib/gameManager.js';
 import { createLobbyForSession } from '../lib/lobby.js';
 import { SYSTEM_BASE, loadAIConfig, callProvider } from '../lib/aiProvider.js';
 import { studentProfileBits, studentPromptContext } from '../lib/studentProfile.js';
+import { eloRound } from '../lib/progressionRules.js';
 
 export const gameRouter = new Hono();
 
@@ -219,4 +220,211 @@ gameRouter.get('/rooms', requireAuth, async c => {
     take: 20,
   });
   return c.json(rooms.map(r => ({ code: r.code, status: r.status, source: r.source, host: r.host.name, questionCount: r.questionIds.length })));
+});
+
+/**
+ * Report the outcome of a finished battle.
+ *
+ * The WebSocket host may be a separate deployment, so the client posts the
+ * final scores here. This is where the match is recorded, the ELO ratings are
+ * moved and the winner's XP is booked.
+ */
+gameRouter.post('/results', requireAuth, zValidator('json', z.object({
+  roomCode: z.string().min(1),
+  players: z.array(z.object({
+    userId: z.string().min(1),
+    name: z.string().min(1),
+    score: z.number().int().min(0),
+  })).min(1).max(12),
+  // How many double-points power-ups each player spent, so the bonus is
+  // applied to the score that gets recorded.
+  powerUps: z.record(z.string(), z.number().int().min(0)).default({}),
+})), async c => {
+  const user = c.get('user');
+  const body = await c.req.valid('json');
+  const code = body.roomCode.toUpperCase();
+
+  const room = await prisma.gameRoom.findUnique({
+    where: { code },
+    include: { questions: { orderBy: { order: 'asc' } } },
+  });
+  if (!room) return c.json({ error: 'room not found' }, 404);
+
+  const players = body.players.map(p => ({
+    ...p,
+    score: p.score + (body.powerUps[p.userId] ?? 0) * 10,
+  }));
+
+  // ── ELO ────────────────────────────────────────────────────────────────────
+  const ratings = await prisma.gameRating.findMany({
+    where: { userId: { in: players.map(p => p.userId) } },
+  });
+  const ratingOf = new Map(ratings.map(r => [r.userId, r.rating]));
+  const before = new Map<string, number>();
+  const eloInput = players.map(p => {
+    const r = ratingOf.get(p.userId) ?? 1200;
+    before.set(p.userId, r);
+    return { id: p.userId, rating: r, score: p.score };
+  });
+  const updates = eloRound(eloInput);
+
+  for (const p of players) {
+    const upd = updates[p.userId];
+    if (!upd) continue;
+    const existing = ratings.find(r => r.userId === p.userId);
+    const won = players.filter(o => o.userId !== p.userId).every(o => p.score >= o.score);
+    await prisma.gameRating.upsert({
+      where: { userId: p.userId },
+      create: {
+        userId: p.userId,
+        rating: upd.rating,
+        peakRating: Math.max(1200, upd.rating),
+        games: 1,
+        wins: won ? 1 : 0,
+        losses: won ? 0 : 1,
+      },
+      update: {
+        rating: upd.rating,
+        peakRating: Math.max(existing?.peakRating ?? 1200, upd.rating),
+        games: { increment: 1 },
+        wins: { increment: won ? 1 : 0 },
+        losses: { increment: won ? 0 : 1 },
+      },
+    });
+  }
+
+  // ── Record the match ───────────────────────────────────────────────────────
+  const sorted = [...players].sort((a, b) => b.score - a.score);
+  const winner = sorted[0];
+  const winnerIsChallenger = winner.userId === user.id;
+
+  const match = await prisma.gameMatch.create({
+    data: {
+      code: `M${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+      mode: 'live',
+      source: room.source,
+      topic: room.topic,
+      challengerId: sorted[1]?.userId ?? winner.userId,
+      challengerName: sorted[1]?.name ?? winner.name,
+      opponentId: winner.userId,
+      opponentName: winner.name,
+      status: 'completed',
+      questions: room.questions.map(q => ({ prompt: q.prompt, options: q.options, answerIdx: q.answerIdx })),
+      challengerScore: sorted[1]?.score ?? winner.score,
+      opponentScore: winner.score,
+      winnerId: winner.userId,
+      ratingBefore: before.get(sorted[1]?.userId ?? winner.userId) ?? 1200,
+      ratingAfter: updates[sorted[1]?.userId ?? winner.userId]?.rating ?? 1200,
+      opponentRatingBefore: before.get(winner.userId) ?? 1200,
+      opponentRatingAfter: updates[winner.userId]?.rating ?? 1200,
+      completedAt: new Date(),
+    },
+  });
+
+  return c.json({
+    ok: true,
+    matchId: match.id,
+    winnerId: winner.userId,
+    winnerName: winner.name,
+    iWon: winnerIsChallenger,
+    ratings: players.map(p => ({
+      userId: p.userId,
+      name: p.name,
+      score: p.score,
+      ratingBefore: before.get(p.userId) ?? 1200,
+      ratingAfter: updates[p.userId]?.rating ?? 1200,
+      delta: updates[p.userId]?.delta ?? 0,
+    })),
+  });
+});
+
+/** ELO leaderboard — the competitive table of the whole school. */
+gameRouter.get('/leaderboard', requireAuth, async c => {
+  const user = c.get('user');
+  const take = Math.min(100, Math.max(1, Number(c.req.query('take') ?? 50)));
+  const rows = await prisma.gameRating.findMany({
+    orderBy: { rating: 'desc' },
+    take,
+    include: { user: { select: { id: true, name: true, image: true } } },
+  });
+  const me = await prisma.gameRating.findUnique({
+    where: { userId: user.id },
+    include: { user: { select: { id: true, name: true, image: true } } },
+  });
+  const shape = (r: typeof rows[number] | typeof me) => {
+    if (!r) return null;
+    return {
+      userId: r.user.id,
+      name: r.user.name ?? 'Student',
+      image: r.user.image,
+      rating: r.rating,
+      peakRating: r.peakRating,
+      games: r.games,
+      wins: r.wins,
+      losses: r.losses,
+      draws: r.draws,
+      isMe: r.user.id === user.id,
+    };
+  };
+  return c.json({ rows: rows.map(shape), me: shape(me) });
+});
+
+/**
+ * Rematch: spin up a new room with exactly the same questions.
+ *
+ * The old room keeps its history; the new one is a fresh live round, so the
+ * "one more?" button at the end of a battle actually works.
+ */
+gameRouter.post('/rematch', requireAuth, requirePro, zValidator('json', z.object({
+  roomCode: z.string().min(1),
+})), async c => {
+  const user = c.get('user');
+  const code = c.req.valid('json').roomCode.toUpperCase();
+
+  const old = await prisma.gameRoom.findUnique({
+    where: { code },
+    include: { questions: { orderBy: { order: 'asc' } } },
+  });
+  if (!old) return c.json({ error: 'room not found' }, 404);
+  if (old.questions.length < 3) return c.json({ error: 'not enough questions to replay' }, 400);
+
+  const settings = (old.settings as any) ?? { perQuestionSec: 15, baseXp: 10 };
+
+  const room = await prisma.gameRoom.create({
+    data: {
+      hostId: user.id,
+      code: crypto.randomUUID().slice(0, 8).toUpperCase(),
+      source: old.source,
+      topic: old.topic,
+      status: 'lobby',
+      settings: { perQuestionSec: settings.perQuestionSec ?? 15, baseXp: settings.baseXp ?? 10 },
+    },
+  });
+
+  const created = await prisma.$transaction(
+    old.questions.map((q, i) => prisma.gameQuestion.create({
+      data: { roomId: room.id, prompt: q.prompt, options: q.options, answerIdx: q.answerIdx, order: i },
+    }))
+  );
+  await prisma.gameRoom.update({ where: { id: room.id }, data: { questionIds: created.map(q => q.id) } });
+  await prisma.gamePlayer.create({ data: { roomId: room.id, userId: user.id, name: user.name ?? user.email.split('@')[0] } });
+
+  gameManager.registerRoom(room.code, user.id, 'lobby', room.id);
+  gameManager.loadQuestions(room.code, created, settings.perQuestionSec ?? 15, settings.baseXp ?? 10);
+
+  let lobbyCode: string | null = null;
+  try {
+    const lobby = await createLobbyForSession({
+      hostId: user.id,
+      kind: 'quiz',
+      title: old.topic ? `Rematch: ${old.topic}` : 'Rematch',
+      targetCode: room.code,
+      maxParticipants: 12,
+    });
+    lobbyCode = lobby.code;
+  } catch (err) {
+    console.error('[game] failed to create lobby for rematch', room.code, err);
+  }
+
+  return c.json({ code: room.code, roomId: room.id, questionCount: created.length, lobbyCode });
 });

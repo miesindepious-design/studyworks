@@ -63,6 +63,15 @@ model User {
   // Phase 4: lobby
   lobbies     Lobby[]
   lobbyVisits LobbyParticipant[]
+
+  // Phase 5: progression (XP, quests, achievements, season)
+  progress   UserProgress?
+  gameRating GameRating?
+  examPlans  ExamPlan[]
+
+  // Phase 5: matches (live results + asynchronous duels)
+  matchesAsChallenger GameMatch[] @relation("MatchChallenger")
+  matchesAsOpponent   GameMatch[] @relation("MatchOpponent")
 }
 
 model Session {
@@ -227,6 +236,19 @@ model Flashcard {
   interval    Int?
   repetitions Int?
   ef          Float?    // SM-2 easiness factor; defaults to 2.5 if unset
+  // Card shape. "fill-in" hides the answer behind an input; "cloze" hides a
+  // marked span inside the question itself.
+  type        String    @default("standard") // standard | fill-in | cloze
+  // The subject this card belongs to, used by the Mastery Map. Free text so it
+  // can be anything the student calls a topic ("Photosynthesis", "Year 2 Maths").
+  topic       String?
+  // How many times this card has been rated "Again". Three or more makes it a
+  // leech: the card is broken, not the student.
+  leechCount  Int       @default(0)
+  // Where the card came from, so the app can offer to fix AI-generated ones.
+  source      String?   // manual | note | ai | tutor
+  // [{ date: 'YYYY-MM-DD', quality: 0-3 }] — the review trail shown on a card.
+  reviewHistory Json?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -235,6 +257,7 @@ model Flashcard {
 
   @@index([userId])
   @@index([userId, nextReview])
+  @@index([userId, topic])
 }
 
 // ── Practice Questions ────────────────────────────────────────────────────────
@@ -246,6 +269,7 @@ model PracticeQuestion {
   type     String   // multiple-choice | true-false | open
   options  String[] @default([])
   noteId   String?
+  topic    String?  // subject, for the Mastery Map
 
   // Spaced-repetition state. Same shape as Flashcard so a single SM-2
   // implementation can drive both. The first version of the schema didn't
@@ -480,4 +504,111 @@ model InboundEmailToken {
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ── Phase 5: Progression ──────────────────────────────────────────────────────
+// One row per user. XP, level, the streak-freeze wallet, the season score and
+// the set of unlocked achievements live here so progress follows the student
+// across devices instead of dying with the browser's localStorage.
+//
+// The quest state is stored as JSON because the quest definitions change with
+// the season: the server rebuilds today's quests from the rule set and only
+// keeps the *progress* the student made.
+model UserProgress {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  xp        Int      @default(0)
+  level     Int      @default(1)
+  seasonXp  Int      @default(0)
+  // Streak freezes: earned by hitting a quest streak, spent to cover a missed
+  // day without losing the streak.
+  streakFreezes Int @default(1)
+  // Completed focus sessions — the "focus forest" grows one tree per session.
+  focusTrees Int      @default(0)
+  unlockedAchievements String[] @default([])
+  // Progress on today's quests: { "<questId>": 7 }
+  questState Json     @default("{}")
+  // The day the quest progress belongs to (YYYY-MM-DD). Stale days are reset.
+  questDate  String?
+  // XP totals per day for the last 30 days, for the weekly recap.
+  dailyXp    Json     @default("{}")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ── Phase 5: Quiz rating (ELO) ───────────────────────────────────────────────
+// Competitive rating for quiz battles and asynchronous duels. Everyone starts
+// at BASE_RATING so a new student is never punished for being new.
+model GameRating {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  rating     Int      @default(1200)
+  peakRating Int      @default(1200)
+  games      Int      @default(0)
+  wins       Int      @default(0)
+  losses     Int      @default(0)
+  draws      Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ── Phase 5: Matches (live results and asynchronous duels) ───────────────────
+// A match records one head-to-head contest. Live battles write their result
+// here when the game ends (the WebSocket host may be a separate deployment,
+// so the client reports the outcome over REST). Asynchronous duels use the
+// same row: the challenger is scored immediately, the opponent answers later
+// and the row is completed when both sides have played.
+model GameMatch {
+  id              String   @id @default(cuid())
+  code            String   @unique @default(cuid()) // shareable duel code
+  mode            String   @default("live") // live | async
+  source          String   @default("flashcards") // flashcards | topic
+  topic           String?
+  challengerId    String
+  challengerName  String
+  opponentId      String?
+  opponentName    String?
+  status          String   @default("open") // open | completed | expired
+  // Snapshot of the questions so a duel can be replayed later.
+  questions       Json
+  challengerScore Int?
+  opponentScore   Int?
+  winnerId        String?
+  ratingBefore    Float?
+  ratingAfter     Float?
+  opponentRatingBefore Float?
+  opponentRatingAfter  Float?
+  createdAt       DateTime @default(now())
+  completedAt     DateTime?
+  expiresAt       DateTime?
+
+  challenger User  @relation("MatchChallenger", fields: [challengerId], references: [id], onDelete: Cascade)
+  opponent   User? @relation("MatchOpponent",  fields: [opponentId],   references: [id], onDelete: SetNull)
+
+  @@index([challengerId])
+  @@index([opponentId])
+  @@index([status])
+}
+
+// ── Phase 5: Exam plans ───────────────────────────────────────────────────────
+// "My biology exam is in 12 days" → the planner back-calculates how many
+// cards a day have to be reviewed to be ready, and shows the countdown.
+model ExamPlan {
+  id          String   @id @default(cuid())
+  userId      String
+  title       String
+  examDate    DateTime
+  subjects    String[] @default([])
+  dailyTarget Int      @default(20)
+  notes       String?
+  completed   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
 }

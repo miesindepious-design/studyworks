@@ -16,10 +16,18 @@ const FlashcardBody = z.object({
   tags:        z.array(z.string()).default([]),
   folderId:    z.string().optional().nullable(),
   difficulty:  z.enum(['easy', 'medium', 'hard']).optional().nullable(),
-  type:        z.enum(['standard', 'fill-in']).optional().nullable(),
+  type:        z.enum(['standard', 'fill-in', 'cloze']).optional().nullable(),
+  topic:       z.string().max(120).optional().nullable(),
+  leechCount:  z.number().int().min(0).max(99).optional().nullable(),
+  source:      z.string().max(40).optional().nullable(),
+  reviewHistory: z.array(z.object({
+    date:    z.string().max(20),
+    quality: z.number().int().min(0).max(3),
+  })).optional().nullable(),
   nextReview:  z.string().datetime().optional().nullable(),
   interval:    z.number().int().nonnegative().optional().nullable(),
   repetitions: z.number().int().nonnegative().optional().nullable(),
+  ef:          z.number().min(1.3).max(3.5).optional().nullable(),
 });
 
 const BulkBody = z.object({
@@ -62,9 +70,21 @@ flashcardsRouter.post('/', zValidator('json', FlashcardBody), async c => {
   const body = c.req.valid('json');
   const card = await prisma.flashcard.create({
     data: {
-      ...body,
-      userId:     user.id,
-      nextReview: body.nextReview ? new Date(body.nextReview) : undefined,
+      question:    body.question,
+      answer:      body.answer,
+      tags:        body.tags ?? [],
+      folderId:    body.folderId ?? undefined,
+      difficulty:  body.difficulty ?? undefined,
+      type:        body.type ?? 'standard',
+      topic:       body.topic ?? undefined,
+      leechCount:  body.leechCount ?? undefined,
+      source:      body.source ?? undefined,
+      reviewHistory: body.reviewHistory ?? undefined,
+      nextReview:  body.nextReview ? new Date(body.nextReview) : undefined,
+      interval:    body.interval ?? undefined,
+      repetitions: body.repetitions ?? undefined,
+      ef:          body.ef ?? undefined,
+      userId:      user.id,
     },
   });
   return c.json(card, 201);
@@ -106,10 +126,22 @@ flashcardsRouter.put('/:id', zValidator('json', FlashcardBody.partial()), async 
   const card = await prisma.flashcard.update({
     where: { id: c.req.param('id') },
     data: {
-      ...body,
-      nextReview: body.nextReview !== undefined
-        ? (body.nextReview ? new Date(body.nextReview) : null)
-        : undefined,
+      ...(body.question !== undefined ? { question: body.question } : {}),
+      ...(body.answer !== undefined ? { answer: body.answer } : {}),
+      ...(body.tags !== undefined ? { tags: body.tags } : {}),
+      ...(body.folderId !== undefined ? { folderId: body.folderId ?? null } : {}),
+      ...(body.difficulty !== undefined ? { difficulty: body.difficulty ?? null } : {}),
+      ...(body.type !== undefined ? { type: body.type ?? 'standard' } : {}),
+      ...(body.topic !== undefined ? { topic: body.topic ?? null } : {}),
+      ...(body.leechCount !== undefined ? { leechCount: body.leechCount ?? 0 } : {}),
+      ...(body.source !== undefined ? { source: body.source ?? null } : {}),
+      ...(body.reviewHistory !== undefined ? { reviewHistory: body.reviewHistory ?? undefined } : {}),
+      ...(body.nextReview !== undefined
+        ? { nextReview: body.nextReview ? new Date(body.nextReview) : null }
+        : {}),
+      ...(body.interval !== undefined ? { interval: body.interval ?? null } : {}),
+      ...(body.repetitions !== undefined ? { repetitions: body.repetitions ?? null } : {}),
+      ...(body.ef !== undefined ? { ef: body.ef ?? null } : {}),
     },
   });
   return c.json(card);
