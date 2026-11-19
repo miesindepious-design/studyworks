@@ -183,6 +183,32 @@ export function IconCrown(p: IconProps) {
   );
 }
 
+/** A trophy — the leaderboard. */
+export function IconTrophy(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M7 4h10v5a5 5 0 0 1-10 0V4Z" />
+      <path d="M7 6H4v2a3 3 0 0 0 3 3" />
+      <path d="M17 6h3v2a3 3 0 0 1-3 3" />
+      <path d="M12 14v4" />
+      <path d="M8.5 21h7" />
+    </Svg>
+  );
+}
+
+/** Crossed swords — a duel. */
+export function IconDuel(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M4 4l7 7" />
+      <path d="M20 4l-7 7" />
+      <path d="M3 21l4-4" />
+      <path d="M21 21l-4-4" />
+      <path d="M11 11l2 2" />
+    </Svg>
+  );
+}
+
 export function IconChevronRight(p: IconProps) {
   return (
     <Svg {...p}>

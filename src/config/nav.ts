@@ -9,12 +9,14 @@ import type { ComponentType } from 'react';
 import {
   IconDashboard, IconNotes, IconPeople, IconCards, IconTimer,
   IconTutor, IconStudyRoom, IconQuiz, IconLobby, IconPricing, IconSettings,
+  IconTrophy, IconDuel,
   type IconProps,
 } from '../components/icons';
 
 export type View =
   | 'dashboard' | 'notes' | 'contacts' | 'flashcards' | 'pricing' | 'settings'
-  | 'multiplayer' | 'studyRoom' | 'tutor' | 'timer' | 'admin' | 'lobby';
+  | 'multiplayer' | 'studyRoom' | 'tutor' | 'timer' | 'admin' | 'lobby'
+  | 'leaderboard' | 'duel';
 
 export interface NavItem {
   view: View;
@@ -40,6 +42,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { view: 'contacts',    label: 'People',      icon: IconPeople },
       { view: 'flashcards',  label: 'Flashcards',  icon: IconCards },
       { view: 'timer',       label: 'Timer',       icon: IconTimer },
+      { view: 'leaderboard', label: 'Leaderboard', icon: IconTrophy },
     ],
   },
   {
@@ -49,6 +52,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { view: 'lobby',       label: 'Lobby',       icon: IconLobby },
       { view: 'studyRoom',   label: 'Study Room',  icon: IconStudyRoom },
       { view: 'multiplayer', label: 'Quiz Battle', icon: IconQuiz },
+      { view: 'duel',        label: 'Duels',       icon: IconDuel },
     ],
   },
   {
@@ -74,6 +78,8 @@ export const PAGE_TITLES: Record<View, string> = {
   studyRoom:   'Study Room',
   lobby:       'Lobby',
   timer:       'Study Timer',
+  leaderboard: 'Leaderboard',
+  duel:        'Duels',
   settings:    'Settings',
   admin:       'Admin Dashboard',
 };

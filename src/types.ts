@@ -89,7 +89,13 @@ export interface Flashcard {
   interval?: number;
   repetitions?: number;
   ef?: number; // SM-2 easiness factor; defaults to 2.5 if unset
-  type?: 'standard' | 'fill-in';
+  type?: 'standard' | 'fill-in' | 'cloze';
+  /** The subject this card belongs to. Drives the Mastery Map. */
+  topic?: string;
+  /** How many times this card has been rated "Again". Three or more = leech. */
+  leechCount?: number;
+  /** Where the card came from, so the app can offer to fix AI-made ones. */
+  source?: 'manual' | 'note' | 'ai' | 'tutor' | 'import';
   reviewHistory?: Array<{ date: string; quality: number }>;
 }
 
@@ -100,6 +106,8 @@ export interface PracticeQuestion {
   type: 'multiple-choice' | 'true-false' | 'open';
   options?: string[];
   noteId?: string;
+  /** The subject this question belongs to. Drives the Mastery Map. */
+  topic?: string;
   createdAt: Date;
   updatedAt?: Date;
   // Spaced repetition state — same fields as Flashcard so the same

@@ -46,6 +46,10 @@ import { NAV_ITEMS, PAGE_TITLES, type View } from './config/nav';
 import { fetchStudentProfile } from './api/ai';
 import { describeProfile } from './config/studentProfile';
 import { IconDownload, IconUpload, IconSpinner } from './components/icons';
+import { ProgressionProvider } from './game/ProgressionContext';
+import LevelBadge from './components/LevelBadge';
+import LeaderboardView from './components/LeaderboardView';
+import DuelView from './components/DuelView';
 
 type Theme = 'light' | 'dark' | 'system';
 type Tier  = 'free' | 'pro';
@@ -213,6 +217,10 @@ export default function App() {
   const [pendingStudyRoom, setPendingStudyRoom] = useState<{
     id: string; url: string | null; lobbyCode?: string | null;
   } | null>(null);
+
+  // A duel code the player arrived with (?duel=ABCD12). Like the lobby code
+  // it has to survive the auth gate, so it is stashed in sessionStorage.
+  const [pendingDuelCode, setPendingDuelCode] = useState<string | null>(null);
 
   // ── Theme (apply immediately from IDB value once loaded) ──────────────────
   const theme = (db.theme as Theme) || 'system';
@@ -395,6 +403,16 @@ export default function App() {
       window.history.replaceState({}, '', '/');
     }
 
+    // ?duel=ABC123 — a shared asynchronous duel.
+    const duelParam = params.get('duel');
+    if (duelParam && /^[A-Za-z0-9]{4,12}$/.test(duelParam.trim())) {
+      const code = duelParam.trim().toUpperCase();
+      try { sessionStorage.setItem('studyworks:pendingDuel', code); } catch {}
+      setPendingDuelCode(code);
+      setCurrentView('duel');
+      window.history.replaceState({}, '', '/');
+    }
+
     // Save-from-URL deep link (browser extension / share target):
     // /?save=<encoded-url> switches to Notes and stashes the URL for the
     // NotesView to clip once the app is ready.
@@ -427,6 +445,18 @@ export default function App() {
       setCurrentView('lobby');
     }
   }, [session.status, pendingLobbyCode]);
+
+  // A duel link followed while signed out comes back after signing in.
+  useEffect(() => {
+    if (session.status !== 'authenticated') return;
+    if (pendingDuelCode) return;
+    let stashed: string | null = null;
+    try { stashed = sessionStorage.getItem('studyworks:pendingDuel'); } catch {}
+    if (stashed && /^[A-Za-z0-9]{4,12}$/.test(stashed)) {
+      setPendingDuelCode(stashed.toUpperCase());
+      setCurrentView('duel');
+    }
+  }, [session.status, pendingDuelCode]);
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   // Built from the shared registry (src/config/shortcuts.ts) so a rebind in
@@ -606,6 +636,10 @@ export default function App() {
     session.user.email.toLowerCase() === (import.meta.env.VITE_ADMIN_EMAIL as string).toLowerCase());
 
   return (
+    <ProgressionProvider
+      authenticated={session.status === 'authenticated'}
+      onToast={addToast}
+    >
     <div className="app">
       <AppShell
         currentView={currentView}
@@ -636,6 +670,7 @@ export default function App() {
                 <IconSpinner /> Syncing
               </span>
             )}
+            <LevelBadge />
             <Achievements />
           </>
         )}
@@ -827,6 +862,15 @@ export default function App() {
           {currentView === 'timer' && (
             <StudyTimer />
           )}
+          {currentView === 'leaderboard' && (
+            <LeaderboardView />
+          )}
+          {currentView === 'duel' && (
+            <DuelView
+              onToast={addToast}
+              initialCode={pendingDuelCode}
+            />
+          )}
           {currentView === 'admin' && (
             <AdminDashboard
               adminEmail={session.user!.email}
@@ -874,5 +918,6 @@ export default function App() {
         onAction={handleCopilotAction}
       />
     </div>
+    </ProgressionProvider>
   );
 }
