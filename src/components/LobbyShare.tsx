@@ -23,9 +23,13 @@ interface Props {
   hint?: string;
   /** Compact mode drops the QR code — used in tight spots like the quiz waiting room. */
   compact?: boolean;
+  /** When present, the card grows a Close button — shown to the host only. */
+  onClose?: () => void;
+  /** Disables the Close button while the request is in flight. */
+  closing?: boolean;
 }
 
-export default function LobbyShare({ code, label, hint, compact }: Props) {
+export default function LobbyShare({ code, label, hint, compact, onClose, closing }: Props) {
   const [copied, setCopied] = useState<'code' | 'link' | null>(null);
 
   const link = lobbyShareUrl(code);
@@ -127,6 +131,24 @@ export default function LobbyShare({ code, label, hint, compact }: Props) {
           >
             Scan to join lobby {code}
           </p>
+        </div>
+      )}
+
+      {/* Host-only escape hatch: closing kills the code, the link and the QR
+          in one move, so nobody new can arrive after the session is over. */}
+      {onClose && (
+        <div
+          style={{
+            marginTop: compact ? '0.75rem' : '1rem',
+            paddingTop: '0.75rem',
+            borderTop: '1px solid rgba(128, 128, 128, 0.2)',
+            display: 'flex',
+            justifyContent: 'flex-end',
+          }}
+        >
+          <button className="btn btn-outline btn-sm" onClick={onClose} disabled={closing}>
+            {closing ? 'Closing…' : '✕ Close lobby'}
+          </button>
         </div>
       )}
     </div>

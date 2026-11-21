@@ -16,9 +16,12 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { buildTestApp, prismaMock } from './helpers.js';
 import { sweepLobbies } from '../lib/lobby.js';
 
-const NOW = new Date('2026-11-17T12:00:00.000Z');
-const FUTURE = new Date('2026-11-18T12:00:00.000Z');
-const PAST   = new Date('2026-11-16T12:00:00.000Z');
+// Fixtures are relative to the real clock. Hardcoded dates here were a time
+// bomb: once the calendar moved past them every lobby fixture read as
+// "expired" and the whole resolve suite started 410-ing.
+const NOW = new Date();
+const FUTURE = new Date(Date.now() + 24 * 60 * 60 * 1000);
+const PAST   = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
 function lobby(overrides: Record<string, unknown> = {}) {
   return {
@@ -443,6 +446,58 @@ describe('Lobby — the empty-room sweep', () => {
       where: { id: 'lobby-1' },
       data: { status: 'closed' },
     });
+  });
+
+  it('closes a quiz lobby whose game room has been deleted', async () => {
+    prismaMock.lobby.findMany.mockResolvedValue([lobby()] as any);
+    prismaMock.gameRoom.findUnique.mockResolvedValue(null as any);
+
+    await sweepLobbies({ force: true });
+
+    expect(prismaMock.lobby.update).toHaveBeenCalledWith({
+      where: { id: 'lobby-1' },
+      data: { status: 'closed' },
+    });
+  });
+
+  it('closes a lobby past its 24-hour TTL even if its session looks alive', async () => {
+    prismaMock.lobby.findMany.mockResolvedValue([
+      lobby({ expiresAt: new Date(T - 60_000) }),
+    ] as any);
+
+    await sweepLobbies({ force: true });
+
+    expect(prismaMock.lobby.update).toHaveBeenCalledWith({
+      where: { id: 'lobby-1' },
+      data: { status: 'closed' },
+    });
+    // The TTL check happens before the session lookup — nothing to ask.
+    expect(prismaMock.gameRoom.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('closes a study lobby nobody ever joined once the grace period passes', async () => {
+    prismaMock.lobby.findMany.mockResolvedValue([
+      studyLobby({ createdAt: new Date(T - 5 * 60_000) }),
+    ] as any);
+    prismaMock.lobbyParticipant.findMany.mockResolvedValue([] as any);
+
+    await sweepLobbies({ force: true });
+
+    expect(prismaMock.lobby.update).toHaveBeenCalledWith({
+      where: { id: 'lobby-1' },
+      data: { status: 'closed' },
+    });
+  });
+
+  it('leaves a freshly created study lobby alone before the grace period ends', async () => {
+    prismaMock.lobby.findMany.mockResolvedValue([
+      studyLobby({ createdAt: new Date(T - 30_000) }),
+    ] as any);
+    prismaMock.lobbyParticipant.findMany.mockResolvedValue([] as any);
+
+    await sweepLobbies({ force: true });
+
+    expect(prismaMock.lobby.update).not.toHaveBeenCalled();
   });
 
   it('leaves a quiz lobby alone while its game is still going', async () => {

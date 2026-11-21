@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getLobby, listMyLobbies, joinLobby, type LobbyDetail, type MyLobby } from '../api/lobby';
+import { getLobby, listMyLobbies, joinLobby, closeLobby, type LobbyDetail, type MyLobby } from '../api/lobby';
 import LobbyShare from './LobbyShare';
 
 /**
@@ -36,6 +36,8 @@ export default function LobbyView({
   const [error, setError] = useState<string | null>(null);
   const [myLobbies, setMyLobbies] = useState<MyLobby[]>([]);
   const [showMine, setShowMine] = useState(false);
+  /** The lobby currently being closed, so its button can show progress. */
+  const [closingCode, setClosingCode] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const refreshMine = useCallback(() => {
@@ -43,6 +45,23 @@ export default function LobbyView({
   }, []);
 
   useEffect(() => { refreshMine(); }, [refreshMine]);
+
+  // ── Close one of my lobbies ────────────────────────────────────────────────
+  // Host-only. Closing kills the code, the link and the QR in one move —
+  // this is how a session the host abandoned stops accepting players.
+  const closeMine = useCallback(async (code: string) => {
+    if (closingCode) return;
+    setClosingCode(code);
+    try {
+      await closeLobby(code);
+      addToast(`Lobby ${code} closed — the code no longer works.`, 'success');
+      setMyLobbies(prev => prev.map(l => (l.code === code ? { ...l, status: 'closed' as const } : l)));
+    } catch (err: any) {
+      addToast(err?.message || 'Could not close that lobby.', 'error');
+    } finally {
+      setClosingCode(null);
+    }
+  }, [closingCode, addToast]);
 
   // Resolve a code that arrived from outside (deep link, QR scan, paste).
   const resolve = useCallback(async (raw: string) => {
@@ -167,7 +186,14 @@ export default function LobbyView({
           <p className="text-muted text-sm" style={{ margin: '0 0 0.75rem' }}>
             {kindLabel}
             {lobby.hostName ? ` · hosted by ${lobby.hostName}` : ''}
-            {lobby.playerCount != null ? ` · ${lobby.playerCount} player${lobby.playerCount === 1 ? '' : 's'}` : ''}
+            {/* How many people are already in — the joiner sees the room's
+                occupancy before committing to it. Quizzes count players in
+                the game room; study sessions count the live roster. */}
+            {lobby.playerCount != null
+              ? ` · ${lobby.playerCount} player${lobby.playerCount === 1 ? '' : 's'}`
+              : lobby.participants.length > 0
+                ? ` · ${lobby.participants.length} of ${lobby.maxParticipants} in session`
+                : ''}
           </p>
 
           {lobby.status === 'closed' ? (
@@ -228,6 +254,8 @@ export default function LobbyView({
                         : 'Share this code, link, or QR with the people you want to invite'
                   }
                   compact
+                  onClose={l.status !== 'closed' && !l.expired ? () => closeMine(l.code) : undefined}
+                  closing={closingCode === l.code}
                 />
               ))}
             </div>

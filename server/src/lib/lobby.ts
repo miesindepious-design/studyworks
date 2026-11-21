@@ -248,11 +248,11 @@ export async function sweepLobbies(opts: { force?: boolean } = {}): Promise<void
   if (!opts.force && now - lastSweepAt < SWEEP_THROTTLE_MS) return;
   lastSweepAt = now;
 
-  let lobbies: Array<{ id: string; kind: string; targetCode: string | null }>;
+  let lobbies: Array<{ id: string; kind: string; targetCode: string | null; createdAt: Date; expiresAt: Date | null }>;
   try {
     lobbies = await prisma.lobby.findMany({
       where: { status: { in: ['open', 'live'] } },
-      select: { id: true, kind: true, targetCode: true },
+      select: { id: true, kind: true, targetCode: true, createdAt: true, expiresAt: true },
       take: 200,
       orderBy: { createdAt: 'asc' },
     });
@@ -266,13 +266,23 @@ export async function sweepLobbies(opts: { force?: boolean } = {}): Promise<void
 
   for (const lobby of lobbies ?? []) {
     try {
+      // TTL first: a lobby that has aged out is closed no matter what its
+      // session is doing — this is what stops lobbies from lingering for
+      // days after everybody has forgotten about them.
+      if (lobby.expiresAt && lobby.expiresAt.getTime() < now) {
+        await prisma.lobby.update({ where: { id: lobby.id }, data: { status: 'closed' } });
+        continue;
+      }
+
       if (lobby.kind === 'quiz') {
         if (!lobby.targetCode) continue;
         const room = await prisma.gameRoom.findUnique({
           where: { code: lobby.targetCode },
           select: { status: true },
         });
-        if (room && room.status === 'finished') {
+        // Finished is over; missing means the room was deleted out from
+        // under the lobby — both leave nothing for the lobby to front.
+        if (!room || room.status === 'finished') {
           await prisma.lobby.update({ where: { id: lobby.id }, data: { status: 'closed' } });
         }
         continue;
@@ -285,12 +295,17 @@ export async function sweepLobbies(opts: { force?: boolean } = {}): Promise<void
       const anybodyActive = visits.some(
         v => !v.leftAt && v.lastSeenAt.getTime() > now - PARTICIPANT_STALE_MS,
       );
-      if (anybodyActive || visits.length === 0) continue;
+      if (anybodyActive) continue;
 
-      const lastActivity = visits.reduce(
-        (latest, v) => Math.max(latest, (v.leftAt ?? v.lastSeenAt).getTime()),
-        0,
-      );
+      // Nobody is here. The grace clock runs from the last departure — or,
+      // for a lobby nobody ever joined, from its creation — so an abandoned
+      // room can't sit open forever just because it never had a roster.
+      const lastActivity = visits.length
+        ? visits.reduce(
+            (latest, v) => Math.max(latest, (v.leftAt ?? v.lastSeenAt).getTime()),
+            0,
+          )
+        : lobby.createdAt.getTime();
       if (now - lastActivity >= LOBBY_EMPTY_CLOSE_MS) {
         await prisma.lobby.update({ where: { id: lobby.id }, data: { status: 'closed' } });
       }

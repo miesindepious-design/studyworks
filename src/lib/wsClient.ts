@@ -15,6 +15,10 @@
  *   answer-ack { userId, correct, xp }
  *   player-joined { userId, name, role }
  *   player-left   { userId, name }
+ *   host-changed  { userId, name } — the host left; the earliest-joined
+ *                 remaining player took over (possibly the receiver)
+ *   room-empty    { closesInMs } — everybody left; the room closes after
+ *                 the grace period unless someone returns
  *   chat       { userId, name, text }
  *   finished   { ranking: { userId, name, xp, rank }[], winnerId }
  *   room-ended { reason }
@@ -30,6 +34,8 @@ export type ServerMessage =
   | { type: 'answer-ack'; userId: string; correct: boolean; xp: number }
   | { type: 'player-joined'; userId: string; name: string; role: 'host' | 'player' }
   | { type: 'player-left'; userId: string; name: string }
+  | { type: 'host-changed'; userId: string; name: string }
+  | { type: 'room-empty'; closesInMs: number }
   | { type: 'chat'; userId: string; name: string; text: string }
   | { type: 'finished'; ranking: { userId: string; name: string; xp: number; rank: number }[]; winnerId: string | null }
   | { type: 'room-ended'; reason: string }

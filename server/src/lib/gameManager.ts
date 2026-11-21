@@ -48,6 +48,9 @@ export interface WebSocketLike {
 
 const SPEED_BONUS_CAP = 1; // max extra (so fastest correct = 2× base)
 
+/** How long an emptied room waits before it is closed for good. */
+export const ROOM_EMPTY_CLOSE_MS = 2 * 60_000;
+
 export class GameManager {
   // roomCode -> room
   private rooms = new Map<string, Room>();
@@ -102,6 +105,25 @@ export class GameManager {
     };
     room.players.set(connId, player);
     this.conns.set(connId, { roomCode: room.code, userId: identity.userId });
+
+    // A join cancels the empty-room close: this covers a refresh or a
+    // dropped connection inside the two-minute grace window.
+    if (room.emptyTimer) {
+      clearTimeout(room.emptyTimer);
+      room.emptyTimer = null;
+    }
+
+    // Persist the player right away so the lobby's player count is honest
+    // before the game starts — somebody deciding whether to join should see
+    // how many people are already in, not just the host. Best effort.
+    if (room.dbRoomId) {
+      prisma.gamePlayer.upsert({
+        where: { roomId_userId: { roomId: room.dbRoomId, userId: identity.userId } },
+        create: { roomId: room.dbRoomId, userId: identity.userId, name: identity.name },
+        update: { name: identity.name },
+      }).catch(err => console.error('[gameManager] player persist failed:', err?.message ?? err));
+    }
+
     return { ok: true, player };
   }
 
@@ -115,12 +137,79 @@ export class GameManager {
     if (!player) return;
     room.players.delete(connId);
     this.broadcast(room.code, { type: 'player-left', userId: player.userId, name: player.name });
-    // If host left and game not started, end the room.
-    if (player.role === 'host' && room.status !== 'finished') {
-      this.endRoom(room.code, 'host-left');
-    } else if (room.players.size === 0) {
-      this.rooms.delete(room.code);
+
+    if (room.players.size > 0) {
+      // Host handoff: the earliest-joined player still here takes over so
+      // the session outlives its creator — in the lobby and mid-game alike.
+      if (player.role === 'host') this.transferHost(room);
+      return;
     }
+    // Everybody is gone. Give the room a two-minute grace period (a refresh
+    // or a dropped connection is not a departure) before closing it for good.
+    this.scheduleEmptyClose(room);
+  }
+
+  /**
+   * Hand the host tag to the player who has been in the room longest (Map
+   * iteration order is insertion order). Persisted so the REST side sees
+   * the same host for start/close permission and the lobby roster.
+   */
+  private transferHost(room: Room) {
+    const next = room.players.values().next().value;
+    if (!next) return;
+    next.role = 'host';
+    room.hostUserId = next.userId;
+    this.broadcast(room.code, { type: 'host-changed', userId: next.userId, name: next.name });
+
+    if (room.dbRoomId) {
+      prisma.gameRoom.update({ where: { id: room.dbRoomId }, data: { hostId: next.userId } })
+        .catch(err => console.error('[gameManager] host persist failed:', err?.message ?? err));
+      prisma.lobby.updateMany({
+        where: { kind: 'quiz', targetCode: room.code, status: { not: 'closed' } },
+        data: { hostId: next.userId },
+      }).catch(err => console.error('[gameManager] lobby host persist failed:', err?.message ?? err));
+    }
+  }
+
+  /** Start the two-minute countdown that closes an emptied room. */
+  private scheduleEmptyClose(room: Room) {
+    if (room.emptyTimer) clearTimeout(room.emptyTimer);
+    this.broadcast(room.code, { type: 'room-empty', closesInMs: ROOM_EMPTY_CLOSE_MS });
+    room.emptyTimer = setTimeout(() => {
+      room.emptyTimer = null;
+      if (room.players.size > 0) return; // somebody came back inside the grace window
+      this.closeRoomForGood(room.code);
+    }, ROOM_EMPTY_CLOSE_MS);
+  }
+
+  /**
+   * Close an emptied room for good: drop it from memory, mark the DB room
+   * finished and close its lobby, so the code stops resolving and the
+   * host's lobby list shows it as ended. Best-effort persistence.
+   */
+  private closeRoomForGood(code: string) {
+    const room = this.rooms.get(code.toUpperCase());
+    if (!room) return;
+    room.status = 'finished';
+    if (room.timer) clearTimeout(room.timer);
+    if (room.emptyTimer) clearTimeout(room.emptyTimer);
+    this.rooms.delete(room.code);
+
+    const finishDb = room.dbRoomId
+      ? prisma.gameRoom.update({ where: { id: room.dbRoomId }, data: { status: 'finished' } })
+      : Promise.resolve();
+    const closeLobbyRow = prisma.lobby.updateMany({
+      where: { kind: 'quiz', targetCode: room.code, status: { not: 'closed' } },
+      data: { status: 'closed' },
+    });
+    Promise.allSettled([finishDb, closeLobbyRow])
+      .then(results => {
+        for (const r of results) {
+          if (r.status === 'rejected') {
+            console.error('[gameManager] room close persist failed:', r.reason?.message ?? r.reason);
+          }
+        }
+      });
   }
 
   getConnMeta(connId: string) {
@@ -152,6 +241,7 @@ export class GameManager {
       pendingAnswers: [],
       quiz: { questionIndex: -1, questionCount: 0, startedAt: null, deadlineAt: null },
       timer: null,
+      emptyTimer: null,
     });
   }
 
@@ -280,9 +370,28 @@ export class GameManager {
     const room = this.rooms.get(code.toUpperCase());
     if (!room) return;
     if (room.timer) clearTimeout(room.timer);
+    if (room.emptyTimer) clearTimeout(room.emptyTimer);
     room.status = 'finished';
     this.broadcast(room.code, { type: 'room-ended', reason });
+    const dbRoomId = room.dbRoomId;
     this.rooms.delete(room.code);
+    // A hard end means nobody can keep playing: mark the DB room finished
+    // and close the lobby so the code stops resolving. Best-effort.
+    const finishDb = dbRoomId
+      ? prisma.gameRoom.update({ where: { id: dbRoomId }, data: { status: 'finished' } })
+      : Promise.resolve();
+    const closeLobbyRow = prisma.lobby.updateMany({
+      where: { kind: 'quiz', targetCode: room.code, status: { not: 'closed' } },
+      data: { status: 'closed' },
+    });
+    Promise.allSettled([finishDb, closeLobbyRow])
+      .then(results => {
+        for (const r of results) {
+          if (r.status === 'rejected') {
+            console.error('[gameManager] endRoom persist failed:', r.reason?.message ?? r.reason);
+          }
+        }
+      });
   }
 
   /** Persist end-of-game results to the DB. Returns the winner userId. */
@@ -354,6 +463,8 @@ export interface Room {
   settings: { perQuestionSec: number; baseXp: number } | null;
   quiz: QuizState;
   timer: ReturnType<typeof setTimeout> | null;
+  /** Two-minute countdown started when the last player leaves. */
+  emptyTimer: ReturnType<typeof setTimeout> | null;
   answeredThisQ: Set<string> | null;
   pendingAnswers: { questionId: string; playerId: string; userId: string; choiceIdx: number | null; correct: boolean; responseMs: number | null; xpAwarded: number }[];
 }

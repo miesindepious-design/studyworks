@@ -195,6 +195,14 @@ export default function MultiplayerQuiz({ db, userId, userName, tier, setCurrent
         setPendingDouble(false);
         setStreak(0);
         break;
+      case 'host-changed':
+        // The host left; the earliest-joined player took over (possibly us).
+        setHostId(msg.userId);
+        addToast(`${msg.name} is now the host`, 'info');
+        break;
+      case 'room-empty':
+        addToast('Everyone left — the lobby closes in 2 minutes unless someone returns.', 'info');
+        break;
       case 'room-ended':
         addToast('Room ended', 'info');
         setPhase('lobby');

@@ -26,6 +26,7 @@ const { apiMock } = vi.hoisted(() => ({
     getLobby:      vi.fn(),
     listMyLobbies: vi.fn(),
     joinLobby:     vi.fn(),
+    closeLobby:    vi.fn(),
     createLobby:   vi.fn(),
   },
 }));
@@ -64,6 +65,7 @@ const STUDY_LOBBY = {
   title: 'Chemistry session',
   sessionTitle: 'Chemistry session',
   playerCount: null,
+  participants: [],
   target: {
     kind: 'study',
     roomUrl: 'https://example.daily.co/room',
@@ -155,8 +157,10 @@ describe('LobbyView — resolving a code', () => {
     apiMock.getLobby.mockReset();
     apiMock.listMyLobbies.mockReset();
     apiMock.joinLobby.mockReset();
+    apiMock.closeLobby.mockReset();
     apiMock.listMyLobbies.mockResolvedValue([]);
     apiMock.joinLobby.mockResolvedValue({ ok: true });
+    apiMock.closeLobby.mockResolvedValue({ ok: true });
     addToast.mockReset();
   });
 
@@ -291,6 +295,94 @@ describe('LobbyView — resolving a code', () => {
     await joinWithCode(container, CODE);
 
     expect(container.textContent).toContain('No lobby found with that code.');
+
+    await act(async () => root.unmount());
+  });
+
+  it('shows how many people are already in a study session before joining', async () => {
+    apiMock.getLobby.mockResolvedValue({
+      ...STUDY_LOBBY,
+      participants: [
+        { userId: 'u1', name: 'Ada', joinedAt: '2026-11-17T00:00:00.000Z' },
+        { userId: 'u2', name: 'Ben', joinedAt: '2026-11-17T00:01:00.000Z' },
+      ],
+    });
+
+    const { container, root } = await mount(
+      createElement(LobbyView, { onEnterQuiz: vi.fn(), onEnterStudy: vi.fn(), addToast }),
+    );
+
+    await joinWithCode(container, CODE);
+
+    expect(container.textContent).toContain('2 of 12 in session');
+
+    await act(async () => root.unmount());
+  });
+});
+
+describe('LobbyView — the host closing a lobby', () => {
+  beforeEach(() => {
+    apiMock.getLobby.mockReset();
+    apiMock.listMyLobbies.mockReset();
+    apiMock.joinLobby.mockReset();
+    apiMock.closeLobby.mockReset();
+    apiMock.listMyLobbies.mockResolvedValue([]);
+    apiMock.closeLobby.mockResolvedValue({ ok: true });
+    addToast.mockReset();
+  });
+
+  it('closes an open lobby from the host list, killing the code', async () => {
+    apiMock.listMyLobbies.mockResolvedValue([
+      {
+        ...QUIZ_LOBBY,
+        expired: false,
+        target: { kind: 'quiz', roomCode: 'ROOM123' },
+      },
+    ]);
+
+    const { container, root } = await mount(
+      createElement(LobbyView, { onEnterQuiz: vi.fn(), onEnterStudy: vi.fn(), addToast }),
+    );
+
+    // The host's list starts hidden; open it, then close the lobby.
+    await act(async () => { buttonByText(container, 'Show').click(); });
+    await flush();
+
+    expect(container.textContent).toContain('✕ Close lobby');
+    await act(async () => { buttonByText(container, '✕ Close lobby').click(); });
+    await flush();
+
+    expect(apiMock.closeLobby).toHaveBeenCalledWith(CODE);
+    expect(addToast).toHaveBeenCalledWith(
+      expect.stringContaining('closed'),
+      'success',
+    );
+    // The row flips to "ended" and the close button disappears.
+    expect(container.textContent).toContain('This session has ended');
+    expect(
+      Array.from(container.querySelectorAll('button'))
+        .some(b => (b.textContent ?? '').includes('Close lobby')),
+    ).toBe(false);
+    await act(async () => root.unmount());
+  });
+
+  it('offers no close button on a lobby that has already ended', async () => {
+    apiMock.listMyLobbies.mockResolvedValue([
+      { ...QUIZ_LOBBY, status: 'closed', expired: false, target: { kind: 'quiz', roomCode: 'ROOM123' } },
+    ]);
+
+    const { container, root } = await mount(
+      createElement(LobbyView, { onEnterQuiz: vi.fn(), onEnterStudy: vi.fn(), addToast }),
+    );
+
+    await act(async () => { buttonByText(container, 'Show').click(); });
+    await flush();
+
+    expect(container.textContent).toContain('This session has ended');
+    expect(
+      Array.from(container.querySelectorAll('button'))
+        .some(b => (b.textContent ?? '').includes('Close lobby')),
+    ).toBe(false);
 
     await act(async () => root.unmount());
   });
