@@ -38,6 +38,7 @@ export type XpEventType =
   | 'quest_completed'
   | 'achievement_unlocked'
   | 'exam_plan_created'
+  | 'card_created'
   | 'cloze_created'
   | 'leech_fixed';
 
@@ -69,6 +70,7 @@ export const XP_EVENTS: Record<XpEventType, XpEventDef> = {
   quest_completed:    { xp: 25, label: 'Daily quest complete', quest: 'quest',       step: 1 },
   achievement_unlocked:{ xp: 20, label: 'Achievement unlocked', quest: 'quest',       step: 1 },
   exam_plan_created:  { xp: 10, label: 'Exam plan created' },
+  card_created:       { xp: 3,  label: 'Card created',         quest: 'cards',       step: 1 },
   cloze_created:      { xp: 4,  label: 'Cloze card created',   quest: 'cards',       step: 1 },
   leech_fixed:        { xp: 15, label: 'Tough card fixed',     quest: 'cards',       step: 1 },
 };

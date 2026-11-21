@@ -27,6 +27,12 @@ import {
   IconCrown, IconArrowRight, IconSparkles, IconLock, IconCheck,
   IconPlay, IconPause, IconDots, IconPlus, IconArrowUpRight,
 } from './icons';
+import DailyQuests from './DailyQuests';
+import MasteryMap from './MasteryMap';
+import WeeklyRecap from './WeeklyRecap';
+import FocusForest from './FocusForest';
+import ExamPlanner from './ExamPlanner';
+import { useProgression } from '../game/ProgressionContext';
 
 type Tier = 'free' | 'pro';
 
@@ -48,6 +54,10 @@ interface DashboardProps {
   onGenerateInsights: () => void;
   weeklyInsights: WeeklyInsights | null;
   insightsLoading: boolean;
+  /** Toast helper — the exam planner reports through it. */
+  addToast?: (message: string, type: 'success' | 'error' | 'info') => void;
+  /** Whether the student is signed in — decides where exam plans are stored. */
+  authenticated?: boolean;
 }
 
 const STUDY_LOG_KEY = 'studyworks-study-log';
@@ -196,8 +206,10 @@ function formatClock(value?: Date | string): string {
 export default function Dashboard({
   userName, trialDaysLeft = 0, notes, contacts, flashcards, tier, totalItems,
   aiSummariesThisMonth, folders, practiceQuestions, setCurrentView, aiReady,
-  aiProvider, onGenerateInsights, weeklyInsights, insightsLoading,
+  aiProvider, onGenerateInsights, weeklyInsights, insightsLoading, addToast,
+  authenticated = false,
 }: DashboardProps) {
+  const { award: progressionAward } = useProgression();
   const greeting = (() => {
     const h = new Date().getHours();
     if (h < 12) return 'Good morning';
@@ -214,6 +226,25 @@ export default function Dashboard({
   );
   const overdueContacts = contacts.filter(c => c.nextReminder && new Date(c.nextReminder) < new Date()).length;
   const dueFlashcards = flashcards.filter(c => !c.nextReview || new Date(c.nextReview) <= new Date()).length;
+
+  // Reviews over the last seven days, taken from the trail each card keeps.
+  const { weekCardsReviewed, weekAccuracy } = useMemo(() => {
+    const cutoff = new Date(Date.now() - 7 * 86400000);
+    let reviewed = 0;
+    let good = 0;
+    for (const card of flashcards) {
+      for (const entry of card.reviewHistory ?? []) {
+        const when = new Date(entry.date);
+        if (Number.isNaN(when.getTime()) || when < cutoff) continue;
+        reviewed += 1;
+        if (entry.quality >= 2) good += 1;
+      }
+    }
+    return {
+      weekCardsReviewed: reviewed,
+      weekAccuracy: reviewed > 0 ? Math.round((good / reviewed) * 100) : 0,
+    };
+  }, [flashcards]);
 
   // ── Streak data ───────────────────────────────────────────────────────────
   const [streak, setStreak] = useState<StreakData>(EMPTY_STREAK);
@@ -886,6 +917,20 @@ export default function Dashboard({
 
       <hr className="sw-editorial-rule" />
 
+      {/* ── Daily quests + mastery map ─────────────────────────────────── */}
+      <section className="sw-grid sw-grid-main-side">
+        <Reveal fill delay={0}>
+          <DailyQuests onNavigate={setCurrentView} />
+        </Reveal>
+        <Reveal fill delay={70}>
+          <MasteryMap
+            flashcards={flashcards}
+            practiceQuestions={practiceQuestions}
+            onPickTopic={() => setCurrentView('flashcards')}
+          />
+        </Reveal>
+      </section>
+
       {/* ── Daily goals + streak ───────────────────────────────────────── */}
       <section className="sw-grid sw-grid-main-side">
 
@@ -1216,6 +1261,35 @@ export default function Dashboard({
             </section>
           </Reveal>
         )}
+
+        {/* ── Bottom row ─────────────────────────────────────────────────── */}
+        <section className="sw-grid sw-grid-3">
+
+          {/* Exam countdown */}
+          <Reveal fill delay={0}>
+            <ExamPlanner
+              flashcards={flashcards}
+              authenticated={authenticated}
+              onToast={addToast}
+              onPlanCreated={() => progressionAward('exam_plan_created')}
+            />
+          </Reveal>
+
+          {/* Weekly recap */}
+          <Reveal fill delay={35}>
+            <WeeklyRecap
+              cardsReviewed={weekCardsReviewed}
+              accuracy={weekAccuracy}
+              minutes={todaysStudyMinutes}
+              streak={streak.currentStreak}
+            />
+          </Reveal>
+
+          {/* Focus forest */}
+          <Reveal fill delay={70}>
+            <FocusForest />
+          </Reveal>
+        </section>
 
         {/* ── Bottom row ─────────────────────────────────────────────────── */}
         <section className="sw-grid sw-grid-3">

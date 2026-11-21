@@ -23,6 +23,7 @@ import {
   type SchoolStage,
 } from '../config/studentProfile';
 import { buildExportPayload, downloadJSON, openPrintableExport } from '../utils/dataExport';
+import AnkiPanel from './AnkiPanel';
 import {
   IconBell, IconPeople, IconTimer, IconSparkles, IconTutor,
   IconDownload, IconLock, IconSearch,
@@ -48,6 +49,8 @@ interface SettingsViewProps {
     practiceQuestions: PracticeQuestion[];
     savedSearches: SavedSearch[];
   };
+  /** Persists flashcards — the Anki import writes into the real deck. */
+  setFlashcards?: (next: Flashcard[]) => void;
   /** Shown on the docked chip once the hero flies into the corner. */
   displayName?: string;
 }
@@ -72,7 +75,7 @@ const EMPTY_PROFILE: ProfileState = {
 
 export default function SettingsView({
   notif, tier, onAddToast, onShowShortcuts, onAISaved, folders,
-  theme, onThemeChange, accent, onAccentChange, data, displayName,
+  theme, onThemeChange, accent, onAccentChange, data, setFlashcards, displayName,
 }: SettingsViewProps) {
   const [testing, setTesting] = useState(false);
   const [showPrompts, setShowPrompts] = useState(false);
@@ -1286,6 +1289,14 @@ export default function SettingsView({
                     </button>
                   </div>
                 </div>
+
+                {setFlashcards && (
+                  <AnkiPanel
+                    flashcards={data.flashcards}
+                    setFlashcards={setFlashcards}
+                    onToast={onAddToast}
+                  />
+                )}
               </div>
             </div>
 

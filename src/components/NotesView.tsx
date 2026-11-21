@@ -3,6 +3,7 @@ import { Note, Flashcard, Folder, PracticeQuestion, SavedSearch, NoteVersion, Pe
 import type { UseAIResult } from '../hooks/useAI';
 import { renderLinkedContent } from '../utils/noteLinker';
 import { matchesSmartFilter, previewSmartFilter } from '../utils/smartFolders';
+import { useProgression } from '../game/ProgressionContext';
 import { exportNotesToPDF } from '../utils/exportPDF';
 import { toPlainText, wordCount, readingTime } from '../utils/text';
 import { renderAiText } from '../utils/aiText';
@@ -71,6 +72,7 @@ export default function NotesView({
   savedSearches, setSavedSearches, ai, loadStarterPack,
   documents, setDocuments,
 }: NotesViewProps) {
+  const { award } = useProgression();
   const [title, setTitle] = useState('');
   // Segmented tabs: the classic notes library vs the uploaded-document library.
   const [tab, setTab] = useState<'notes' | 'documents'>('notes');
@@ -233,12 +235,14 @@ export default function NotesView({
       setNotes(notes.map(n => n.id === editingNote.id ? { ...n, title, content, type, tags: tagList, folderId: selectedFolder, updatedAt: new Date() } : n));
       setEditingNote(null); setFormOpen(false);
       addToast('Note updated!', 'success');
+      award('note_edited');
       maybeSaveVersion(editingNote.id, title, content, tagList);
     } else {
       if (tier === 'free' && totalItems >= 50) { addToast("50 item limit reached. Upgrade to Pro.", 'info'); setCurrentView('pricing'); return; }
       const newNote = { id: Date.now().toString(), title, content, type, tags: tagList, folderId: selectedFolder, createdAt: new Date(), updatedAt: new Date(), files: [], highlights: [], personalNotes: [] };
       setNotes([newNote, ...notes]);
       addToast('Note added!', 'success'); setFormOpen(false);
+      award('note_created');
       maybeSaveVersion(newNote.id, title, content, tagList);
     }
     setTitle(''); setContent(''); setTags('');
@@ -503,6 +507,7 @@ export default function NotesView({
       const summary = await ai.generateSummary(note.title, note.content);
       updateNote(note.id, { summary });
       if (!aiUnlocked) incrementAiSummaries();
+      award('summary_generated');
       addToast('AI Summary generated!', 'success');
     } catch (err: any) {
       addToast(`Summary failed: ${err.message}`, 'error');

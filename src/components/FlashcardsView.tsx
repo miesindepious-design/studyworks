@@ -4,6 +4,10 @@ import { matchesSmartFilter } from '../utils/smartFolders';
 import { recordReview } from '../db/streaks';
 import { deleteFlashcard as deleteFlashcardAPI, bulkDeleteFlashcards } from '../api/flashcards';
 import Celebration from './Celebration';
+import { useProgression } from '../game/ProgressionContext';
+import { isLeech, LEECH_THRESHOLD } from '../game/rules';
+import { renderCloze } from '../utils/cloze';
+import { useStudyGoals } from '../hooks/useStudyGoals';
 
 type Tier = 'free' | 'pro';
 type StudyMode = 'browse' | 'review' | 'practice-review' | 'intensive';
@@ -49,9 +53,13 @@ export default function FlashcardsView({
 }: FlashcardsViewProps) {
 
   // ── Form state ────────────────────────────────────────────────────────────
+  const { award, syncStats } = useProgression();
+  const { goals } = useStudyGoals();
   const [question, setQuestion] = useState('');
   const [answer, setAnswer]     = useState('');
   const [tags, setTags]         = useState('');
+  const [cardTopic, setCardTopic] = useState('');
+  const [cardType, setCardType] = useState<'standard' | 'fill-in' | 'cloze'>('standard');
   const [selectedFolder, setSelectedFolder] = useState('default');
   const [newFolderName, setNewFolderName]   = useState('');
   const [editingCard, setEditingCard] = useState<Flashcard | null>(null);
@@ -62,6 +70,7 @@ export default function FlashcardsView({
   const [isFlipped, setIsFlipped]     = useState(false);
   const [filterFolder, setFilterFolder] = useState('all');
   const [filterDiff, setFilterDiff]     = useState<'all' | 'easy' | 'medium' | 'hard'>('all');
+  const [filterLeech, setFilterLeech]   = useState(false);
   const [bulkMode, setBulkMode]         = useState(false);
   const [selected, setSelected]         = useState<Set<string>>(new Set());
   const [showStats, setShowStats]       = useState(false);
@@ -130,7 +139,10 @@ export default function FlashcardsView({
     : undefined;
 
   // ── Filtered cards ────────────────────────────────────────────────────────
+  const leechCards = useMemo(() => flashcards.filter(isLeech), [flashcards]);
+
   const filteredCards = flashcards.filter(c => {
+    if (filterLeech && !isLeech(c)) return false;
     if (filterFolder !== 'all') {
       const folder = folders.find(f => f.id === filterFolder);
       if (folder?.isSmart && folder.smartFilter) {
@@ -168,14 +180,31 @@ export default function FlashcardsView({
 
   const rateCard = (quality: 0 | 1 | 2 | 3) => {
     if (!currentReviewCard) return;
-    setFlashcards(flashcards.map(c => c.id === currentReviewCard.id ? { ...c, ...sm2(currentReviewCard, quality) } : c));
+    const today = new Date().toISOString().slice(0, 10);
+    setFlashcards(flashcards.map(c => {
+      if (c.id !== currentReviewCard.id) return c;
+      const srs = sm2(currentReviewCard, quality);
+      // The review trail feeds the mastery map and the accuracy number, and
+      // repeated "Again" ratings mark the card as a leech: the card is
+      // broken, not the student.
+      const history = [...(c.reviewHistory ?? []), { date: today, quality }].slice(-50);
+      const leechCount = quality === 0 ? (c.leechCount ?? 0) + 1 : (c.leechCount ?? 0);
+      return { ...c, ...srs, reviewHistory: history, leechCount };
+    }));
     const key = RATE_BTNS[quality].label.toLowerCase() as keyof typeof sessionStats;
     setSessionStats(prev => ({ ...prev, [key]: prev[key] + 1 }));
     bumpStreak();
+    award('flashcard_review');
     setReviewFlipped(false);
     if (reviewIndex + 1 >= reviewCards.length) {
       setCelebrate({ emoji: '🎉', title: 'Session complete!', subtitle: `${reviewCards.length} card${reviewCards.length > 1 ? 's' : ''} reviewed. Nice work!` });
       setStudyMode('browse'); setReviewIndex(0);
+      award('flashcard_session');
+      // Absolute totals — the store keeps the larger value, so this is safe
+      // to repeat.
+      const totalReviewed = flashcards.reduce((n, c) => n + (c.reviewHistory?.length ?? 0), 0) + reviewCards.length;
+      const cardsCreated = flashcards.length;
+      syncStats({ flashcardsReviewed: totalReviewed, cardsCreated });
     } else {
       setReviewIndex(p => p + 1);
     }
@@ -195,6 +224,7 @@ export default function FlashcardsView({
         : q
     ));
     bumpStreak();
+    award('practice_answered');
     setPracticeReveal(false);
     setPracticeChosen(null);
     if (practiceReviewIdx + 1 >= duePracticeQuestions.length) {
@@ -255,10 +285,18 @@ export default function FlashcardsView({
   //   - quality 2 (Good) or 3 (Easy): card is mastered for this session; advance.
   const rateIntensive = (quality: 0 | 1 | 2 | 3) => {
     if (!currentIntensiveCard) return;
-    // Apply SRS to the card itself.
-    setFlashcards(flashcards.map(c => c.id === currentIntensiveCard.id ? { ...c, ...sm2(currentIntensiveCard, quality) } : c));
+    // Apply SRS to the card itself, with the review trail and leech counter.
+    const today = new Date().toISOString().slice(0, 10);
+    setFlashcards(flashcards.map(c => {
+      if (c.id !== currentIntensiveCard.id) return c;
+      const srs = sm2(currentIntensiveCard, quality);
+      const history = [...(c.reviewHistory ?? []), { date: today, quality }].slice(-50);
+      const leechCount = quality === 0 ? (c.leechCount ?? 0) + 1 : (c.leechCount ?? 0);
+      return { ...c, ...srs, reviewHistory: history, leechCount };
+    }));
     const key = RATE_BTNS[quality].label.toLowerCase() as keyof typeof sessionStats;
     setSessionStats(prev => ({ ...prev, [key]: prev[key] + 1 }));
+    award('flashcard_review');
 
     const cardId = currentIntensiveCard.id;
     setIntensiveRounds(prev => {
@@ -308,22 +346,41 @@ export default function FlashcardsView({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const parsedTags = tags.split(',').map(t => t.trim()).filter(Boolean);
+    const topic = cardTopic.trim();
+    const nextType = cardType;
     if (editingCard) {
       setFlashcards(flashcards.map(c => c.id === editingCard.id
-        ? { ...c, question, answer, tags: tags.split(',').map(t => t.trim()).filter(Boolean), folderId: selectedFolder }
+        ? { ...c, question, answer, tags: parsedTags, folderId: selectedFolder, topic, type: nextType }
         : c));
       setEditingCard(null); setFormOpen(false);
       addToast('Flashcard updated!', 'success');
     } else {
       if (tier === 'free' && totalItems >= 50) { addToast('50 item limit reached.', 'info'); setCurrentView('pricing'); return; }
-      setFlashcards([{ id: Date.now().toString(), question, answer, tags: tags.split(',').map(t => t.trim()).filter(Boolean), createdAt: new Date(), folderId: selectedFolder }, ...flashcards]);
+      setFlashcards([{
+        id: Date.now().toString(),
+        question,
+        answer,
+        tags: parsedTags,
+        createdAt: new Date(),
+        folderId: selectedFolder,
+        topic: topic || undefined,
+        type: nextType,
+        source: 'manual',
+        repetitions: 0,
+        interval: 0,
+        ef: 2.5,
+        leechCount: 0,
+      }, ...flashcards]);
       setFormOpen(false); addToast('Flashcard added!', 'success');
+      award(nextType === 'cloze' ? 'cloze_created' : 'card_created');
+      syncStats({ cardsCreated: flashcards.length + 1 });
     }
-    setQuestion(''); setAnswer(''); setTags('');
+    setQuestion(''); setAnswer(''); setTags(''); setCardTopic(''); setCardType('standard');
   };
 
-  const startEdit = (c: Flashcard) => { setEditingCard(c); setQuestion(c.question); setAnswer(c.answer); setTags(c.tags.join(', ')); setSelectedFolder(c.folderId || 'default'); setFormOpen(true); };
-  const cancelEdit = () => { setEditingCard(null); setQuestion(''); setAnswer(''); setTags(''); setFormOpen(false); };
+  const startEdit = (c: Flashcard) => { setEditingCard(c); setQuestion(c.question); setAnswer(c.answer); setTags(c.tags.join(', ')); setSelectedFolder(c.folderId || 'default'); setCardTopic(c.topic ?? ''); setCardType(c.type ?? 'standard'); setFormOpen(true); };
+  const cancelEdit = () => { setEditingCard(null); setQuestion(''); setAnswer(''); setTags(''); setCardTopic(''); setCardType('standard'); setFormOpen(false); };
 
   const deleteFlashcard = async (id: string) => {
     if (!confirm('Delete this flashcard?')) return;
@@ -489,6 +546,31 @@ export default function FlashcardsView({
             <input type="text" className="input" placeholder="Question" value={question} onChange={e => setQuestion(e.target.value)} required />
             <textarea className="textarea" placeholder="Answer" rows={3} value={answer} onChange={e => setAnswer(e.target.value)} required />
             <input type="text" className="input" placeholder="Tags (comma separated)" value={tags} onChange={e => setTags(e.target.value)} />
+            <div className="sw-two-col">
+              <input
+                type="text"
+                className="input"
+                placeholder="Topic (e.g. Biology) — builds your mastery map"
+                value={cardTopic}
+                onChange={e => setCardTopic(e.target.value)}
+              />
+              <select
+                className="select"
+                value={cardType}
+                onChange={e => setCardType(e.target.value as 'standard' | 'fill-in' | 'cloze')}
+                title="Cloze cards hide {{c1}} inside the question"
+              >
+                <option value="standard">Standard (Q → A)</option>
+                <option value="fill-in">Fill-in (type the answer)</option>
+                <option value="cloze">Cloze (hide part of the question)</option>
+              </select>
+            </div>
+            {cardType === 'cloze' && (
+              <p className="text-xs text-muted">
+                Write the question with <code>{'{{c1}}'}</code> where the missing word goes — for example:{' '}
+                <em>The powerhouse of the cell is the {'{{c1}}'}</em> with answer <em>mitochondria</em>.
+              </p>
+            )}
             <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
               <button type="submit" className="btn btn-primary" disabled={!editingCard && tier === 'free' && totalItems >= 50}>
                 {!editingCard && tier === 'free' && totalItems >= 50 ? 'Upgrade to Add More' : editingCard ? 'Update' : 'Add Flashcard'}
@@ -777,12 +859,21 @@ export default function FlashcardsView({
             <option value="medium">Medium</option>
             <option value="hard">Hard</option>
           </select>
+          <button
+            className={`btn btn-sm ${filterLeech ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => { setFilterLeech(v => !v); setCurrentCard(0); }}
+            title={`Cards rated "Again" ${LEECH_THRESHOLD}+ times — usually a sign the wording needs fixing, not you`}
+          >
+            🩹 Tough cards {leechCards.length > 0 && `(${leechCards.length})`}
+          </button>
           <button className="btn btn-secondary btn-sm" onClick={() => { setBulkMode(m => !m); setSelected(new Set()); }}>
             {bulkMode ? '✕ Cancel' : '☑ Select'}
           </button>
           {bulkMode && selected.size > 0 && <button className="btn btn-danger btn-sm" onClick={bulkDelete}>🗑️ Delete {selected.size}</button>}
           <span className="text-sm text-muted" style={{ marginLeft: 'auto' }}>
-            {filteredCards.length} card{filteredCards.length !== 1 ? 's' : ''}{filteredCards.length !== flashcards.length && ` of ${flashcards.length}`}
+            {dueCards.length > 0
+              ? `${dueCards.length} due today${goals.dailyFlashcards ? ` · goal ${goals.dailyFlashcards}` : ''}`
+              : 'All caught up 🎉'}
           </span>
         </div>
       )}
@@ -821,15 +912,30 @@ export default function FlashcardsView({
                     {card.difficulty}{card.nextReview ? ` · ${new Date(card.nextReview).toLocaleDateString()}` : ''}
                   </span>
                 )}
+                {isLeech(card) && (
+                  <span
+                    title={`This card has been rated "Again" ${card.leechCount ?? 0} times — the wording may be the problem, not you. Try rewriting it.`}
+                    style={{ position: 'absolute', bottom: '0.875rem', right: '0.875rem', background: 'rgba(251,113,133,.15)', color: 'var(--danger)', padding: '0.2rem 0.6rem', borderRadius: 'var(--radius-full)', fontSize: '0.72rem', fontWeight: 700 }}
+                  >
+                    🩹 tough card
+                  </span>
+                )}
                 <div style={{ marginTop: '2rem', display: 'flex', flexWrap: 'wrap', gap: '0.25rem', justifyContent: 'center', marginBottom: '0.75rem' }}>
+                  {card.topic && <span className="tag accent">{card.topic}</span>}
                   {card.tags.map(t => <span key={t} className="tag">{t}</span>)}
                   {card.folderId && card.folderId !== 'default' && <span className="tag">📁 {folders.find(f => f.id === card.folderId)?.name}</span>}
                 </div>
                 <p className="text-xs text-muted" style={{ marginBottom: '0.75rem' }}>
                   Card {currentCard + 1} of {filteredCards.length}{filteredCards.length !== flashcards.length && ' (filtered)'} · click to flip
                 </p>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 700 }}>{card.question}</h3>
-                <p className="text-xs text-muted" style={{ marginTop: '1rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Question</p>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 700 }}>
+                  {card.type === 'cloze'
+                    ? renderCloze(card.question, card.answer, isFlipped)
+                    : card.question}
+                </h3>
+                <p className="text-xs text-muted" style={{ marginTop: '1rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  {card.type === 'cloze' ? 'Fill the gap' : 'Question'}
+                </p>
               </div>
               <div className="flip-face back" style={{ minHeight: '280px' }}>
                 <p className="text-xs" style={{ color: 'var(--accent)', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Answer</p>

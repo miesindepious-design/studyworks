@@ -223,22 +223,23 @@ progressionRouter.post('/event', zValidator('json', EventBody), async c => {
     }
   }
 
-  // A quest of type "quest" advances when any other quest completes.
-  if (body.type === 'quest_completed') {
-    const quest = quests.find(q => q.type === 'quest');
-    if (quest) {
-      const entry = questState[quest.id] ?? { p: 0, d: false };
+  // Finishing any quest also advances the "complete a quest" quest — the
+  // meta-quest that rewards showing up every day.
+  if (newlyCompleted.length > 0) {
+    const metaQuest = quests.find(q => q.type === 'quest');
+    if (metaQuest && !newlyCompleted.includes(metaQuest.id)) {
+      const entry = questState[metaQuest.id] ?? { p: 0, d: false };
       if (!entry.d) {
-        const next = entry.p + (def.step ?? 1);
-        if (next >= quest.target) {
-          entry.p = quest.target;
+        const next = entry.p + newlyCompleted.length;
+        if (next >= metaQuest.target) {
+          entry.p = metaQuest.target;
           entry.d = true;
-          newlyCompleted.push(quest.id);
-          questXp += quest.xp;
+          newlyCompleted.push(metaQuest.id);
+          questXp += metaQuest.xp;
         } else {
           entry.p = next;
         }
-        questState[quest.id] = entry;
+        questState[metaQuest.id] = entry;
       }
     }
   }

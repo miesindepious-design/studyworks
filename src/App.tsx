@@ -735,6 +735,8 @@ export default function App() {
               onGenerateInsights={handleGenerateInsights}
               weeklyInsights={weeklyInsights}
               insightsLoading={insightsLoading}
+              addToast={addToast}
+              authenticated={session.status === 'authenticated'}
             />
           )}
           {currentView === 'notes' && (
@@ -826,6 +828,23 @@ export default function App() {
                   personalNotes: [],
                 }, ...notesUR.state]);
               }}
+              onSaveFlashcard={(card) => {
+                flashcardsUR.set([{
+                  id: crypto.randomUUID(),
+                  question: card.question,
+                  answer: card.answer,
+                  tags: [],
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                  topic: card.topic,
+                  type: 'standard',
+                  source: 'tutor',
+                  repetitions: 0,
+                  interval: 0,
+                  ef: 2.5,
+                  leechCount: 0,
+                }, ...flashcardsUR.state]);
+              }}
             />
           )}
           {currentView === 'settings' && (
@@ -843,6 +862,7 @@ export default function App() {
                 practiceQuestions: db.practiceQuestions,
                 savedSearches:     db.savedSearches,
               }}
+              setFlashcards={flashcardsUR.set}
               displayName={userName}
             />
           )}

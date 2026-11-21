@@ -10,6 +10,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTimerSettings } from '../hooks/useTimerSettings';
 import TimerSettingsPanel, { playBeep } from './TimerSettingsPanel';
+import { useProgression } from '../game/ProgressionContext';
 
 export type { TimerSettings } from '../hooks/useTimerSettings';
 
@@ -42,6 +43,7 @@ type Phase = 'focus' | 'break';
 
 export default function StudyTimer() {
   const { settings, update: updateSetting } = useTimerSettings();
+  const { award } = useProgression();
   const [task, setTask]             = useState('');
   const [phase, setPhase]           = useState<Phase>('focus');
   const [remaining, setRemaining]   = useState(FOCUS_MS);
@@ -88,6 +90,11 @@ export default function StudyTimer() {
           endedRef.current = true;
           if (settings.soundEnabled) playBeep();
           if (phase === 'focus') {
+            // A finished focus session is real work: it books XP, grows a
+            // tree in the focus forest and advances the daily focus quest.
+            award('focus_session');
+            const minutes = settings.focusDuration;
+            for (let m = 0; m < minutes; m++) award('study_minute');
             setCounters(c => {
               const today = new Date().toDateString();
               const nextCounters = c.date === today

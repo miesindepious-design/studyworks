@@ -8,6 +8,7 @@ import { extractTextFromFile } from '../utils/extractText';
 import KeyPointsPanel from './KeyPointsPanel';
 import DocumentBriefing from './DocumentBriefing';
 import TutorDocuments, { type AttachedDoc } from './TutorDocuments';
+import { useProgression } from '../game/ProgressionContext';
 import {
   pickBestVoice, splitForSpeech, stripEmoji,
   SPEECH_RATES, SPEECH_SPEED_LABELS, type SpeechSpeed,
@@ -25,6 +26,11 @@ interface Props {
   addDocuments?: (docs: StudyDocument[]) => void;
   /** Patch a library document (e.g. attach its analysis). */
   updateDocument?: (id: string, patch: Partial<StudyDocument>) => void;
+  /**
+   * Save a tutor question as a flashcard. This is how a wrong quiz answer
+   * becomes part of the spaced-repetition deck instead of being forgotten.
+   */
+  onSaveFlashcard?: (card: { question: string; answer: string; topic?: string }) => void;
 }
 
 type TutorMode = 'lesson' | 'simpler' | 'deeper' | 'quiz';
@@ -166,7 +172,10 @@ function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, notes = [], onSaveNote, addDocuments, updateDocument }: Props) {
+export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, notes = [], onSaveNote, addDocuments, updateDocument, onSaveFlashcard }: Props) {
+  const { award } = useProgression();
+  // Quiz turns already saved as flashcards, so the button does not offer twice.
+  const [savedFlashcardTurns, setSavedFlashcardTurns] = useState<string[]>([]);
   // A user who connected their own AI Studio key gets the Tutor on any plan.
   const unlocked = aiUnlocked ?? tier === 'pro';
   const [level, setLevel] = useState<string | null>(null);
@@ -548,6 +557,9 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
       setAnswer('');
       setTopic(effectiveTopic);
       setActiveTopic(effectiveTopic);
+      // XP: a lesson, a simpler/deeper re-explanation or a quiz answer all
+      // count as tutor work, but a real quiz answer is worth a bit more.
+      award(mode === 'quiz' ? 'tutor_quiz' : 'tutor_session');
       // Voice mode: read the answer aloud
       if (voiceModeRef.current) speakText(res.response);
     } catch (err: any) {
@@ -891,7 +903,15 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
       );
     }
 
-    return displayedHistory.map(turn => (
+    return displayedHistory.map((turn, idx) => {
+      // The quiz question this turn answers — the tutor's previous message.
+      const askedTurn = turn.mode === 'quiz' && turn.question
+        ? displayedHistory[idx - 1]
+        : undefined;
+      const askedQuestion = askedTurn?.response ?? '';
+      const savedThisTurn = savedFlashcardTurns.includes(turn.id);
+
+      return (
       <div key={turn.id} className="card animate-in sw-tutor-turn">
         <div className="card-header" style={{ marginBottom: '0.5rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -1028,8 +1048,36 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
             </button>
           </div>
         )}
+
+        {/* A quiz turn with an answer can become a flashcard — this is how a
+            question that went wrong joins the spaced-repetition deck instead
+            of being forgotten. */}
+        {turn.mode === 'quiz' && turn.question && onSaveFlashcard && askedQuestion && !savedThisTurn && (
+          <div style={{ marginTop: '0.6rem' }}>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => {
+                onSaveFlashcard({
+                  question: askedQuestion,
+                  answer: turn.response,
+                  topic: turn.topic,
+                });
+                setSavedFlashcardTurns(prev => [...prev, turn.id]);
+                award('card_created');
+                addToast('Saved as a flashcard — it will come back around.', 'success');
+              }}
+              title="Turn this question and the tutor's explanation into a flashcard"
+            >
+              🩹 Save as flashcard
+            </button>
+          </div>
+        )}
+        {turn.mode === 'quiz' && turn.question && savedThisTurn && (
+          <p className="text-xs text-muted" style={{ marginTop: '0.5rem' }}>✓ Saved to your deck</p>
+        )}
       </div>
-    ));
+      );
+    });
   })();
 
   /* ── Fullscreen overlay ────────────────────────────────────────────────── */

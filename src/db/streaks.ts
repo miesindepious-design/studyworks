@@ -9,6 +9,10 @@
  *   3. Updates `longestStreak` if the current streak beats it
  *   4. Increments `totalReviews`
  *
+ * A missed day would normally wipe the streak. With a streak freeze in the
+ * wallet (earned by completing every daily quest), the freeze is spent
+ * instead and the streak survives the day off.
+ *
  * The Dashboard widget reads `getStreakData()` to show the current streak,
  * today's count, and a sparkline of the last 7 days.
  */
@@ -46,6 +50,34 @@ export async function getStreakData(): Promise<StreakData> {
 }
 
 /**
+ * Spend a streak freeze to cover a missed day.
+ *
+ * Signed in, the server's freeze wallet is authoritative. Offline, the local
+ * wallet from the progression cache is spent instead. Either way the answer
+ * is a plain boolean so the streak maths stays readable.
+ */
+async function spendStreakFreeze(): Promise<boolean> {
+  try {
+    const { spendFreeze } = await import('../api/progression');
+    const result = await spendFreeze();
+    return result.granted;
+  } catch {
+    // Offline — spend from the local cache if there is one.
+    try {
+      const raw = localStorage.getItem('sw-progression-v1');
+      if (!raw) return false;
+      const state = JSON.parse(raw);
+      if ((state.streakFreezes ?? 0) <= 0) return false;
+      state.streakFreezes -= 1;
+      localStorage.setItem('sw-progression-v1', JSON.stringify(state));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+/**
  * Bump the streak counters for one review. Safe to call many times in a
  * row (same-day calls just increment the daily count and totalReviews).
  */
@@ -63,8 +95,13 @@ export async function recordReview(): Promise<StreakData> {
     if (gap === 1) {
       currentStreak = cur.currentStreak + 1;
     } else if (gap > 1) {
-      // Missed at least one day — streak resets to 1.
-      currentStreak = 1;
+      // Missed at least one day. A streak freeze covers the day off so the
+      // streak continues; without one, the streak resets to 1.
+      if (cur.currentStreak > 0 && (await spendStreakFreeze())) {
+        currentStreak = cur.currentStreak + 1;
+      } else {
+        currentStreak = 1;
+      }
     } else {
       // gap < 1 (e.g. clock skew) — keep the current value.
       currentStreak = Math.max(1, cur.currentStreak);

@@ -4,8 +4,10 @@ import {
   createGameRoom, getGameRoom, getGameTicket, startGameRoom, listMyGameRooms,
 } from '../api/game';
 import { closeLobby, findMyLobby } from '../api/lobby';
+import { reportMatchResult, requestRematch } from '../api/progression';
 import Celebration from './Celebration';
 import LobbyShare from './LobbyShare';
+import { useProgression } from '../game/ProgressionContext';
 import type { PowerUpState, GameHistoryEntry, LobbyReaction } from '../types';
 
 interface Props {
@@ -49,6 +51,11 @@ export default function MultiplayerQuiz({ db, userId, userName, tier, setCurrent
   const [winnerName, setWinnerName] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [celebrate, setCelebrate] = useState<{ emoji: string; title: string; subtitle?: string } | null>(null);
+  // Rating movement from the match that just finished, shown at game over.
+  const [ratingDelta, setRatingDelta] = useState<number | null>(null);
+  const [newRating, setNewRating] = useState<number | null>(null);
+  const [rematching, setRematching] = useState(false);
+  const { award } = useProgression();
 
   const [powerUps, setPowerUps] = useState<Record<string, PowerUpState>>({});
   const [streak, setStreak] = useState(0);
@@ -164,6 +171,21 @@ export default function MultiplayerQuiz({ db, userId, userName, tier, setCurrent
             xpEarned: earned,
             questionCount: question?.total ?? 0,
           }]);
+          // Record the match and move the ELO ratings. The WebSocket host is
+          // a separate deployment, so the outcome is reported over REST.
+          reportMatchResult({
+            roomCode: joinCodeOrCurrent(),
+            players: msg.ranking.map(r => ({ userId: r.userId, name: r.name, score: r.xp })),
+          }).then(res => {
+            const mine = res.ratings.find(r => r.userId === userId);
+            if (mine && mine.delta !== 0) {
+              setRatingDelta(mine.delta);
+              setNewRating(mine.ratingAfter);
+            }
+          }).catch(() => { /* offline or unranked — the round still counts locally */ });
+          // Progression XP for playing, and extra for winning.
+          award('quiz_played');
+          if (me.rank === 1) award('quiz_won');
           setTimeout(() => setCelebrate({
             emoji: me.rank === 1 ? '👑' : '🎉',
             title: me.rank === 1 ? 'You won!' : `Game over — rank #${me.rank}`,
@@ -627,6 +649,35 @@ export default function MultiplayerQuiz({ db, userId, userName, tier, setCurrent
             <h2 style={{ marginBottom: '0.25rem' }}>{myRank?.rank === 1 ? '👑 You won!' : `Game over — you placed #${myRank?.rank ?? '?'}`}</h2>
             {winnerName && winnerName !== userName && <p className="text-muted">Winner: <b>{winnerName}</b></p>}
             {myRank && <p style={{ fontWeight: 700 }}>{myRank.xp} XP earned this round</p>}
+            {ratingDelta !== null && (
+              <p className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
+                🎯 Rating: {newRating} ({ratingDelta > 0 ? `+${ratingDelta}` : ratingDelta})
+              </p>
+            )}
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', marginTop: '0.9rem', flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={rematching}
+                onClick={async () => {
+                  setRematching(true);
+                  try {
+                    const next = await requestRematch(joinCodeOrCurrent());
+                    setRatingDelta(null);
+                    addToast(`Rematch room ${next.code} created — share the lobby!`, 'success');
+                    if (next.lobbyCode) onCreatedLobby?.(next.lobbyCode);
+                  } catch (err) {
+                    addToast((err as Error).message || 'Could not start the rematch', 'error');
+                  } finally {
+                    setRematching(false);
+                  }
+                }}
+              >
+                {rematching ? 'Setting up…' : '🔁 Rematch'}
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setCurrentView('leaderboard')}>
+                🏆 Leaderboard
+              </button>
+            </div>
           </div>
         )}
 

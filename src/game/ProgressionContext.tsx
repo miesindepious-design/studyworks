@@ -250,6 +250,26 @@ export function ProgressionProvider({ children, authenticated, onToast }: Progre
               entry.p = next;
             }
             questState[quest.id] = entry;
+
+            // Finishing a quest also advances the meta-quest.
+            if (quest.type !== 'quest') {
+              const metaQuest = quests.find(q => q.type === 'quest');
+              if (metaQuest) {
+                const metaEntry = questState[metaQuest.id] ?? { p: 0, d: false };
+                if (!metaEntry.d) {
+                  const metaNext = metaEntry.p + 1;
+                  if (metaNext >= metaQuest.target) {
+                    metaEntry.p = metaQuest.target;
+                    metaEntry.d = true;
+                    xp += metaQuest.xp;
+                    seasonXp += metaQuest.xp;
+                  } else {
+                    metaEntry.p = metaNext;
+                  }
+                  questState[metaQuest.id] = metaEntry;
+                }
+              }
+            }
           }
         }
       }
@@ -387,11 +407,36 @@ export function ProgressionProvider({ children, authenticated, onToast }: Progre
   );
 }
 
-/** Access the progression. Must be used inside a ProgressionProvider. */
+/**
+ * A neutral progression used when no provider is mounted — tests, storybook
+ * pages and the like. A component rendered outside the app shell still
+ * renders, it just sees a fresh profile and silently drops any awards.
+ */
+export const PROGRESSION_FALLBACK: ProgressionContextValue = {
+  xp: 0,
+  level: 1,
+  levelTitle: 'Freshman',
+  xpIntoLevel: 0,
+  xpForNextLevel: 100,
+  progressPct: 0,
+  seasonXp: 0,
+  season: null,
+  streakFreezes: 0,
+  focusTrees: 0,
+  quests: [],
+  achievements: [],
+  unlockedAchievements: [],
+  stats: {},
+  dailyXp: {},
+  award: async () => {},
+  syncStats: async () => {},
+  useFreeze: async () => false,
+  newAchievement: null,
+  dismissAchievement: () => {},
+  ready: false,
+};
+
+/** Access the progression. Falls back to a neutral profile outside the provider. */
 export function useProgression(): ProgressionContextValue {
-  const ctx = useContext(ProgressionContext);
-  if (!ctx) {
-    throw new Error('useProgression must be used inside a ProgressionProvider');
-  }
-  return ctx;
+  return useContext(ProgressionContext) ?? PROGRESSION_FALLBACK;
 }

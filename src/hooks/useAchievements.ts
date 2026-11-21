@@ -11,7 +11,7 @@
  * working, but `updateStats` now feeds the real store instead of a dead map.
  */
 import { useContext } from 'react';
-import { ProgressionContext, type ProgressionContextValue } from '../game/ProgressionContext';
+import { ProgressionContext, PROGRESSION_FALLBACK } from '../game/ProgressionContext';
 import { RARITY_COLORS, type AchievementRarity, type AchievementStatKey } from '../game/rules';
 import type { AchievementView } from '../api/progression';
 
@@ -30,36 +30,12 @@ export interface Achievement {
   progress: number;
 }
 
-const FALLBACK: ProgressionContextValue = {
-  xp: 0,
-  level: 1,
-  levelTitle: 'Freshman',
-  xpIntoLevel: 0,
-  xpForNextLevel: 100,
-  progressPct: 0,
-  seasonXp: 0,
-  season: null,
-  streakFreezes: 0,
-  focusTrees: 0,
-  quests: [],
-  achievements: [],
-  unlockedAchievements: [],
-  stats: {},
-  dailyXp: {},
-  award: async () => {},
-  syncStats: async () => {},
-  useFreeze: async () => false,
-  newAchievement: null,
-  dismissAchievement: () => {},
-  ready: false,
-};
-
 export function getRarityStyle(rarity: string) {
   return RARITY_COLORS[rarity as AchievementRarity] || RARITY_COLORS.common;
 }
 
 export function useAchievements() {
-  const ctx = useContext(ProgressionContext) ?? FALLBACK;
+  const ctx = useContext(ProgressionContext) ?? PROGRESSION_FALLBACK;
 
   const stats = ctx.stats;
 
