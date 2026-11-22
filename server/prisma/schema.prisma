@@ -64,6 +64,9 @@ model User {
   lobbies     Lobby[]
   lobbyVisits LobbyParticipant[]
 
+  // Phase 6: shared study files dropped into a lobby
+  roomFiles   RoomFile[]
+
   // Phase 5: progression (XP, quests, achievements, season)
   progress   UserProgress?
   gameRating GameRating?
@@ -466,6 +469,7 @@ model Lobby {
 
   host         User               @relation(fields: [hostId], references: [id], onDelete: Cascade)
   participants LobbyParticipant[]
+  roomFiles    RoomFile[]
   @@index([hostId])
   @@index([kind])
 }
@@ -491,6 +495,38 @@ model LobbyParticipant {
   @@unique([lobbyId, userId])
   @@index([lobbyId])
   @@index([userId])
+}
+
+// ── Phase 6: Shared study files (the group's material in the lobby) ──────────
+// A file a member of the study group drops into the lobby so the whole group
+// can study from the same material: the textbook chapter, the past paper, the
+// slides. The lobby code is the invitation, so a file belongs to the lobby —
+// not to one person's note.
+//
+// `text` holds the extracted plain text of the file. It is what the AI reads
+// to ground a lesson, build a quiz battle or set a duel, which is why the
+// client extracts it in the browser (pdfjs / jszip / OCR are already there)
+// and posts it alongside the metadata. It is null when a file was uploaded
+// but could not be read.
+model RoomFile {
+  id         String   @id @default(cuid())
+  lobbyId    String
+  uploaderId String
+  name       String
+  type       String   @default("other") // pdf | docx | pptx | image | html | text | other
+  size       Int      @default(0)
+  // Object storage key and public URL, when R2 is configured.
+  storageKey String?
+  url        String?
+  // Extracted plain text — the AI grounding material.
+  text       String?  @db.Text
+  createdAt  DateTime @default(now())
+
+  lobby    Lobby @relation(fields: [lobbyId], references: [id], onDelete: Cascade)
+  uploader User  @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+
+  @@index([lobbyId])
+  @@index([uploaderId])
 }
 
 // ── Phase 2: Email-to-save ────────────────────────────────────────────────────

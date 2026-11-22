@@ -35,9 +35,12 @@ export const prismaMock = {
   attachment:       { findMany: vi.fn(), create: vi.fn(), delete: vi.fn(), count: vi.fn() },
   supportTicket:    { count: vi.fn() },
   gameRoom:         { count: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
-  gamePlayer:       { count: vi.fn(), findMany: vi.fn(), create: vi.fn() },
-  lobby:            { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
+  gamePlayer:       { count: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), upsert: vi.fn() },
+  gameQuestion:     { findMany: vi.fn(), create: vi.fn() },
+  gameAnswer:       { createMany: vi.fn(), findMany: vi.fn() },
+  lobby:            { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
   lobbyParticipant: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+  roomFile:         { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), createMany: vi.fn(), update: vi.fn(), delete: vi.fn(), count: vi.fn() },
 };
 
 vi.mock('../lib/prisma.js', () => ({ prisma: prismaMock }));

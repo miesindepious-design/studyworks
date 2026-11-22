@@ -92,6 +92,15 @@ export function closeLobby(code: string) {
 }
 
 /**
+ * Create a lobby directly. A quiz and a study room mint their own; this is
+ * for a group that only wants a place to share material — a code, a link and
+ * a shared shelf of files.
+ */
+export function createLobby(body: { kind: LobbyKind; title?: string; maxParticipants?: number }) {
+  return apiPost<LobbySummary>('/api/lobby', body);
+}
+
+/**
  * The shareable link for a lobby code. Opens the lobby, which then sends
  * the player to the right screen for the session.
  */

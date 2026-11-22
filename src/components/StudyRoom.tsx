@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createStudyRoom } from '../api/studyRoom';
 import { closeLobby, getLobby, joinLobby, leaveLobby, type LobbyParticipantInfo } from '../api/lobby';
+import type { RoomFileInfo } from '../api/roomFiles';
 import VoiceChat from './VoiceChat';
 import LobbyShare from './LobbyShare';
+import RoomFilesPanel from './RoomFilesPanel';
 
 interface Props {
   userId: string;
@@ -15,6 +17,12 @@ interface Props {
   joinRoom?: { id: string; url: string | null; lobbyCode?: string | null } | null;
   /** Called once the referred session has been taken off the queue. */
   onRoomConsumed?: () => void;
+  /** Open the AI tutor with a shared file as the material to study. */
+  onStudyWithTutor?: (lobbyCode: string, file: RoomFileInfo) => void;
+  /** Start a live quiz battle from the shared files. */
+  onQuizFiles?: (lobbyCode: string, files: RoomFileInfo[]) => void;
+  /** Start an asynchronous duel from the shared files. */
+  onDuelFiles?: (lobbyCode: string, files: RoomFileInfo[]) => void;
 }
 
 type StudyPhase = 'idle' | 'creating' | 'ready' | 'error';
@@ -30,7 +38,7 @@ interface Participant {
   status: 'me' | 'connected' | 'muted' | 'deafened';
 }
 
-export default function StudyRoom({ userId, userName, tier, setCurrentView, addToast, signalingUrl, joinRoom, onRoomConsumed }: Props) {
+export default function StudyRoom({ userId, userName, tier, setCurrentView, addToast, signalingUrl, joinRoom, onRoomConsumed, onStudyWithTutor, onQuizFiles, onDuelFiles }: Props) {
   const [phase, setPhase]               = useState<StudyPhase>('idle');
   const [roomName, setRoomName]         = useState('');
   const [room, setRoom]                 = useState<{ id: string; name: string; url: string | null; provider: string; maxParticipants: number } | null>(null);
@@ -398,6 +406,20 @@ export default function StudyRoom({ userId, userName, tier, setCurrentView, addT
             </div>
           )}
         </div>
+
+        {/* The group's shared material — the file everybody is studying,
+            dropped right here in the lobby of the study room. */}
+        {lobbyCode && (
+          <RoomFilesPanel
+            lobbyCode={lobbyCode}
+            addToast={addToast}
+            onStudyWithTutor={onStudyWithTutor}
+            onQuizFiles={onQuizFiles}
+            onDuelFiles={onDuelFiles}
+            title="Shared material"
+            hint="Drop in what the group is working on — everyone can study it, battle each other on it, or set a duel from it."
+          />
+        )}
 
         {/* Voice chat */}
         {voiceEnabled && signalingUrl && (

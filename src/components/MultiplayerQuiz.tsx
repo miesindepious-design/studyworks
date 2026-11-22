@@ -4,9 +4,11 @@ import {
   createGameRoom, getGameRoom, getGameTicket, startGameRoom, listMyGameRooms,
 } from '../api/game';
 import { closeLobby, findMyLobby } from '../api/lobby';
+import type { RoomFileInfo } from '../api/roomFiles';
 import { reportMatchResult, requestRematch } from '../api/progression';
 import Celebration from './Celebration';
 import LobbyShare from './LobbyShare';
+import RoomFilesPanel from './RoomFilesPanel';
 import { useProgression } from '../game/ProgressionContext';
 import type { PowerUpState, GameHistoryEntry, LobbyReaction } from '../types';
 
@@ -23,6 +25,12 @@ interface Props {
   onRoomConsumed?: () => void;
   /** Sends the host to the lobby page of a room they just created. */
   onCreatedLobby?: (lobbyCode: string) => void;
+  /** Open the AI tutor with a shared file as the material to study. */
+  onStudyWithTutor?: (lobbyCode: string, file: RoomFileInfo) => void;
+  /** Start a live quiz battle from the shared files. */
+  onQuizFiles?: (lobbyCode: string, files: RoomFileInfo[]) => void;
+  /** Start an asynchronous duel from the shared files. */
+  onDuelFiles?: (lobbyCode: string, files: RoomFileInfo[]) => void;
 }
 
 interface ChatLine { id: number; userId: string; name: string; text: string; mine: boolean; }
@@ -30,7 +38,7 @@ interface ScoreRow { userId: string; name: string; xp: number; ready?: boolean; 
 
 type Phase = 'lobby' | 'live' | 'finished';
 
-export default function MultiplayerQuiz({ db, userId, userName, tier, setCurrentView, addToast, initialRoomCode, onRoomConsumed, onCreatedLobby }: Props) {
+export default function MultiplayerQuiz({ db, userId, userName, tier, setCurrentView, addToast, initialRoomCode, onRoomConsumed, onCreatedLobby, onStudyWithTutor, onQuizFiles, onDuelFiles }: Props) {
   const [phase, setPhase] = useState<Phase>('lobby');
   const [myRooms, setMyRooms] = useState<Array<{ code: string; status: string; source: string; host: string; questionCount: number }>>([]);
   const [joinCode, setJoinCode] = useState('');
@@ -553,6 +561,20 @@ export default function MultiplayerQuiz({ db, userId, userName, tier, setCurrent
               hint={`Friends who join with this code are referred straight into room ${code}.`}
             />
           </div>
+        )}
+
+        {/* The group's shared material. This is the lobby of the room, so
+            anything the group drops here is what the battle is about. */}
+        {lobbyCode && (
+          <RoomFilesPanel
+            lobbyCode={lobbyCode}
+            addToast={addToast}
+            onStudyWithTutor={onStudyWithTutor}
+            onQuizFiles={onQuizFiles}
+            onDuelFiles={onDuelFiles}
+            title="Material for this battle"
+            hint="Drop in the chapter or past paper this battle is about. Everyone in the room can read it."
+          />
         )}
       </div>
     );

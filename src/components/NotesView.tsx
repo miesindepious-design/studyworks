@@ -18,6 +18,7 @@ import { saveVersion, getVersionsForNote } from '../utils/noteVersions';
 import { noteToMarkdown, noteToPlainText, downloadTextFile, copyToClipboard } from '../utils/exportMarkdown';
 import RichTextEditor from './RichTextEditor';
 import DocumentsPanel from './DocumentsPanel';
+import NoteDocumentCard from './NoteDocumentCard';
 import ConfirmModal from './ConfirmModal';
 
 type Tier = 'free' | 'pro';
@@ -1254,6 +1255,15 @@ export default function NotesView({
                   {wordCount(note.content)} words · {readingTime(note.content)} min read
                 </p>
               </div>
+
+              {/* The lesson as a document — the file, not a wall of text. */}
+              {note.document && (
+                <NoteDocumentCard
+                  note={note}
+                  addToast={addToast}
+                  onDetach={(noteId) => updateNote(noteId, { document: undefined })}
+                />
+              )}
 
               {/* AI Summary */}
               {note.summary && (

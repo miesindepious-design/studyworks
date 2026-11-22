@@ -57,6 +57,9 @@ export async function presignPut(opts: {
   // 50 MB cap. Free users can't upload at all; Pro users get up to 100 MB
   // per the Pricing page, but per-file is capped at 50 to keep requests sane.
   maxSize?: number;
+  // Where the object lives in the bucket. Defaults to the user's attachment
+  // folder; shared lobby files live under `room-files/<lobbyId>` instead.
+  prefix?: string;
 }): Promise<PresignedPut> {
   if (!isEnabled()) throw new Error('R2 storage is not configured');
   const max = opts.maxSize ?? 50 * 1024 * 1024;
@@ -68,7 +71,8 @@ export async function presignPut(opts: {
   // Sanitise filename — strip directory components and characters that
   // break object keys. Use a cuid-style key under the user's namespace.
   const safeName = opts.filename.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120);
-  const storageKey = `attachments/${opts.userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
+  const prefix = (opts.prefix ?? `attachments/${opts.userId}`).replace(/\/+$/, '');
+  const storageKey = `${prefix}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
 
   const cmd = new PutObjectCommand({
     Bucket:      R2_BUCKET!,

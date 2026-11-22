@@ -2,7 +2,7 @@ import { openDB, DBSchema, IDBPDatabase } from 'idb';
 import type {
   Note, Contact, Flashcard, Folder, PracticeQuestion, SavedSearch,
   Achievement, StudyGoal, StudyTimerSession, NoteVersion, StudyGroup, SessionStat,
-  StudyDocument,
+  StudyDocument, GeneratedDocument,
 } from '../types';
 
 // ── DB version history ────────────────────────────────────────────────────────
@@ -11,9 +11,10 @@ import type {
 // v3 — added `note_versions` store for version history snapshots
 // v4 — added `flashcard_sessions` store for persisted review session stats
 // v5 — added `documents` store (the uploaded-document library under Notes)
+// v6 — added `generated_docs` store (documents the AI tutor produced)
 
 const DB_NAME    = 'studyworks-db';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 // Streak data is a singleton with a fixed id.
 export interface StreakData {
@@ -95,6 +96,10 @@ export interface StudyWorksDB extends DBSchema {
   documents: {
     key: string;
     value: StudyDocument;
+  };
+  generated_docs: {
+    key: string;
+    value: GeneratedDocument;
   };
 }
 
@@ -185,6 +190,10 @@ export async function getDB(): Promise<IDBPDatabase<StudyWorksDB>> {
       // v4 → v5: add documents store (uploaded-document library)
       if (oldVersion < 5) {
         ensureStore(db, 'documents', 'id');
+      }
+      // v5 → v6: add generated_docs store (documents the AI tutor produced)
+      if (oldVersion < 6) {
+        ensureStore(db, 'generated_docs', 'id');
       }
     },
   });

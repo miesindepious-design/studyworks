@@ -228,8 +228,7 @@ export class GameManager {
   }
 
   /** Register a room that was created/persisted via REST. */
-  registerRoom(code: string, hostUserId: string, status: string, dbRoomId: string) {
-    this.rooms.set(code.toUpperCase(), {
+  registerRoom(code: string, hostUserId: string, status: string, dbRoomId: string) {    this.rooms.set(code.toUpperCase(), {
       code: code.toUpperCase(),
       hostUserId,
       dbRoomId,
@@ -256,6 +255,32 @@ export class GameManager {
 
   getRoom(code: string): Room | undefined {
     return this.rooms.get(code.toUpperCase());
+  }
+
+  /**
+   * Make sure a room exists in memory, restoring it from the database when
+   * it does not.
+   *
+   * The live state is in memory, the round itself is in the database. A
+   * server restart (or a deployment where the socket lives on another host)
+   * loses the first but not the second — so a player who reconnects gets the
+   * room back instead of "room not found".
+   */
+  async ensureRoom(code: string): Promise<Room | undefined> {
+    const upper = code.toUpperCase();
+    const existing = this.rooms.get(upper);
+    if (existing) return existing;
+
+    const dbRoom = await prisma.gameRoom.findUnique({
+      where: { code: upper },
+      include: { questions: { orderBy: { order: 'asc' } } },
+    });
+    if (!dbRoom) return undefined;
+
+    const settings = (dbRoom.settings as any) ?? { perQuestionSec: 15, baseXp: 10 };
+    this.registerRoom(upper, dbRoom.hostId, dbRoom.status, dbRoom.id);
+    this.loadQuestions(upper, dbRoom.questions, settings.perQuestionSec ?? 15, settings.baseXp ?? 10);
+    return this.rooms.get(upper);
   }
 
   /** Begin the round: emit question 0 with a deadline. */

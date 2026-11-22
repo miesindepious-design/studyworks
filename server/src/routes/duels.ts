@@ -18,6 +18,7 @@ import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../lib/session.js';
 import { requirePro } from '../lib/tier.js';
 import { eloRound } from '../lib/progressionRules.js';
+import { generateQuestionsFromDocuments, loadLobbyDocuments } from '../lib/questionGen.js';
 
 export const duelsRouter = new Hono();
 duelsRouter.use('*', requireAuth);
@@ -36,15 +37,20 @@ function publicQuestions(questions: DuelQuestion[], reveal: boolean) {
 }
 
 duelsRouter.post('/', requirePro, zValidator('json', z.object({
-  source: z.enum(['flashcards', 'topic']).default('flashcards'),
+  source: z.enum(['flashcards', 'topic', 'files']).default('flashcards'),
   topic: z.string().max(120).optional(),
   flashcardIds: z.array(z.string()).optional(),
+  // 'files' source: the lobby the group shares material in, and optionally
+  // the subset of files to build the duel from.
+  lobbyCode: z.string().max(16).optional(),
+  fileIds: z.array(z.string()).optional(),
   questionCount: z.number().int().min(3).max(20).default(5),
 })), async c => {
   const user = c.get('user');
   const body = await c.req.valid('json');
 
   let questions: DuelQuestion[] = [];
+  let topicLabel: string | undefined = body.topic;
 
   if (body.source === 'flashcards') {
     const where = body.flashcardIds?.length
@@ -69,7 +75,7 @@ duelsRouter.post('/', requirePro, zValidator('json', z.object({
       }
       return { prompt: card.question, options: opts, answerIdx: opts.indexOf(card.answer) };
     });
-  } else {
+  } else if (body.source === 'topic') {
     // A topic duel reuses the quiz questions the student already has on that
     // topic, so a duel never needs an AI key.
     const topic = String(body.topic ?? '').trim();
@@ -97,6 +103,28 @@ duelsRouter.post('/', requirePro, zValidator('json', z.object({
       }
       return { prompt: card.question, options: opts, answerIdx: opts.indexOf(card.answer) };
     });
+  } else {
+    // Files source: the duel is built from the material the group shared in
+    // the lobby — the same files a live quiz battle would use.
+    if (!body.lobbyCode) {
+      return c.json({ error: 'A lobby with shared files is required for a file-based duel.' }, 400);
+    }
+    try {
+      const { documents, label } = await loadLobbyDocuments(body.lobbyCode, body.fileIds);
+      if (documents.length === 0) {
+        return c.json({ error: 'No readable files in that lobby yet — add a file with text first.' }, 400);
+      }
+      topicLabel = label;
+      questions = await generateQuestionsFromDocuments({
+        userId: user.id,
+        user,
+        documents,
+        count: body.questionCount,
+        topicLabel: label,
+      });
+    } catch (e) {
+      return c.json({ error: `Could not build a duel from the shared files: ${(e as Error).message}` }, 502);
+    }
   }
 
   if (questions.length < 3) return c.json({ error: 'Not enough questions for a duel' }, 400);
@@ -107,7 +135,7 @@ duelsRouter.post('/', requirePro, zValidator('json', z.object({
       code,
       mode: 'async',
       source: body.source,
-      topic: body.topic,
+      topic: topicLabel,
       challengerId: user.id,
       challengerName: user.name ?? user.email.split('@')[0],
       status: 'open',

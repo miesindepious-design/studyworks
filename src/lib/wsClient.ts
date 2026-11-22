@@ -55,7 +55,16 @@ export class GameSocket {
 
   connect(roomCode: string, ticket: string, handlers: GameSocketHandlers) {
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const host = window.location.host; // localhost:5173 in dev (Vite proxies ws to :3001)
+    // The socket lives on the same host by default (the Vite dev server
+    // proxies /ws to the API in development). Point VITE_GAME_WS_URL at a
+    // dedicated long-lived host when the app itself is served by a platform
+    // that cannot hold a raw socket.
+    const configured = typeof import.meta.env.VITE_GAME_WS_URL === 'string'
+      ? import.meta.env.VITE_GAME_WS_URL.trim()
+      : '';
+    const host = configured
+      ? configured.replace(/^wss?:\/\//, '').replace(/\/+$/, '')
+      : window.location.host; // localhost:5173 in dev (Vite proxies ws to :3001)
     const url = `${proto}://${host}/ws?room=${encodeURIComponent(roomCode)}&ticket=${encodeURIComponent(ticket)}`;
     const ws = new WebSocket(url);
     this.ws = ws;

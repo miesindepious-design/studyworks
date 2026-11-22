@@ -50,6 +50,10 @@ import { ProgressionProvider } from './game/ProgressionContext';
 import LevelBadge from './components/LevelBadge';
 import LeaderboardView from './components/LeaderboardView';
 import DuelView from './components/DuelView';
+import { getRoomFile, type RoomFileInfo } from './api/roomFiles';
+import { createGameRoom } from './api/game';
+import { createDuel } from './api/progression';
+import type { PendingTutorDocument } from './types';
 
 type Theme = 'light' | 'dark' | 'system';
 type Tier  = 'free' | 'pro';
@@ -144,7 +148,18 @@ export default function App() {
       // silently dropped offline edits when the user signed in on a
       // second device. The merge key is each record's `updatedAt` (server
       // has it; locally we fall back to `createdAt`).
-      db.setNotes(mergeByLWW(db.notes, remote.notes));
+      // A generated document (Word handout, PDF worksheet, slide deck) lives
+      // on this device, so the server never sees the reference to it. Keep the
+      // local one through the merge — a sync round-trip must not orphan it.
+      const localDocRefs = new Map(
+        db.notes.filter(n => n.document).map(n => [n.id, n.document!] as const),
+      );
+      const mergedNotes = mergeByLWW(db.notes, remote.notes).map(n =>
+        (localDocRefs.has(n.id) && !n.document)
+          ? { ...n, document: localDocRefs.get(n.id) }
+          : n,
+      );
+      db.setNotes(mergedNotes);
       db.setContacts(mergeByLWW(db.contacts, remote.contacts));
       db.setFlashcards(mergeByLWW(db.flashcards, remote.flashcards));
       db.setFolders(mergeByLWW(db.folders, remote.folders.length
@@ -221,6 +236,10 @@ export default function App() {
   // A duel code the player arrived with (?duel=ABCD12). Like the lobby code
   // it has to survive the auth gate, so it is stashed in sessionStorage.
   const [pendingDuelCode, setPendingDuelCode] = useState<string | null>(null);
+
+  // A shared study file the player chose to hand to the AI tutor. The tutor
+  // picks it up on mount, adds it to the document library and reads it.
+  const [pendingTutorDoc, setPendingTutorDoc] = useState<PendingTutorDocument | null>(null);
 
   // ── Theme (apply immediately from IDB value once loaded) ──────────────────
   const theme = (db.theme as Theme) || 'system';
@@ -317,6 +336,68 @@ export default function App() {
     setPendingLobbyCode(lobbyCode);
     setCurrentView('lobby');
   };
+
+  // ── The group's shared material ────────────────────────────────────────────
+  // A file dropped into the lobby is the group's material: the tutor reads
+  // it, a quiz battle is built from it, a duel is set from it. These three
+  // handlers are what the shared-materials panel calls wherever it appears.
+
+  /** Hand a shared file to the AI tutor as the material to study. */
+  const studySharedFile = useCallback(async (lobbyCode: string, file: RoomFileInfo) => {
+    try {
+      const full = await getRoomFile(lobbyCode, file.id);
+      if (!full.text || !full.text.trim()) {
+        addToast('No text could be read from that file.', 'info');
+        return;
+      }
+      setPendingTutorDoc({
+        id: full.id,
+        name: full.name,
+        text: full.text,
+        size: full.size,
+        kind: full.type === 'other' ? 'text' : full.type,
+      });
+      setCurrentView('tutor');
+    } catch (err: any) {
+      addToast(err?.message || 'Could not open that file.', 'error');
+    }
+  }, [addToast]);
+
+  /** Turn the selected shared files into a live quiz battle. */
+  const startQuizFromFiles = useCallback(async (lobbyCode: string, files: RoomFileInfo[]) => {
+    if (tier !== 'pro') {
+      addToast('Quiz battles are a Pro feature!', 'info');
+      setCurrentView('pricing');
+      return;
+    }
+    try {
+      const res = await createGameRoom({
+        source: 'files',
+        lobbyCode,
+        fileIds: files.map(f => f.id),
+      });
+      addToast(`Room ${res.code} created — share the lobby with your group!`, 'success');
+      if (res.lobbyCode) openCreatedLobby(res.lobbyCode);
+    } catch (err: any) {
+      addToast(err?.message || 'Could not start the quiz battle.', 'error');
+    }
+  }, [tier, addToast]);
+
+  /** Turn the selected shared files into an asynchronous duel. */
+  const startDuelFromFiles = useCallback(async (lobbyCode: string, files: RoomFileInfo[]) => {
+    try {
+      const res = await createDuel({
+        source: 'files',
+        lobbyCode,
+        fileIds: files.map(f => f.id),
+      });
+      setPendingDuelCode(res.code);
+      setCurrentView('duel');
+      addToast(`Duel ${res.code} ready — send the link to your opponent.`, 'success');
+    } catch (err: any) {
+      addToast(err?.message || 'Could not set that duel.', 'error');
+    }
+  }, [addToast]);
   // Days remaining in the 7-day trial (0 once it's over or never started).
   const trialDaysLeft = (() => {
     if (!trialEndsAt) return 0;
@@ -788,6 +869,9 @@ export default function App() {
               signalingUrl={typeof import.meta.env.VITE_VOICE_SIGNALING_URL === 'string' && import.meta.env.VITE_VOICE_SIGNALING_URL ? import.meta.env.VITE_VOICE_SIGNALING_URL : window.location.origin}
               joinRoom={pendingStudyRoom}
               onRoomConsumed={() => setPendingStudyRoom(null)}
+              onStudyWithTutor={studySharedFile}
+              onQuizFiles={startQuizFromFiles}
+              onDuelFiles={startDuelFromFiles}
             />
           )}
           {currentView === 'lobby' && (
@@ -800,6 +884,9 @@ export default function App() {
               onEnterQuiz={enterQuizFromLobby}
               onEnterStudy={enterStudyFromLobby}
               addToast={addToast}
+              onStudyWithTutor={studySharedFile}
+              onQuizFiles={startQuizFromFiles}
+              onDuelFiles={startDuelFromFiles}
             />
           )}          {currentView === 'tutor' && (
             <TutorView
@@ -826,6 +913,7 @@ export default function App() {
                   files: [],
                   highlights: [],
                   personalNotes: [],
+                  document: note.document,
                 }, ...notesUR.state]);
               }}
               onSaveFlashcard={(card) => {
@@ -845,6 +933,8 @@ export default function App() {
                   leechCount: 0,
                 }, ...flashcardsUR.state]);
               }}
+              pendingDocument={pendingTutorDoc}
+              onPendingDocumentConsumed={() => setPendingTutorDoc(null)}
             />
           )}
           {currentView === 'settings' && (
@@ -877,6 +967,9 @@ export default function App() {
               initialRoomCode={pendingQuizRoom}
               onRoomConsumed={() => setPendingQuizRoom(null)}
               onCreatedLobby={openCreatedLobby}
+              onStudyWithTutor={studySharedFile}
+              onQuizFiles={startQuizFromFiles}
+              onDuelFiles={startDuelFromFiles}
             />
           )}
           {currentView === 'timer' && (

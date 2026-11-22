@@ -19,6 +19,8 @@ import { requirePro } from '../lib/tier.js';
 import { gameManager } from '../lib/gameManager.js';
 import { createLobbyForSession } from '../lib/lobby.js';
 import { SYSTEM_BASE, loadAIConfig, callProvider } from '../lib/aiProvider.js';
+import { generateQuestionsFromDocuments, loadLobbyDocuments, parseQuestions } from '../lib/questionGen.js';
+import { copyLobbyFiles } from '../lib/roomFiles.js';
 import { studentProfileBits, studentPromptContext } from '../lib/studentProfile.js';
 import { eloRound } from '../lib/progressionRules.js';
 
@@ -39,19 +41,30 @@ gameRouter.post('/auth-ticket', requireAuth, zValidator('json', z.object({
   return c.json({ ticket, wsUrl: `/ws?room=${room.code}&ticket=${ticket}` });
 });
 
-// Create a room. Host's flashcards (or a topic for AI questions later) seed it.
+// Create a room. Host's flashcards (or a topic, or the files the group
+// shared in the lobby) seed it.
 gameRouter.post('/rooms', requireAuth, requirePro, zValidator('json', z.object({
-  source: z.enum(['flashcards', 'topic']).default('flashcards'),
+  source: z.enum(['flashcards', 'topic', 'files']).default('flashcards'),
   topic: z.string().max(120).optional(),
   flashcardIds: z.array(z.string()).optional(),
+  // 'files' source: the lobby the group shares material in, and optionally
+  // the subset of files to build the round from.
+  lobbyCode: z.string().max(16).optional(),
+  fileIds: z.array(z.string()).optional(),
+  questionCount: z.number().int().min(3).max(20).optional(),
   perQuestionSec: z.number().int().min(5).max(60).default(15),
   baseXp: z.number().int().min(1).max(100).default(10),
 })), async c => {
   const user = c.get('user');
-  const body = await c.req.json();
+  const body = await c.req.valid('json');
 
   // Build the question list from source.
   let questions: { prompt: string; options: string[]; answerIdx: number }[] = [];
+  let topicLabel: string | undefined = body.topic;
+  // The lobby the material came from — its files are copied into the new
+  // room's lobby so the material travels with the game.
+  let sourceLobbyId: string | null = null;
+  let sourceFileIds: string[] | undefined = body.fileIds;
   if (body.source === 'flashcards') {
     const where = body.flashcardIds?.length
       ? { id: { in: body.flashcardIds }, userId: user.id }
@@ -71,7 +84,7 @@ gameRouter.post('/rooms', requireAuth, requirePro, zValidator('json', z.object({
       for (let i = opts.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [opts[i], opts[j]] = [opts[j], opts[i]]; }
       return { prompt: card.question, options: opts, answerIdx: opts.indexOf(card.answer) };
     });
-  } else {
+  } else if (body.source === 'topic') {
     // Topic source: generate level-aware multiple-choice questions with AI.
     if (!body.topic || !String(body.topic).trim()) {
       return c.json({ error: 'A topic is required for AI questions.' }, 400);
@@ -101,24 +114,38 @@ Return JSON: { "questions": [ { "prompt": "...", "options": ["...","...","...","
         ],
         temperature: 0.6, maxTokens: 8192, jsonMode: true, thinking: 'low',
       });
-      const parsed = JSON.parse(raw);
-      const rawQs: any[] = parsed.questions ?? [];
-      questions = rawQs
-        .filter((q: any) =>
-          typeof q?.prompt === 'string' && q.prompt.trim() &&
-          Array.isArray(q.options) && q.options.length >= 2 &&
-          Number.isInteger(q.answerIdx) && q.answerIdx >= 0 && q.answerIdx < q.options.length)
-        .slice(0, questionCount)
-        .map((q: any) => ({
-          prompt:    String(q.prompt).trim(),
-          options:   q.options.map((o: any) => String(o)),
-          answerIdx: q.answerIdx,
-        }));
+      questions = parseQuestions(raw).slice(0, questionCount);
       if (questions.length < 3) {
         return c.json({ error: 'The AI generated too few valid questions — try again or host from your flashcards.' }, 502);
       }
     } catch (e) {
       return c.json({ error: `AI question generation failed: ${(e as Error).message}` }, 502);
+    }
+  } else {
+    // Files source: the group shared material in a lobby — build the round
+    // from those files. This is the "let's battle over this chapter" path.
+    if (!body.lobbyCode) {
+      return c.json({ error: 'A lobby with shared files is required for a file-based game.' }, 400);
+    }
+    try {
+      const { documents, label, lobbyId } = await loadLobbyDocuments(body.lobbyCode, body.fileIds);
+      if (documents.length === 0) {
+        return c.json({ error: 'No readable files in that lobby yet — add a file with text first.' }, 400);
+      }
+      topicLabel = label;
+      sourceLobbyId = lobbyId;
+      questions = await generateQuestionsFromDocuments({
+        userId: user.id,
+        user,
+        documents,
+        count: body.questionCount ?? 15,
+        topicLabel: label,
+      });
+      if (questions.length < 3) {
+        return c.json({ error: 'The AI could not build a round from those files — try adding more material.' }, 502);
+      }
+    } catch (e) {
+      return c.json({ error: `Could not build questions from the shared files: ${(e as Error).message}` }, 502);
     }
   }
 
@@ -127,7 +154,7 @@ Return JSON: { "questions": [ { "prompt": "...", "options": ["...","...","...","
       hostId: user.id,
       code: crypto.randomUUID().slice(0, 8).toUpperCase(),
       source: body.source,
-      topic: body.topic,
+      topic: topicLabel,
       status: 'lobby',
       settings: { perQuestionSec: body.perQuestionSec, baseXp: body.baseXp },
     },
@@ -156,11 +183,24 @@ Return JSON: { "questions": [ { "prompt": "...", "options": ["...","...","...","
     const lobby = await createLobbyForSession({
       hostId: user.id,
       kind: 'quiz',
-      title: body.topic ? `Quiz: ${body.topic}` : 'Quiz Battle',
+      title: topicLabel ? `Quiz: ${topicLabel}` : 'Quiz Battle',
       targetCode: room.code,
       maxParticipants: 12,
     });
     lobbyCode = lobby.code;
+
+    // The material the group shared travels with the battle: copy the files
+    // into the room's own lobby so the waiting room still shows what this
+    // quiz is about.
+    if (sourceLobbyId) {
+      const copied = await copyLobbyFiles({
+        fromLobbyId: sourceLobbyId,
+        toLobbyId: lobby.id,
+        fileIds: sourceFileIds,
+        uploaderId: user.id,
+      });
+      if (copied > 0) console.log(`[game] copied ${copied} shared file(s) into lobby ${lobby.code}`);
+    }
   } catch (err) {
     console.error('[game] failed to create lobby for room', room.code, err);
   }

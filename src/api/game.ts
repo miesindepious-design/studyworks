@@ -15,9 +15,14 @@ export interface GameRoomSummary {
 }
 
 export interface CreateRoomBody {
-  source?: 'flashcards' | 'topic';
+  source?: 'flashcards' | 'topic' | 'files';
   topic?: string;
   flashcardIds?: string[];
+  /** 'files' source: the lobby the group shares material in. */
+  lobbyCode?: string;
+  /** 'files' source: the subset of shared files to build the round from. */
+  fileIds?: string[];
+  questionCount?: number;
   perQuestionSec?: number;
   baseXp?: number;
 }

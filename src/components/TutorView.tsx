@@ -2,8 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { serverTutor, serverAnalyzeDocuments, saveUserProfile } from '../api/ai';
 import type { KeyPoint, DocumentAnalysis, TutorDocument } from '../api/ai';
-import type { Note, StudyDocument } from '../types';
+import type { Note, StudyDocument, PendingTutorDocument, GeneratedDocFormat, GeneratedDocumentMeta } from '../types';
 import { renderAiText, toPlainText } from '../utils/aiText';
+import { buildTutorDoc, chooseDocFormat, describeContext } from '../utils/tutorDoc';
+import { buildDocument, downloadBlob } from '../utils/docBuilders';
+import { generatedDocsDB } from '../db/generatedDocs';
 import { extractTextFromFile } from '../utils/extractText';
 import KeyPointsPanel from './KeyPointsPanel';
 import DocumentBriefing from './DocumentBriefing';
@@ -21,7 +24,13 @@ interface Props {
   setCurrentView: (view: any) => void;
   addToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
   notes?: Note[];
-  onSaveNote?: (note: { title: string; content: string; tags?: string[] }) => void;
+  onSaveNote?: (note: {
+    title: string;
+    content: string;
+    tags?: string[];
+    /** The document the lesson was saved as, when it was saved as one. */
+    document?: GeneratedDocumentMeta;
+  }) => void;
   /** Save uploaded files into the document library under Notes. */
   addDocuments?: (docs: StudyDocument[]) => void;
   /** Patch a library document (e.g. attach its analysis). */
@@ -31,9 +40,27 @@ interface Props {
    * becomes part of the spaced-repetition deck instead of being forgotten.
    */
   onSaveFlashcard?: (card: { question: string; answer: string; topic?: string }) => void;
+  /**
+   * A file the group shared, handed over for the tutor to study. It is
+   * picked up once, on arrival, and then the tutor takes it over.
+   */
+  pendingDocument?: PendingTutorDocument | null;
+  /** Called once the pending document has been taken in. */
+  onPendingDocumentConsumed?: () => void;
 }
 
 type TutorMode = 'lesson' | 'simpler' | 'deeper' | 'quiz';
+
+/** The name of each document format, as the student sees it. */
+const FORMAT_LABEL: Record<GeneratedDocFormat, string> = {
+  docx: 'Word document',
+  pdf: 'PDF worksheet',
+  pptx: 'Slide deck',
+};
+
+function formatLabel(format: GeneratedDocFormat): string {
+  return FORMAT_LABEL[format] ?? format;
+}
 
 interface ChatTurn {
   id: string;
@@ -172,7 +199,7 @@ function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, notes = [], onSaveNote, addDocuments, updateDocument, onSaveFlashcard }: Props) {
+export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, notes = [], onSaveNote, addDocuments, updateDocument, onSaveFlashcard, pendingDocument, onPendingDocumentConsumed }: Props) {
   const { award } = useProgression();
   // Quiz turns already saved as flashcards, so the button does not offer twice.
   const [savedFlashcardTurns, setSavedFlashcardTurns] = useState<string[]>([]);
@@ -189,6 +216,8 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
   const [suggestedTopics, setSuggestedTopics] = useState<string[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [saving, setSaving] = useState(false);
+  /** The "save as a document" panel is open. */
+  const [showDocDialog, setShowDocDialog] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   // "I don't understand a part" panel — one open at a time.
   const [confusedFor, setConfusedFor] = useState<string | null>(null);
@@ -646,8 +675,7 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
   }, []);
 
   /** Ask the tutor to read the attached files and pull out what matters. */
-  const handleAnalyze = useCallback(async () => {
-    const ready = docs.filter(d => d.status === 'ready' && d.text.trim().length > 0);
+  const runAnalysis = useCallback(async (ready: AttachedDoc[]) => {
     if (ready.length === 0) return;
     if (!unlocked) {
       addToast('Connect your free AI Studio key in Settings to use document analysis.', 'info');
@@ -693,7 +721,49 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
     } finally {
       setAnalyzing(false);
     }
-  }, [docs, unlocked, level, addToast, setCurrentView, speakText, updateDocument]);
+  }, [unlocked, level, addToast, setCurrentView, speakText, updateDocument]);
+
+  /** The "Analyse" button: run the briefing over every readable document. */
+  const handleAnalyze = useCallback(async () => {
+    const ready = docs.filter(d => d.status === 'ready' && d.text.trim().length > 0);
+    await runAnalysis(ready);
+  }, [docs, runAnalysis]);
+
+  // ── A shared file handed over from the lobby ───────────────────────────────
+  // The student picked a file the group shared and chose "Study with AI". The
+  // text comes with it, so the tutor picks the material up, keeps it in the
+  // document library and briefs it — the same path a dropped file takes.
+  useEffect(() => {
+    const doc = pendingDocument;
+    if (!doc || !doc.text?.trim()) return;
+
+    const attached: AttachedDoc = {
+      id: doc.id,
+      name: doc.name,
+      size: doc.size,
+      text: doc.text,
+      truncated: false,
+      status: 'ready',
+      kind: doc.kind,
+    };
+    setDocs(prev => (prev.some(d => d.id === doc.id) ? prev : [...prev, attached]));
+    addDocuments?.([{
+      id: doc.id,
+      name: doc.name,
+      kind: doc.kind,
+      size: doc.size,
+      text: doc.text,
+      truncated: false,
+      analysis: null,
+      source: 'library',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+    onPendingDocumentConsumed?.();
+
+    if (unlocked) void runAnalysis([attached]);
+    else addToast('Connect your free AI Studio key in Settings to analyse this file.', 'info');
+  }, [pendingDocument, addDocuments, onPendingDocumentConsumed, unlocked, runAnalysis, addToast]);
 
   // Keep the refs pointing at the latest callbacks
   sendRef.current = send;
@@ -719,53 +789,96 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
     setError(null);
   }, []);
 
-  const saveToNotes = useCallback(async () => {
+  /**
+   * Save the session as a document.
+   *
+   * The lesson used to land in the notes section as one long block of text.
+   * Now it becomes a real file — a Word handout, a PDF worksheet or a slide
+   * deck — chosen from the shape of the session, and the note keeps a card
+   * that points at it.
+   */
+  const saveAsDocument = useCallback(async (formatOverride?: GeneratedDocFormat) => {
     if (!activeTopic) { addToast('No active topic to save.', 'info'); return; }
     setSaving(true);
     try {
       const topicTurns = history.filter(h => h.topic === activeTopic);
       if (topicTurns.length === 0) { addToast('Nothing to save for this topic.', 'info'); return; }
-      // Save plain prose — the raw markdown only reads badly later.
-      const content = topicTurns.map(t => {
-        const blocks = [`[${t.mode.toUpperCase()}] ${toPlainText(t.response)}`];
-        // The key points are the part worth revising from — keep them.
-        if (t.keyPoints && t.keyPoints.length > 0) {
-          const points = t.keyPoints
-            .map(p => `- (${p.importance}) ${p.point}${p.why ? ` — ${p.why}` : ''}`)
-            .join('\n');
-          blocks.push(`[KEY POINTS]\n${points}`);
-        }
-        if (t.analysis) {
-          if (t.analysis.outline.length > 0) {
-            blocks.push(`[OUTLINE]\n${t.analysis.outline.map(o => `- ${o.heading}${o.detail ? ` — ${o.detail}` : ''}`).join('\n')}`);
-          }
-          if (t.analysis.glossary.length > 0) {
-            blocks.push(`[VOCABULARY]\n${t.analysis.glossary.map(g => `- ${g.term}: ${g.meaning}`).join('\n')}`);
-          }
-          if (t.analysis.questions.length > 0) {
-            blocks.push(`[LIKELY EXAM QUESTIONS]\n${t.analysis.questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`);
-          }
-        }
-        return blocks.join('\n\n');
-      }).join('\n\n---\n\n');
-      if (onSaveNote) {
-        await onSaveNote({
-          title: `AI Tutor: ${activeTopic}`,
-          content,
-          tags: ['ai-tutor', activeTopic.toLowerCase().replace(/\s+/g, '-')],
-        });
-      } else {
-        await navigator.clipboard.writeText(content);
-        addToast('Lesson copied to clipboard. Connect notes to save directly.', 'info');
-        return;
-      }
-      addToast('Lesson saved to notes!', 'success');
+
+      const buildInput = {
+        topic: activeTopic,
+        turns: topicTurns.map(t => ({
+          mode: t.mode,
+          response: t.response,
+          keyPoints: t.keyPoints,
+          analysis: t.analysis ?? null,
+        })),
+        sourceLabel: docs.filter(d => d.status === 'ready').length > 0
+          ? docs.filter(d => d.status === 'ready').map(d => d.name).join(', ')
+          : undefined,
+      };
+
+      const context = describeContext(buildInput);
+      const recommendation = chooseDocFormat(context);
+      const format = formatOverride ?? recommendation.format;
+
+      const model = buildTutorDoc(buildInput);
+      const built = await buildDocument(model, format);
+
+      // Keep the file itself in the document library.
+      const docId = crypto.randomUUID();
+      await generatedDocsDB.put({
+        id: docId,
+        title: model.title,
+        topic: model.topic,
+        format,
+        fileName: built.fileName,
+        size: built.blob.size,
+        blob: built.blob,
+        createdAt: new Date(),
+      });
+
+      // The note keeps a short summary and a pointer at the file — the lesson
+      // itself lives in the document, not as a wall of text.
+      const summary = model.blocks
+        .filter(b => b.kind === 'paragraph')
+        .slice(0, 2)
+        .map(b => (b.kind === 'paragraph' ? b.text : ''))
+        .join(' ')
+        .slice(0, 400);
+
+      const content = [
+        `${model.title} — prepared by the AI Tutor on ${model.generatedAt.toLocaleDateString()}.`,
+        summary,
+        `The full lesson is in the attached ${formatLabel(format)} document (${built.fileName}).`,
+      ].filter(Boolean).join('\n\n');
+
+      onSaveNote?.({
+        title: model.title,
+        content,
+        tags: ['ai-tutor', activeTopic.toLowerCase().replace(/\s+/g, '-')],
+        document: {
+          id: docId,
+          format,
+          fileName: built.fileName,
+          size: built.blob.size,
+          reason: formatOverride ? 'You picked this format.' : recommendation.reason,
+        },
+      });
+
+      downloadBlob(built.blob, built.fileName);
+      setShowDocDialog(false);
+      addToast(
+        format === 'pdf' ? 'Worksheet downloaded and linked to the note.'
+          : format === 'pptx' ? 'Slide deck downloaded and linked to the note.'
+          : 'Handout downloaded and linked to the note.',
+        'success',
+      );
     } catch (err: any) {
-      addToast(err.message || 'Failed to save.', 'error');
+      addToast(err.message || 'Could not build the document.', 'error');
     } finally {
       setSaving(false);
     }
-  }, [activeTopic, history, onSaveNote, addToast]);
+  }, [activeTopic, history, onSaveNote, addToast, docs]);
 
   const latestResponse = history[history.length - 1]?.response;
 
@@ -873,12 +986,72 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
       <button className="btn btn-secondary btn-sm" onClick={() => send('deeper')} disabled={loading || !latestResponse}>Dive deeper</button>
       <button className="btn btn-secondary btn-sm" onClick={() => send('quiz')} disabled={loading || !latestResponse}>Test me</button>
       {activeTopic && (
-        <button className="btn btn-ghost btn-sm" onClick={saveToNotes} disabled={saving || loading}>
-          {saving ? 'Saving…' : '💾 Save to notes'}
+        <button className="btn btn-ghost btn-sm" onClick={() => setShowDocDialog(true)} disabled={saving || loading}>
+          {saving ? 'Saving…' : '📄 Save as document'}
         </button>
       )}
     </div>
   );
+
+  /**
+   * The "save as a document" panel: the format that fits the session is
+   * recommended, and the student can pick another one.
+   */
+  const docDialog = (() => {
+    if (!showDocDialog || !activeTopic) return null;
+    const topicTurns = history.filter(h => h.topic === activeTopic);
+    const context = describeContext({
+      topic: activeTopic,
+      turns: topicTurns.map(t => ({
+        mode: t.mode,
+        response: t.response,
+        keyPoints: t.keyPoints,
+        analysis: t.analysis ?? null,
+      })),
+    });
+    const recommendation = chooseDocFormat(context);
+
+    const options: { format: GeneratedDocFormat; label: string; hint: string }[] = [
+      { format: 'docx', label: '📘 Word', hint: 'A handout you can edit and print.' },
+      { format: 'pdf', label: '📕 PDF', hint: 'A worksheet to work through on paper.' },
+      { format: 'pptx', label: '📙 Slides', hint: 'A deck to present or revise from.' },
+    ];
+
+    return (
+      <div
+        className="card"
+        style={{ padding: '1.1rem 1.25rem', margin: '0.75rem 0', borderColor: 'var(--accent)' }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+          <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700 }}>Save “{activeTopic}” as a document</h4>
+          <button className="btn btn-ghost btn-sm" onClick={() => setShowDocDialog(false)}>✕</button>
+        </div>
+        <p className="text-xs text-muted" style={{ margin: '0.4rem 0 0.75rem' }}>
+          {recommendation.reason} The document is downloaded and linked to the note.
+        </p>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          {options.map(o => (
+            <button
+              key={o.format}
+              className="btn btn-secondary btn-sm"
+              style={{
+                flexDirection: 'column',
+                alignItems: 'flex-start',
+                textAlign: 'left',
+                borderColor: o.format === recommendation.format ? 'var(--accent)' : undefined,
+              }}
+              title={o.hint}
+              onClick={() => saveAsDocument(o.format)}
+              disabled={saving}
+            >
+              <span>{o.label}{o.format === recommendation.format ? ' ★' : ''}</span>
+              <span className="text-xs" style={{ opacity: 0.75 }}>{o.hint}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  })();
 
   /** The chat history list. */
   const historyList = (() => {
@@ -1104,6 +1277,7 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
         {askRow}
         {voiceControls}
         {modeControls}
+        {docDialog}
       </div>
       <div className="sw-tutor-fs-list" ref={panelRef}>
         {historyList}
@@ -1174,6 +1348,8 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
           {voiceControls}
 
           {modeControls}
+
+          {docDialog}
 
           {/* Document upload — the tutor reads the file and pulls out the
               points that matter before it starts teaching. */}

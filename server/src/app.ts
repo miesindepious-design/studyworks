@@ -22,6 +22,7 @@ import { emailSaveRouter, inboundEmailRouter } from './routes/emailSave.js';
 import { gameRouter } from './routes/game.js';
 import { studyRoomRouter } from './routes/studyRoom.js';
 import { lobbyRouter } from './routes/lobby.js';
+import { roomFilesRouter } from './routes/roomFiles.js';
 import { adminRouter } from './routes/admin.js';
 import { progressionRouter } from './routes/progression.js';
 import { duelsRouter } from './routes/duels.js';
@@ -81,6 +82,8 @@ app.route('/api/study-room', studyRoomRouter);
 
 // Phase 4: lobby — the shareable front door to a live session
 app.route('/api/lobby',   lobbyRouter);
+// Phase 6: the group's shared study files, dropped into that lobby
+app.route('/api/lobby',   roomFilesRouter);
 
 // Phase 5: progression (XP, quests, achievements, season), duels and exams
 app.route('/api/progression', progressionRouter);

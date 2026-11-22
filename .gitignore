@@ -35,6 +35,7 @@ server/dev.db
 .bolt/
 .cache/
 coverage/
+*.lnk
 
 # WorkBuddy workspace + scratch
 .workbuddy-ai/

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getLobby, listMyLobbies, joinLobby, closeLobby, type LobbyDetail, type MyLobby } from '../api/lobby';
+import { getLobby, listMyLobbies, joinLobby, closeLobby, createLobby, type LobbyDetail, type MyLobby } from '../api/lobby';
+import type { RoomFileInfo } from '../api/roomFiles';
 import LobbyShare from './LobbyShare';
+import RoomFilesPanel from './RoomFilesPanel';
 
 /**
  * LobbyView — the front door to every live session.
@@ -23,12 +25,19 @@ interface Props {
   onEnterQuiz: (roomCode: string) => void;
   onEnterStudy: (voiceRoomId: string, roomUrl: string | null, lobbyCode: string | null) => void;
   addToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
+  /** Open the AI tutor with a shared file as the material to study. */
+  onStudyWithTutor?: (lobbyCode: string, file: RoomFileInfo) => void;
+  /** Start a live quiz battle from the shared files. */
+  onQuizFiles?: (lobbyCode: string, files: RoomFileInfo[]) => void;
+  /** Start an asynchronous duel from the shared files. */
+  onDuelFiles?: (lobbyCode: string, files: RoomFileInfo[]) => void;
 }
 
 type Phase = 'idle' | 'loading' | 'ready' | 'error';
 
 export default function LobbyView({
   code, onCodeConsumed, onEnterQuiz, onEnterStudy, addToast,
+  onStudyWithTutor, onQuizFiles, onDuelFiles,
 }: Props) {
   const [input, setInput] = useState('');
   const [phase, setPhase] = useState<Phase>('idle');
@@ -38,6 +47,9 @@ export default function LobbyView({
   const [showMine, setShowMine] = useState(false);
   /** The lobby currently being closed, so its button can show progress. */
   const [closingCode, setClosingCode] = useState<string | null>(null);
+  /** The name of the study group being created. */
+  const [groupName, setGroupName] = useState('');
+  const [creatingGroup, setCreatingGroup] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const refreshMine = useCallback(() => {
@@ -85,6 +97,27 @@ export default function LobbyView({
     }
   }, []);
 
+  // ── Create a study group ──────────────────────────────────────────────────
+  // A lobby is where the group agrees what it is studying: a code, a link and
+  // a shared shelf of files. The group may never open a quiz or a study
+  // room — the material itself is the point.
+  const createGroup = useCallback(async () => {
+    if (creatingGroup) return;
+    setCreatingGroup(true);
+    try {
+      const title = groupName.trim() || 'Study group';
+      const created = await createLobby({ kind: 'study', title });
+      setGroupName('');
+      await resolve(created.code);
+      refreshMine();
+      addToast(`Study group ready — share code ${created.code}.`, 'success');
+    } catch (err: any) {
+      addToast(err?.message || 'Could not create the study group.', 'error');
+    } finally {
+      setCreatingGroup(false);
+    }
+  }, [creatingGroup, groupName, resolve, refreshMine, addToast]);
+
   useEffect(() => {
     if (!code) return;
     resolve(code);
@@ -119,6 +152,14 @@ export default function LobbyView({
 
   const kindLabel = lobby?.target.kind === 'quiz' ? 'Quiz Battle' : 'Study Room';
   const kindIcon  = lobby?.target.kind === 'quiz' ? '🏆' : '🎓';
+  // A group lobby may exist only to hold material — there is no session to
+  // enter, so the Enter button would lead nowhere.
+  const hasSession = lobby
+    ? (lobby.target.kind === 'quiz'
+        ? Boolean(lobby.target.roomCode)
+        : Boolean(lobby.target.voiceRoomId || lobby.target.roomUrl))
+    : false;
+  const isMaterialOnly = Boolean(lobby && lobby.target.kind === 'study' && !hasSession);
 
   return (
     <div className="animate-in" style={{ maxWidth: 760, margin: '0 auto' }}>
@@ -168,6 +209,27 @@ export default function LobbyView({
         )}
       </div>
 
+      {/* ── Create a study group ───────────────────────────────────────── */}
+      <div className="card" style={{ padding: '1.25rem', marginBottom: '1rem' }}>
+        <h3 style={{ margin: '0 0 0.35rem', fontSize: '1rem', fontWeight: 700 }}>👥 Start a study group</h3>
+        <p className="text-xs text-muted" style={{ margin: '0 0 0.75rem' }}>
+          Create a lobby for the material your group is working on. Share the code,
+          drop in the files, then battle each other over them.
+        </p>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <input
+            className="input"
+            placeholder="Group name (optional)"
+            value={groupName}
+            onChange={e => setGroupName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') createGroup(); }}
+          />
+          <button className="btn btn-secondary" onClick={createGroup} disabled={creatingGroup}>
+            {creatingGroup ? 'Creating…' : 'Create'}
+          </button>
+        </div>
+      </div>
+
       {/* ── Resolved lobby ──────────────────────────────────────────────── */}
       {phase === 'ready' && lobby && (
         <div
@@ -179,12 +241,12 @@ export default function LobbyView({
             textAlign: 'center',
           }}
         >
-          <div style={{ fontSize: '2.25rem', lineHeight: 1 }}>{kindIcon}</div>
+          <div style={{ fontSize: '2.25rem', lineHeight: 1 }}>{isMaterialOnly ? '👥' : kindIcon}</div>
           <h3 style={{ margin: '0.5rem 0 0.25rem', fontSize: '1.25rem', fontWeight: 800 }}>
             {lobby.sessionTitle}
           </h3>
           <p className="text-muted text-sm" style={{ margin: '0 0 0.75rem' }}>
-            {kindLabel}
+            {isMaterialOnly ? 'Study group' : kindLabel}
             {lobby.hostName ? ` · hosted by ${lobby.hostName}` : ''}
             {/* How many people are already in — the joiner sees the room's
                 occupancy before committing to it. Quizzes count players in
@@ -200,10 +262,28 @@ export default function LobbyView({
             <p className="text-sm" style={{ color: 'var(--danger)', marginBottom: '1rem' }}>
               This session has already ended.
             </p>
+          ) : isMaterialOnly ? (
+            <p className="text-sm text-muted" style={{ marginBottom: '1rem' }}>
+              This is a study group — share your material below, then battle each
+              other over it.
+            </p>
           ) : (
             <button className="btn btn-primary btn-lg" onClick={enter}>
               Enter {kindLabel}
             </button>
+          )}
+
+          {/* A material-only group lives on its code and its link — put them
+              where the host can pick them up right away. */}
+          {isMaterialOnly && (
+            <div style={{ marginTop: '1rem', textAlign: 'left' }}>
+              <LobbyShare
+                code={lobby.code}
+                label="Share this group"
+                hint="Friends who open the link land here and can see the material you share."
+                compact
+              />
+            </div>
           )}
 
           <div style={{ marginTop: '1rem' }}>
@@ -215,6 +295,21 @@ export default function LobbyView({
             </button>
           </div>
         </div>
+      )}
+
+      {/* ── The group's shared material ───────────────────────────────────
+          The lobby is where the group agrees what it is studying. Whoever
+          drops the file in, everybody else can study it, battle each other
+          over it, or set a duel from it. */}
+      {phase === 'ready' && lobby && lobby.status !== 'closed' && (
+        <RoomFilesPanel
+          lobbyCode={lobby.code}
+          addToast={addToast}
+          onStudyWithTutor={onStudyWithTutor}
+          onQuizFiles={onQuizFiles}
+          onDuelFiles={onDuelFiles}
+          title="Study material for this group"
+        />
       )}
 
       {/* ── Lobbies I host ──────────────────────────────────────────────── */}

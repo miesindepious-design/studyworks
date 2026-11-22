@@ -288,6 +288,12 @@ export async function sweepLobbies(opts: { force?: boolean } = {}): Promise<void
         continue;
       }
 
+      // A study lobby with no session behind it is a material-only group —
+      // a shelf the group shares files on. Nobody "joins" it and nobody
+      // heartbeats, so the empty-room rule would close it two minutes after
+      // it was created. It lives until its TTL instead.
+      if (!lobby.targetCode) continue;
+
       const visits = await prisma.lobbyParticipant.findMany({
         where: { lobbyId: lobby.id },
         select: { leftAt: true, lastSeenAt: true },

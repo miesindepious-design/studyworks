@@ -54,6 +54,12 @@ export interface Note {
   files?: FileAttachment[];
   highlights?: Highlight[];
   personalNotes?: PersonalNote[];
+  /**
+   * Set when the note was produced as a document (a Word handout, a PDF
+   * worksheet, a slide deck). The note keeps the reference; the file itself
+   * lives in the generated-documents store.
+   */
+  document?: GeneratedDocumentMeta;
   lastRevisited?: Date;
   nextReminder?: Date;
 }
@@ -249,4 +255,51 @@ export interface StudyDocument {
   source: 'tutor' | 'library';
   createdAt: Date;
   updatedAt: Date;
+}
+
+/**
+ * A shared study file handed from the lobby to the AI tutor. It carries the
+ * text with it so the tutor can pick the material up the moment the student
+ * lands on the tutor screen.
+ */
+export interface PendingTutorDocument {
+  id: string;
+  name: string;
+  text: string;
+  size: number;
+  kind: StudyDocument['kind'];
+}
+
+/**
+ * A document the AI tutor produced from a lesson — a Word handout, a PDF
+ * worksheet or a slide deck. The note keeps a reference to it instead of the
+ * whole lesson as one long block of text.
+ */
+export type GeneratedDocFormat = 'docx' | 'pdf' | 'pptx';
+
+export interface GeneratedDocumentMeta {
+  /** The id of the stored document (IndexedDB). */
+  id: string;
+  /** What the document is. */
+  format: GeneratedDocFormat;
+  /** The file name it downloads as. */
+  fileName: string;
+  /** Size in bytes. */
+  size: number;
+  /** Why this format was chosen — shown on the note card. */
+  reason?: string;
+}
+
+export interface GeneratedDocument {
+  id: string;
+  title: string;
+  topic: string;
+  format: GeneratedDocFormat;
+  fileName: string;
+  size: number;
+  /** The generated file itself. */
+  blob: Blob;
+  /** The note this document belongs to, if any. */
+  noteId?: string;
+  createdAt: Date;
 }

@@ -12,7 +12,7 @@ const server = serve({ fetch: app.fetch, port }, () => {
 }) as unknown as Server;
 
 // Attach the multiplayer quiz WebSocket server to the same HTTP server.
-attachGameWebSocket();
+attachGameWebSocket(server);
 
 // Attach voice chat signaling on the same host/port when available.
 // On Vercel serverless there is no persistent server, so this must never
