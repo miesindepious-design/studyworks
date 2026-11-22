@@ -23,11 +23,14 @@ import { createRoot, type Root } from 'react-dom/client';
 
 const { apiMock } = vi.hoisted(() => ({
   apiMock: {
-    getLobby:      vi.fn(),
-    listMyLobbies: vi.fn(),
-    joinLobby:     vi.fn(),
-    closeLobby:    vi.fn(),
-    createLobby:   vi.fn(),
+    getLobby:        vi.fn(),
+    listMyLobbies:   vi.fn(),
+    joinLobby:       vi.fn(),
+    closeLobby:      vi.fn(),
+    createLobby:     vi.fn(),
+    deleteLobby:     vi.fn(),
+    deleteEndedLobbies: vi.fn(),
+    reopenLobby:     vi.fn(),
   },
 }));
 
@@ -87,6 +90,36 @@ function buttonByText(container: HTMLElement, needle: string): HTMLButtonElement
     .find(b => (b.textContent ?? '').includes(needle));
   if (!match) throw new Error(`No button matching "${needle}"`);
   return match;
+}
+
+/**
+ * A button whose label is exactly this.
+ *
+ * Needed where one label contains another — "Delete" against "Delete all
+ * ended" — and picking the wrong one would open the wrong dialog.
+ */
+function buttonByExactText(container: HTMLElement, needle: string): HTMLButtonElement {
+  const match = Array.from(container.querySelectorAll('button'))
+    .find(b => (b.textContent ?? '').trim() === needle);
+  if (!match) throw new Error(`No button labelled "${needle}"`);
+  return match;
+}
+
+/** The confirm button of the open confirmation dialog. */
+function confirmButton(container: HTMLElement): HTMLButtonElement {
+  const panel = container.querySelector('.modal-panel');
+  const buttons = panel?.querySelectorAll('.modal-footer button');
+  const btn = buttons?.[buttons.length - 1] as HTMLButtonElement | undefined;
+  if (!btn) throw new Error('No confirmation dialog is open');
+  return btn;
+}
+
+/** The cancel button of the open confirmation dialog. */
+function cancelButton(container: HTMLElement): HTMLButtonElement {
+  const panel = container.querySelector('.modal-panel');
+  const btn = panel?.querySelector('.modal-footer button') as HTMLButtonElement | undefined;
+  if (!btn) throw new Error('No confirmation dialog is open');
+  return btn;
 }
 
 /** Set an input's value the way a user would, so React sees the change. */
@@ -326,8 +359,14 @@ describe('LobbyView — the host closing a lobby', () => {
     apiMock.listMyLobbies.mockReset();
     apiMock.joinLobby.mockReset();
     apiMock.closeLobby.mockReset();
+    apiMock.deleteLobby.mockReset();
+    apiMock.deleteEndedLobbies.mockReset();
+    apiMock.reopenLobby.mockReset();
     apiMock.listMyLobbies.mockResolvedValue([]);
     apiMock.closeLobby.mockResolvedValue({ ok: true });
+    apiMock.deleteLobby.mockResolvedValue({ ok: true });
+    apiMock.deleteEndedLobbies.mockResolvedValue({ ok: true, deleted: 0 });
+    apiMock.reopenLobby.mockResolvedValue({ ok: true });
     addToast.mockReset();
   });
 
@@ -336,6 +375,7 @@ describe('LobbyView — the host closing a lobby', () => {
       {
         ...QUIZ_LOBBY,
         expired: false,
+        isEnded: false,
         target: { kind: 'quiz', roomCode: 'ROOM123' },
       },
     ]);
@@ -357,8 +397,8 @@ describe('LobbyView — the host closing a lobby', () => {
       expect.stringContaining('closed'),
       'success',
     );
-    // The row flips to "ended" and the close button disappears.
-    expect(container.textContent).toContain('This session has ended');
+    // The lobby moves out of the live list and into the ended one.
+    expect(container.textContent).toContain('Ended (1)');
     expect(
       Array.from(container.querySelectorAll('button'))
         .some(b => (b.textContent ?? '').includes('Close lobby')),
@@ -368,7 +408,7 @@ describe('LobbyView — the host closing a lobby', () => {
 
   it('offers no close button on a lobby that has already ended', async () => {
     apiMock.listMyLobbies.mockResolvedValue([
-      { ...QUIZ_LOBBY, status: 'closed', expired: false, target: { kind: 'quiz', roomCode: 'ROOM123' } },
+      { ...QUIZ_LOBBY, status: 'closed', expired: false, isEnded: true, target: { kind: 'quiz', roomCode: 'ROOM123' } },
     ]);
 
     const { container, root } = await mount(
@@ -378,10 +418,199 @@ describe('LobbyView — the host closing a lobby', () => {
     await act(async () => { buttonByText(container, 'Show').click(); });
     await flush();
 
-    expect(container.textContent).toContain('This session has ended');
+    expect(container.textContent).toContain('Ended (1)');
     expect(
       Array.from(container.querySelectorAll('button'))
         .some(b => (b.textContent ?? '').includes('Close lobby')),
+    ).toBe(false);
+
+    await act(async () => root.unmount());
+  });
+});
+
+describe('LobbyView — the host deleting a lobby', () => {
+  beforeEach(() => {
+    apiMock.getLobby.mockReset();
+    apiMock.listMyLobbies.mockReset();
+    apiMock.joinLobby.mockReset();
+    apiMock.closeLobby.mockReset();
+    apiMock.deleteLobby.mockReset();
+    apiMock.deleteEndedLobbies.mockReset();
+    apiMock.reopenLobby.mockReset();
+    apiMock.listMyLobbies.mockResolvedValue([]);
+    apiMock.closeLobby.mockResolvedValue({ ok: true });
+    apiMock.deleteLobby.mockResolvedValue({ ok: true });
+    apiMock.deleteEndedLobbies.mockResolvedValue({ ok: true, deleted: 0 });
+    apiMock.reopenLobby.mockResolvedValue({ ok: true });
+    addToast.mockReset();
+  });
+
+  it('offers a delete button on an ended lobby — the whole point', async () => {
+    apiMock.listMyLobbies.mockResolvedValue([
+      { ...QUIZ_LOBBY, status: 'closed', expired: false, isEnded: true, target: { kind: 'quiz', roomCode: 'ROOM123' } },
+    ]);
+
+    const { container, root } = await mount(
+      createElement(LobbyView, { onEnterQuiz: vi.fn(), onEnterStudy: vi.fn(), addToast }),
+    );
+
+    await act(async () => { buttonByText(container, 'Show').click(); });
+    await flush();
+
+    expect(container.textContent).toContain('Ended (1)');
+    expect(container.textContent).toContain('Delete all ended');
+    expect(
+      Array.from(container.querySelectorAll('button'))
+        .some(b => (b.textContent ?? '').includes('Delete')),
+    ).toBe(true);
+
+    await act(async () => root.unmount());
+  });
+
+  it('offers a delete button on a live lobby too', async () => {
+    apiMock.listMyLobbies.mockResolvedValue([
+      { ...QUIZ_LOBBY, expired: false, isEnded: false, target: { kind: 'quiz', roomCode: 'ROOM123' } },
+    ]);
+
+    const { container, root } = await mount(
+      createElement(LobbyView, { onEnterQuiz: vi.fn(), onEnterStudy: vi.fn(), addToast }),
+    );
+
+    await act(async () => { buttonByText(container, 'Show').click(); });
+    await flush();
+
+    expect(
+      Array.from(container.querySelectorAll('button'))
+        .some(b => (b.textContent ?? '').includes('🗑 Delete')),
+    ).toBe(true);
+
+    await act(async () => root.unmount());
+  });
+
+  it('deletes a lobby after the host confirms', async () => {
+    apiMock.listMyLobbies.mockResolvedValue([
+      { ...QUIZ_LOBBY, status: 'closed', expired: false, isEnded: true, target: { kind: 'quiz', roomCode: 'ROOM123' } },
+    ]);
+
+    const { container, root } = await mount(
+      createElement(LobbyView, { onEnterQuiz: vi.fn(), onEnterStudy: vi.fn(), addToast }),
+    );
+
+    await act(async () => { buttonByText(container, 'Show').click(); });
+    await flush();
+
+    // The first click asks; the second one means yes.
+    await act(async () => { buttonByExactText(container, 'Delete').click(); });
+    await flush();
+    expect(container.textContent).toContain('Delete "Quiz Battle"?');
+    expect(apiMock.deleteLobby).not.toHaveBeenCalled();
+
+    await act(async () => { confirmButton(container).click(); });
+    await flush();
+
+    expect(apiMock.deleteLobby).toHaveBeenCalledWith(CODE);
+    expect(addToast).toHaveBeenCalledWith(
+      expect.stringContaining('deleted'),
+      'success',
+    );
+    // And it is gone from the list.
+    expect(container.textContent).not.toContain('Ended (1)');
+
+    await act(async () => root.unmount());
+  });
+
+  it('does nothing when the host cancels the delete', async () => {
+    apiMock.listMyLobbies.mockResolvedValue([
+      { ...QUIZ_LOBBY, status: 'closed', expired: false, isEnded: true, target: { kind: 'quiz', roomCode: 'ROOM123' } },
+    ]);
+
+    const { container, root } = await mount(
+      createElement(LobbyView, { onEnterQuiz: vi.fn(), onEnterStudy: vi.fn(), addToast }),
+    );
+
+    await act(async () => { buttonByText(container, 'Show').click(); });
+    await flush();
+
+    await act(async () => { buttonByExactText(container, 'Delete').click(); });
+    await flush();
+    await act(async () => { cancelButton(container).click(); });
+    await flush();
+
+    expect(apiMock.deleteLobby).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('Ended (1)');
+
+    await act(async () => root.unmount());
+  });
+
+  it('clears every ended lobby in one go', async () => {
+    apiMock.listMyLobbies.mockResolvedValue([
+      { ...QUIZ_LOBBY, status: 'closed', expired: false, isEnded: true, target: { kind: 'quiz', roomCode: 'ROOM123' } },
+      { ...QUIZ_LOBBY, code: '111222', status: 'closed', expired: false, isEnded: true, target: { kind: 'quiz', roomCode: 'ROOM456' } },
+    ]);
+    apiMock.deleteEndedLobbies.mockResolvedValue({ ok: true, deleted: 2 });
+
+    const { container, root } = await mount(
+      createElement(LobbyView, { onEnterQuiz: vi.fn(), onEnterStudy: vi.fn(), addToast }),
+    );
+
+    await act(async () => { buttonByText(container, 'Show').click(); });
+    await flush();
+
+    await act(async () => { buttonByExactText(container, 'Delete all ended').click(); });
+    await flush();
+    await act(async () => { confirmButton(container).click(); });
+    await flush();
+
+    expect(apiMock.deleteEndedLobbies).toHaveBeenCalled();
+    expect(container.textContent).not.toContain('Ended (2)');
+
+    await act(async () => root.unmount());
+  });
+
+  it('offers to reopen a study group that closed on its own', async () => {
+    apiMock.listMyLobbies.mockResolvedValue([
+      {
+        ...QUIZ_LOBBY,
+        kind: 'study',
+        title: 'Study group',
+        status: 'closed',
+        expired: false,
+        isEnded: true,
+        target: { kind: 'study', roomUrl: null, voiceRoomId: null },
+      },
+    ]);
+
+    const { container, root } = await mount(
+      createElement(LobbyView, { onEnterQuiz: vi.fn(), onEnterStudy: vi.fn(), addToast }),
+    );
+
+    await act(async () => { buttonByText(container, 'Show').click(); });
+    await flush();
+
+    expect(container.textContent).toContain('Reopen');
+    await act(async () => { buttonByText(container, 'Reopen').click(); });
+    await flush();
+
+    expect(apiMock.reopenLobby).toHaveBeenCalledWith(CODE);
+
+    await act(async () => root.unmount());
+  });
+
+  it('does not offer to reopen a lobby that fronts a finished session', async () => {
+    apiMock.listMyLobbies.mockResolvedValue([
+      { ...QUIZ_LOBBY, status: 'closed', expired: false, isEnded: true, target: { kind: 'quiz', roomCode: 'ROOM123' } },
+    ]);
+
+    const { container, root } = await mount(
+      createElement(LobbyView, { onEnterQuiz: vi.fn(), onEnterStudy: vi.fn(), addToast }),
+    );
+
+    await act(async () => { buttonByText(container, 'Show').click(); });
+    await flush();
+
+    expect(
+      Array.from(container.querySelectorAll('button'))
+        .some(b => (b.textContent ?? '').includes('Reopen')),
     ).toBe(false);
 
     await act(async () => root.unmount());

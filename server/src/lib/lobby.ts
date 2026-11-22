@@ -77,7 +77,9 @@ export async function createLobbyForSession(params: {
           targetUrl: params.targetUrl ?? null,
           maxParticipants: params.maxParticipants ?? 6,
           status: 'open',
+          createdAt: new Date(),
           expiresAt: new Date(Date.now() + LOBBY_TTL_MS),
+          lastActivityAt: new Date(),
         },
       });
     } catch (err: any) {
@@ -105,6 +107,28 @@ export const PARTICIPANT_STALE_MS = 90_000;
 
 /** How long a lobby stays open with nobody in it before the sweep closes it. */
 export const LOBBY_EMPTY_CLOSE_MS = 2 * 60_000;
+
+/**
+ * How long a material-only study group survives without anybody using it.
+ *
+ * A group that exists only to hold files has no roster to go by — nobody
+ * "joins" it and nobody heartbeats it — so the empty-room rule would close it
+ * minutes after it was made. Instead it lives on real activity: the host
+ * opening it, somebody reading the files, a file being added. Two idle hours
+ * is long enough for a study session with a break in the middle, and short
+ * enough that a forgotten group does not sit in the list for days.
+ */
+export const MATERIAL_LOBBY_IDLE_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * How often a lobby's activity stamp is written.
+ *
+ * Clients poll often — the file panel alone polls every ten seconds — so the
+ * stamp is only written when it has actually gone stale. A minute of
+ * granularity is plenty for a two-hour idle window and keeps the write off
+ * the hot path.
+ */
+const ACTIVITY_WRITE_THROTTLE_MS = 60_000;
 
 function staleCutoff(): Date {
   return new Date(Date.now() - PARTICIPANT_STALE_MS);
@@ -227,6 +251,85 @@ export async function touchPresence(lobbyId: string, userId: string): Promise<vo
   }
 }
 
+/**
+ * Note that this lobby was just used.
+ *
+ * Lobbies that front a live session are kept alive by their roster. A study
+ * group that exists only to hold material has no roster — nobody joins it,
+ * nobody heartbeats it — so activity is the only honest signal that the group
+ * is still in use. Opening the lobby, reading its files or adding to them all
+ * count.
+ */
+export async function touchLobbyActivity(lobbyId: string): Promise<void> {
+  try {
+    await prisma.lobby.updateMany({
+      where: {
+        id: lobbyId,
+        // Only write when the stamp has actually gone stale — clients poll
+        // far more often than this.
+        lastActivityAt: { lt: new Date(Date.now() - ACTIVITY_WRITE_THROTTLE_MS) },
+      },
+      data: { lastActivityAt: new Date() },
+    });
+  } catch {
+    // Activity bookkeeping must never break the read it rides on.
+  }
+}
+
+/**
+ * Delete a lobby for good — the row, its roster and its shared files.
+ *
+ * Closing a lobby only stops people arriving; the row survives so the history
+ * and the material do. Deleting is the other thing: when a group is finished
+ * with, the host asks for it to be gone entirely. Host-only, because deleting
+ * a group's material is not something a guest should be able to do.
+ */
+export async function deleteLobby(
+  lobbyId: string,
+  byUserId: string,
+): Promise<{ ok: boolean; reason?: 'not-found' | 'not-host' }> {
+  const lobby = await prisma.lobby.findUnique({
+    where: { id: lobbyId },
+    select: { id: true, hostId: true },
+  });
+  if (!lobby) return { ok: false, reason: 'not-found' };
+  if (lobby.hostId !== byUserId) return { ok: false, reason: 'not-host' };
+
+  // The roster and the shared files cascade with the lobby.
+  await prisma.lobby.delete({ where: { id: lobby.id } });
+  return { ok: true };
+}
+
+/**
+ * Bring a study group back after it closed on its own.
+ *
+ * Only a group that exists purely to hold material can be reopened: a lobby
+ * that fronts a session has nothing to go back to, because the session it
+ * pointed at is gone.
+ */
+export async function reopenLobby(
+  lobbyId: string,
+  byUserId: string,
+): Promise<{ ok: boolean; reason?: 'not-found' | 'not-host' | 'not-reopenable' }> {
+  const lobby = await prisma.lobby.findUnique({
+    where: { id: lobbyId },
+    select: { id: true, hostId: true, targetCode: true },
+  });
+  if (!lobby) return { ok: false, reason: 'not-found' };
+  if (lobby.hostId !== byUserId) return { ok: false, reason: 'not-host' };
+  if (lobby.targetCode) return { ok: false, reason: 'not-reopenable' };
+
+  await prisma.lobby.update({
+    where: { id: lobby.id },
+    data: {
+      status: 'open',
+      lastActivityAt: new Date(),
+      expiresAt: new Date(Date.now() + LOBBY_TTL_MS),
+    },
+  });
+  return { ok: true };
+}
+
 // ── Sweep ─────────────────────────────────────────────────────────────────────
 // Lobbies are closed lazily: whenever somebody looks at a lobby (resolving a
 // code, listing their own), stale ones are swept. No cron needed — a lobby
@@ -241,18 +344,26 @@ let lastSweepAt = 0;
  *   • quiz lobbies whose game room has finished — the game is over, there
  *     is nothing left for the lobby to front;
  *   • study lobbies that have been empty for two minutes — the grace
- *     period covers a refresh or a dropped connection, not a departure.
+ *     period covers a refresh or a dropped connection, not a departure;
+ *   • material-only study groups that have gone unused for two hours —
+ *     they have no roster, so activity is the only honest measure.
  */
 export async function sweepLobbies(opts: { force?: boolean } = {}): Promise<void> {
   const now = Date.now();
   if (!opts.force && now - lastSweepAt < SWEEP_THROTTLE_MS) return;
   lastSweepAt = now;
 
-  let lobbies: Array<{ id: string; kind: string; targetCode: string | null; createdAt: Date; expiresAt: Date | null }>;
+  let lobbies: Array<{
+    id: string; kind: string; targetCode: string | null;
+    createdAt: Date; expiresAt: Date | null; lastActivityAt: Date | null;
+  }>;
   try {
     lobbies = await prisma.lobby.findMany({
       where: { status: { in: ['open', 'live'] } },
-      select: { id: true, kind: true, targetCode: true, createdAt: true, expiresAt: true },
+      select: {
+        id: true, kind: true, targetCode: true,
+        createdAt: true, expiresAt: true, lastActivityAt: true,
+      },
       take: 200,
       orderBy: { createdAt: 'asc' },
     });
@@ -291,8 +402,16 @@ export async function sweepLobbies(opts: { force?: boolean } = {}): Promise<void
       // A study lobby with no session behind it is a material-only group —
       // a shelf the group shares files on. Nobody "joins" it and nobody
       // heartbeats, so the empty-room rule would close it two minutes after
-      // it was created. It lives until its TTL instead.
-      if (!lobby.targetCode) continue;
+      // it was created. It lives on real activity instead: while somebody is
+      // opening it, reading the files or adding to them it is in use, and
+      // once it has gone idle for long enough it closes.
+      if (!lobby.targetCode) {
+        const lastUsed = lobby.lastActivityAt ?? lobby.createdAt;
+        if (now - lastUsed.getTime() >= MATERIAL_LOBBY_IDLE_MS) {
+          await prisma.lobby.update({ where: { id: lobby.id }, data: { status: 'closed' } });
+        }
+        continue;
+      }
 
       const visits = await prisma.lobbyParticipant.findMany({
         where: { lobbyId: lobby.id },

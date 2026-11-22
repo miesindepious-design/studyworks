@@ -27,9 +27,21 @@ interface Props {
   onClose?: () => void;
   /** Disables the Close button while the request is in flight. */
   closing?: boolean;
+  /**
+   * When present, the card grows a Delete button — shown to the host only.
+   *
+   * Close stops people arriving; delete removes the lobby, its roster and
+   * its shared files for good. A closed lobby still needs to be deletable,
+   * or it sits in the host's list forever with nothing to do about it.
+   */
+  onDelete?: () => void;
+  /** Disables the Delete button while the request is in flight. */
+  deleting?: boolean;
 }
 
-export default function LobbyShare({ code, label, hint, compact, onClose, closing }: Props) {
+export default function LobbyShare({
+  code, label, hint, compact, onClose, closing, onDelete, deleting,
+}: Props) {
   const [copied, setCopied] = useState<'code' | 'link' | null>(null);
 
   const link = lobbyShareUrl(code);
@@ -134,9 +146,10 @@ export default function LobbyShare({ code, label, hint, compact, onClose, closin
         </div>
       )}
 
-      {/* Host-only escape hatch: closing kills the code, the link and the QR
-          in one move, so nobody new can arrive after the session is over. */}
-      {onClose && (
+      {/* Host-only escape hatches: closing kills the code, the link and the
+          QR in one move, so nobody new can arrive after the session is over.
+          Deleting goes further and removes the lobby altogether. */}
+      {(onClose || onDelete) && (
         <div
           style={{
             marginTop: compact ? '0.75rem' : '1rem',
@@ -144,11 +157,24 @@ export default function LobbyShare({ code, label, hint, compact, onClose, closin
             borderTop: '1px solid rgba(128, 128, 128, 0.2)',
             display: 'flex',
             justifyContent: 'flex-end',
+            gap: '0.5rem',
           }}
         >
-          <button className="btn btn-outline btn-sm" onClick={onClose} disabled={closing}>
-            {closing ? 'Closing…' : '✕ Close lobby'}
-          </button>
+          {onClose && (
+            <button className="btn btn-outline btn-sm" onClick={onClose} disabled={closing}>
+              {closing ? 'Closing…' : '✕ Close lobby'}
+            </button>
+          )}
+          {onDelete && (
+            <button
+              className="btn btn-outline btn-sm"
+              onClick={onDelete}
+              disabled={deleting}
+              style={{ color: 'var(--danger)' }}
+            >
+              {deleting ? 'Deleting…' : '🗑 Delete'}
+            </button>
+          )}
         </div>
       )}
     </div>

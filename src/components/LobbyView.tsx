@@ -1,8 +1,42 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { getLobby, listMyLobbies, joinLobby, closeLobby, createLobby, type LobbyDetail, type MyLobby } from '../api/lobby';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  getLobby, listMyLobbies, joinLobby, closeLobby, createLobby,
+  deleteLobby, deleteEndedLobbies, reopenLobby,
+  type LobbyDetail, type MyLobby,
+} from '../api/lobby';
 import type { RoomFileInfo } from '../api/roomFiles';
+import { useConfirm } from '../hooks/useConfirm';
+import ConfirmModal from './ConfirmModal';
 import LobbyShare from './LobbyShare';
 import RoomFilesPanel from './RoomFilesPanel';
+
+/**
+ * Has this lobby finished?
+ *
+ * The server says so directly now, but a lobby that was closed or has aged
+ * out has always been recognisable from its own status — so fall back to
+ * that rather than trusting the client to have the newest server.
+ */
+function hasEnded(l: MyLobby): boolean {
+  return l.isEnded ?? (l.status === 'closed' || l.expired);
+}
+
+/**
+ * How long ago something happened, in words.
+ *
+ * "Ended 4 days ago" tells the host more than a date does — the point of
+ * the ended list is to let them judge at a glance whether a lobby is still
+ * worth keeping.
+ */
+function ago(iso: string): string {
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+}
 
 /**
  * LobbyView — the front door to every live session.
@@ -47,16 +81,38 @@ export default function LobbyView({
   const [showMine, setShowMine] = useState(false);
   /** The lobby currently being closed, so its button can show progress. */
   const [closingCode, setClosingCode] = useState<string | null>(null);
+  /** The lobby currently being deleted, so its button can show progress. */
+  const [deletingCode, setDeletingCode] = useState<string | null>(null);
+  /** The lobby currently being reopened, so its button can show progress. */
+  const [reopeningCode, setReopeningCode] = useState<string | null>(null);
+  /** True while every ended lobby is being cleared in one go. */
+  const [clearingEnded, setClearingEnded] = useState(false);
   /** The name of the study group being created. */
   const [groupName, setGroupName] = useState('');
   const [creatingGroup, setCreatingGroup] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { confirm, ConfirmDialog } = useConfirm();
 
   const refreshMine = useCallback(() => {
     listMyLobbies().then(setMyLobbies).catch(() => {});
   }, []);
 
   useEffect(() => { refreshMine(); }, [refreshMine]);
+
+  // Live lobbies are the ones people still use; ended ones are kept out of
+  // the way until the host asks to see them. A host with a screenful of dead
+  // rooms should open this card and find the live ones, not a graveyard.
+  const { activeLobbies, endedLobbies } = useMemo(() => {
+    const active = myLobbies.filter(l => !hasEnded(l));
+    const ended = myLobbies.filter(hasEnded);
+    return { activeLobbies: active, endedLobbies: ended };
+  }, [myLobbies]);
+
+  // A group that exists only to hold material can be brought back after it
+  // closed itself for sitting idle. A lobby that fronts a finished session
+  // cannot — there is nothing behind it any more.
+  const canReopen = (l: MyLobby) =>
+    l.kind === 'study' && !l.target.voiceRoomId && !l.target.roomUrl;
 
   // ── Close one of my lobbies ────────────────────────────────────────────────
   // Host-only. Closing kills the code, the link and the QR in one move —
@@ -67,13 +123,85 @@ export default function LobbyView({
     try {
       await closeLobby(code);
       addToast(`Lobby ${code} closed — the code no longer works.`, 'success');
-      setMyLobbies(prev => prev.map(l => (l.code === code ? { ...l, status: 'closed' as const } : l)));
+      setMyLobbies(prev => prev.map(l => (l.code === code ? { ...l, status: 'closed' as const, isEnded: true } : l)));
     } catch (err: any) {
       addToast(err?.message || 'Could not close that lobby.', 'error');
     } finally {
       setClosingCode(null);
     }
   }, [closingCode, addToast]);
+
+  // ── Delete one of my lobbies ──────────────────────────────────────────────
+  // The real removal: the lobby, its roster and anything shared on it. It
+  // works on a closed lobby too — a lobby that has ended but cannot be
+  // deleted is exactly the kind of dead weight that piles up.
+  const deleteMine = useCallback(async (lobby: MyLobby) => {
+    const ok = await confirm({
+      title: `Delete "${lobby.title}"?`,
+      description:
+        'This removes the lobby for good, along with anything shared on it. It cannot be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
+
+    setDeletingCode(lobby.code);
+    try {
+      await deleteLobby(lobby.code);
+      setMyLobbies(prev => prev.filter(l => l.code !== lobby.code));
+      addToast(`Lobby ${lobby.code} deleted.`, 'success');
+    } catch (err: any) {
+      addToast(err?.message || 'Could not delete that lobby.', 'error');
+    } finally {
+      setDeletingCode(null);
+    }
+  }, [confirm, addToast]);
+
+  // ── Clear every ended lobby ───────────────────────────────────────────────
+  // For the host who has a screenful of dead rooms and no interest in going
+  // through them one at a time.
+  const clearEnded = useCallback(async () => {
+    if (clearingEnded) return;
+    const ok = await confirm({
+      title: 'Delete all ended lobbies?',
+      description:
+        'Every lobby of yours that has already ended — along with anything shared on them — will be removed. This cannot be undone.',
+      confirmLabel: 'Delete them all',
+      danger: true,
+    });
+    if (!ok) return;
+
+    setClearingEnded(true);
+    try {
+      const { deleted } = await deleteEndedLobbies();
+      setMyLobbies(prev => prev.filter(l => !hasEnded(l)));
+      addToast(
+        deleted > 0
+          ? `Deleted ${deleted} ended lobby${deleted === 1 ? '' : 's'}.`
+          : 'No ended lobbies to delete.',
+        'success',
+      );
+    } catch (err: any) {
+      addToast(err?.message || 'Could not clear your ended lobbies.', 'error');
+    } finally {
+      setClearingEnded(false);
+    }
+  }, [clearingEnded, confirm, addToast]);
+
+  // ── Bring a study group back ──────────────────────────────────────────────
+  const reopenMine = useCallback(async (lobby: MyLobby) => {
+    if (reopeningCode) return;
+    setReopeningCode(lobby.code);
+    try {
+      await reopenLobby(lobby.code);
+      addToast(`"${lobby.title}" is open again.`, 'success');
+      refreshMine();
+    } catch (err: any) {
+      addToast(err?.message || 'Could not reopen that group.', 'error');
+    } finally {
+      setReopeningCode(null);
+    }
+  }, [reopeningCode, addToast, refreshMine]);
 
   // Resolve a code that arrived from outside (deep link, QR scan, paste).
   const resolve = useCallback(async (raw: string) => {
@@ -317,9 +445,9 @@ export default function LobbyView({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
           <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>
             Your lobbies
-            {myLobbies.length > 0 && (
+            {activeLobbies.length > 0 && (
               <span className="text-muted" style={{ fontWeight: 400, fontSize: '0.8125rem', marginLeft: '0.4rem' }}>
-                ({myLobbies.length})
+                ({activeLobbies.length} live)
               </span>
             )}
           </h3>
@@ -336,27 +464,107 @@ export default function LobbyView({
             </p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {myLobbies.map(l => (
+              {/* ── Live lobbies ──────────────────────────────────────────
+                  The ones people can still join. Each gets the share code
+                  and a Close button, plus a Delete button — closing stops
+                  people arriving, deleting removes it for good. */}
+              {activeLobbies.map(l => (
                 <LobbyShare
                   key={l.code}
                   code={l.code}
                   label={`${l.kind === 'quiz' ? '🏆' : '🎓'} ${l.title}`}
-                  hint={
-                    l.expired
-                      ? 'Expired — this lobby is no longer joinable'
-                      : l.status === 'closed'
-                        ? 'This session has ended'
-                        : 'Share this code, link, or QR with the people you want to invite'
-                  }
+                  hint="Share this code, link, or QR with the people you want to invite"
                   compact
-                  onClose={l.status !== 'closed' && !l.expired ? () => closeMine(l.code) : undefined}
+                  onClose={() => closeMine(l.code)}
                   closing={closingCode === l.code}
+                  onDelete={() => deleteMine(l)}
+                  deleting={deletingCode === l.code}
                 />
               ))}
+
+              {activeLobbies.length === 0 && (
+                <p className="text-sm text-muted" style={{ margin: 0 }}>
+                  No live lobbies right now. Everything you have hosted has ended.
+                </p>
+              )}
+
+              {/* ── Ended lobbies ────────────────────────────────────────
+                  Kept out of the way until the host asks for them, but never
+                  unreachable: each one can be deleted, and a study group
+                  that closed itself for sitting idle can be reopened. */}
+              {endedLobbies.length > 0 && (
+                <div
+                  style={{
+                    marginTop: '0.5rem',
+                    paddingTop: '0.85rem',
+                    borderTop: '1px solid rgba(128, 128, 128, 0.2)',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
+                    <span className="text-muted" style={{ fontSize: '0.8125rem' }}>
+                      Ended ({endedLobbies.length})
+                    </span>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={clearEnded}
+                      disabled={clearingEnded}
+                    >
+                      {clearingEnded ? 'Clearing…' : 'Delete all ended'}
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                    {endedLobbies.map(l => (
+                      <div
+                        key={l.code}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '0.75rem',
+                          padding: '0.6rem 0.75rem',
+                          borderRadius: 'var(--sw-r, 12px)',
+                          background: 'rgba(128, 128, 128, 0.07)',
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: '0.875rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {l.kind === 'quiz' ? '🏆' : '🎓'} {l.title}
+                          </div>
+                          <div className="text-xs text-muted">
+                            {l.code} · ended {ago(l.createdAt)}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+                          {canReopen(l) && (
+                            <button
+                              className="btn btn-outline btn-sm"
+                              onClick={() => reopenMine(l)}
+                              disabled={reopeningCode === l.code}
+                            >
+                              {reopeningCode === l.code ? 'Reopening…' : 'Reopen'}
+                            </button>
+                          )}
+                          <button
+                            className="btn btn-outline btn-sm"
+                            onClick={() => deleteMine(l)}
+                            disabled={deletingCode === l.code}
+                            style={{ color: 'var(--danger)' }}
+                          >
+                            {deletingCode === l.code ? 'Deleting…' : 'Delete'}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )
         )}
       </div>
+
+      {ConfirmDialog && <ConfirmModal {...ConfirmDialog} />}
     </div>
   );
 }

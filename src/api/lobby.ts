@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from './client';
+import { apiGet, apiPost, apiDelete } from './client';
 
 /**
  * A lobby is the shareable front door to a live session. It owns a
@@ -48,6 +48,15 @@ export interface LobbyDetail extends LobbySummary {
 
 export interface MyLobby extends LobbySummary {
   expired: boolean;
+  /**
+   * True when the lobby can no longer be joined — the host closed it, the
+   * session behind it finished, or it aged out. Ended lobbies are kept out
+   * of the way until the host asks to see them.
+   *
+   * Optional because the server may be a version that predates the field;
+   * the client falls back to reading the status and the expiry itself.
+   */
+  isEnded?: boolean;
   target: LobbyTarget;
 }
 
@@ -89,6 +98,36 @@ export function leaveLobby(code: string) {
 /** Close a lobby for good. Host-only: the code, link and QR all stop working. */
 export function closeLobby(code: string) {
   return apiPost<{ ok: true }>(`/api/lobby/${encodeURIComponent(code)}/close`, {});
+}
+
+/**
+ * Delete a lobby for good. Host-only.
+ *
+ * Closing only stops people arriving — the lobby stays in the host's list.
+ * This removes it entirely: the lobby, its roster and the files shared on it.
+ */
+export function deleteLobby(code: string) {
+  return apiDelete<{ ok: true }>(`/api/lobby/${encodeURIComponent(code)}`);
+}
+
+/**
+ * Delete every lobby of mine that has already ended, in one go.
+ *
+ * For the host with a screenful of dead rooms and no interest in going
+ * through them one at a time.
+ */
+export function deleteEndedLobbies() {
+  return apiDelete<{ ok: true; deleted: number }>('/api/lobby/mine');
+}
+
+/**
+ * Bring a study group back after it closed itself for sitting idle.
+ *
+ * Only a group that exists purely to hold material can be reopened — a lobby
+ * that fronts a finished session has nothing to go back to.
+ */
+export function reopenLobby(code: string) {
+  return apiPost<{ ok: true }>(`/api/lobby/${encodeURIComponent(code)}/reopen`, {});
 }
 
 /**

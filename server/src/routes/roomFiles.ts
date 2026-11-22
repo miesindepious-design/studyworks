@@ -22,7 +22,7 @@ import { zValidator } from '@hono/zod-validator';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../lib/session.js';
 import { rateLimit } from '../lib/rateLimit.js';
-import { isLobbyExpired, normalizeLobbyCode } from '../lib/lobby.js';
+import { isLobbyExpired, normalizeLobbyCode, touchLobbyActivity } from '../lib/lobby.js';
 import { isEnabled, presignPut } from '../lib/storage.js';
 
 export const roomFilesRouter = new Hono();
@@ -89,6 +89,10 @@ function toFileInfo(f: {
 roomFilesRouter.get('/:code/files', async c => {
   const found = await findLobby(c.req.param('code') ?? '');
   if ('error' in found) return c.json({ error: found.error }, found.status);
+
+  // Reading the shelf is the group being used — this is what keeps a
+  // material-only group alive while somebody works in it.
+  await touchLobbyActivity(found.lobby.id);
 
   const files = await prisma.roomFile.findMany({
     where: { lobbyId: found.lobby.id },
@@ -196,6 +200,8 @@ roomFilesRouter.post('/:code/files', zValidator('json', z.object({
     },
     include: { uploader: { select: { name: true } } },
   });
+
+  await touchLobbyActivity(found.lobby.id);
 
   return c.json(toFileInfo(file), 201);
 });

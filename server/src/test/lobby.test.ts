@@ -390,6 +390,127 @@ describe('Lobby — closing a lobby', () => {
   });
 });
 
+describe('Lobby — deleting a lobby', () => {
+  beforeEach(async () => {
+    await login();
+    prismaMock.lobby.delete.mockReset();
+    prismaMock.lobby.deleteMany.mockReset();
+  });
+
+  it('lets the host delete the lobby for good', async () => {
+    const { request } = await login();
+    prismaMock.lobby.findUnique.mockResolvedValue(studyLobby() as any);
+    prismaMock.lobby.delete.mockResolvedValue({} as any);
+
+    const res = await request('/api/lobby/482913', { method: 'DELETE' });
+    expect(res.status).toBe(200);
+    expect(prismaMock.lobby.delete).toHaveBeenCalledWith({ where: { id: 'lobby-1' } });
+  });
+
+  it('deletes a lobby that is already closed — that is the whole point', async () => {
+    const { request } = await login();
+    prismaMock.lobby.findUnique.mockResolvedValue(studyLobby({ status: 'closed' }) as any);
+    prismaMock.lobby.delete.mockResolvedValue({} as any);
+
+    const res = await request('/api/lobby/482913', { method: 'DELETE' });
+    expect(res.status).toBe(200);
+    expect(prismaMock.lobby.delete).toHaveBeenCalled();
+  });
+
+  it('refuses to let anybody but the host delete it', async () => {
+    const { request } = await login();
+    prismaMock.lobby.findUnique.mockResolvedValue(studyLobby({ hostId: 'u2' }) as any);
+
+    const res = await request('/api/lobby/482913', { method: 'DELETE' });
+    expect(res.status).toBe(403);
+    expect(prismaMock.lobby.delete).not.toHaveBeenCalled();
+  });
+
+  it('404s for an unknown code', async () => {
+    const { request } = await login();
+    prismaMock.lobby.findUnique.mockResolvedValue(null as any);
+
+    const res = await request('/api/lobby/000000', { method: 'DELETE' });
+    expect(res.status).toBe(404);
+    expect(prismaMock.lobby.delete).not.toHaveBeenCalled();
+  });
+
+  it('rejects a code that is not six digits', async () => {
+    const { request } = await login();
+    const res = await request('/api/lobby/123', { method: 'DELETE' });
+    expect(res.status).toBe(400);
+    expect(prismaMock.lobby.delete).not.toHaveBeenCalled();
+  });
+
+  it('clears every ended lobby of mine in one go', async () => {
+    const { request } = await login();
+    prismaMock.lobby.deleteMany.mockResolvedValue({ count: 7 } as any);
+
+    const res = await request('/api/lobby/mine', { method: 'DELETE' });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.deleted).toBe(7);
+    // Only my own ended lobbies — never a live one, never somebody else's.
+    const where = prismaMock.lobby.deleteMany.mock.calls[0][0].where;
+    expect(where.hostId).toBe('u1');
+    expect(where.OR).toEqual([
+      { status: 'closed' },
+      { expiresAt: { lt: expect.any(Date) } },
+    ]);
+  });
+});
+
+describe('Lobby — reopening a study group', () => {
+  beforeEach(async () => {
+    await login();
+  });
+
+  /** A group that exists only to hold material — no session behind it. */
+  function materialGroup(overrides: Record<string, unknown> = {}) {
+    return lobby({
+      kind: 'study',
+      title: 'Study group',
+      targetCode: null,
+      targetUrl: null,
+      ...overrides,
+    });
+  }
+
+  it('brings a closed material group back to life', async () => {
+    const { request } = await login();
+    prismaMock.lobby.findUnique.mockResolvedValue(materialGroup({ status: 'closed' }) as any);
+
+    const res = await request('/api/lobby/482913/reopen', { method: 'POST' });
+    expect(res.status).toBe(200);
+    expect(prismaMock.lobby.update).toHaveBeenCalledWith({
+      where: { id: 'lobby-1' },
+      data: {
+        status: 'open',
+        lastActivityAt: expect.any(Date),
+        expiresAt: expect.any(Date),
+      },
+    });
+  });
+
+  it('refuses to reopen a lobby that fronts a finished session', async () => {
+    const { request } = await login();
+    prismaMock.lobby.findUnique.mockResolvedValue(lobby({ status: 'closed' }) as any);
+
+    const res = await request('/api/lobby/482913/reopen', { method: 'POST' });
+    expect(res.status).toBe(410);
+    expect(prismaMock.lobby.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses to let anybody but the host reopen it', async () => {
+    const { request } = await login();
+    prismaMock.lobby.findUnique.mockResolvedValue(materialGroup({ hostId: 'u2' }) as any);
+
+    const res = await request('/api/lobby/482913/reopen', { method: 'POST' });
+    expect(res.status).toBe(403);
+    expect(prismaMock.lobby.update).not.toHaveBeenCalled();
+  });
+});
+
 ; const T = Date.now();
 // The sweep works against the real clock, so these fixtures are relative
 // to Date.now() rather than the fixed NOW the rest of the file uses.
@@ -507,5 +628,72 @@ describe('Lobby — the empty-room sweep', () => {
     await sweepLobbies({ force: true });
 
     expect(prismaMock.lobby.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('Lobby — the idle sweep for material-only groups', () => {
+  beforeEach(async () => {
+    await login();
+    prismaMock.lobby.update.mockReset();
+  });
+
+  /** A group that exists only to hold material — no session behind it. */
+  function materialGroup(overrides: Record<string, unknown> = {}) {
+    return lobby({
+      kind: 'study',
+      title: 'Study group',
+      targetCode: null,
+      targetUrl: null,
+      ...overrides,
+    });
+  }
+
+  it('closes a group nobody has touched for two hours', async () => {
+    prismaMock.lobby.findMany.mockResolvedValue([
+      materialGroup({ lastActivityAt: new Date(T - 3 * 60 * 60_000) }),
+    ] as any);
+
+    await sweepLobbies({ force: true });
+
+    expect(prismaMock.lobby.update).toHaveBeenCalledWith({
+      where: { id: 'lobby-1' },
+      data: { status: 'closed' },
+    });
+  });
+
+  it('leaves a group that was used a moment ago alone', async () => {
+    prismaMock.lobby.findMany.mockResolvedValue([
+      materialGroup({ lastActivityAt: new Date(T - 60_000) }),
+    ] as any);
+
+    await sweepLobbies({ force: true });
+
+    expect(prismaMock.lobby.update).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the creation time when a group has no activity stamp', async () => {
+    prismaMock.lobby.findMany.mockResolvedValue([
+      materialGroup({ lastActivityAt: null, createdAt: new Date(T - 5 * 60 * 60_000) }),
+    ] as any);
+
+    await sweepLobbies({ force: true });
+
+    expect(prismaMock.lobby.update).toHaveBeenCalledWith({
+      where: { id: 'lobby-1' },
+      data: { status: 'closed' },
+    });
+  });
+
+  it('does not use the roster for a group — nobody joins a shelf', async () => {
+    prismaMock.lobby.findMany.mockResolvedValue([
+      materialGroup({ lastActivityAt: new Date(T - 60_000) }),
+    ] as any);
+
+    await sweepLobbies({ force: true });
+
+    // A group that is in use must not be closed just because it has no
+    // participant rows, and it must not be closed twice over either.
+    expect(prismaMock.lobby.update).not.toHaveBeenCalled();
+    expect(prismaMock.lobbyParticipant.findMany).not.toHaveBeenCalled();
   });
 });

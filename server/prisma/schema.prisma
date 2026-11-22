@@ -466,6 +466,10 @@ model Lobby {
   status          String   @default("open") // open | live | closed
   createdAt       DateTime @default(now())
   expiresAt       DateTime?
+  // When this lobby was last actually used. A study group that exists only
+  // to hold material has no roster to go by — nobody "joins" it — so this is
+  // what tells the sweep whether the group is still in use.
+  lastActivityAt  DateTime @default(now())
 
   host         User               @relation(fields: [hostId], references: [id], onDelete: Cascade)
   participants LobbyParticipant[]

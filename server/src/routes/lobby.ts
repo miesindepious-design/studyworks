@@ -22,6 +22,7 @@ import {
   isLobbyExpired, normalizeLobbyCode, createLobbyForSession,
   joinLobbySession, leaveLobbySession, closeLobbySession,
   ensureStudyHost, activeParticipants, touchPresence, sweepLobbies,
+  touchLobbyActivity, deleteLobby, reopenLobby,
 } from '../lib/lobby.js';
 
 export const lobbyRouter = new Hono();
@@ -70,17 +71,47 @@ lobbyRouter.get('/mine', async c => {
   const lobbies = await prisma.lobby.findMany({
     where: { hostId: user.id },
     orderBy: { createdAt: 'desc' },
-    take: 20,
+    // Enough room that a host with a long history can still reach every
+    // lobby they own — including the old ones they want to delete.
+    take: 100,
     include: { host: { select: { name: true } } },
   });
 
   return c.json(lobbies.map(l => ({
     ...toLobbySummary(l),
     expired: isLobbyExpired(l),
+    // "Ended" means it can no longer be joined: the host closed it, the
+    // session behind it finished, or it aged out. The client keeps these
+    // out of the way until the host asks to see them.
+    isEnded: l.status === 'closed' || isLobbyExpired(l),
     target: l.kind === 'quiz'
       ? { kind: 'quiz' as const, roomCode: l.targetCode }
       : { kind: 'study' as const, roomUrl: l.targetUrl, voiceRoomId: l.targetCode },
   })));
+});
+
+// ── Delete every lobby of mine that has ended ────────────────────────────────
+// The bulk version of the delete below, for the host who has a screenful of
+// dead rooms and no interest in going through them one at a time.
+// NOTE: registered before `/:code` — a param route registered first would
+// swallow "/mine" and try to delete a lobby with the code "mine".
+lobbyRouter.delete('/mine', async c => {
+  const user = c.get('user');
+
+  // Anything past its TTL is ended too, whether or not the sweep has got to
+  // it yet — the host asked for these to go, so go by the real rule.
+  const now = new Date();
+  const { count } = await prisma.lobby.deleteMany({
+    where: {
+      hostId: user.id,
+      OR: [
+        { status: 'closed' },
+        { expiresAt: { lt: now } },
+      ],
+    },
+  });
+
+  return c.json({ ok: true as const, deleted: count });
 });
 
 // ── Resolve a lobby code ──────────────────────────────────────────────────────
@@ -152,6 +183,10 @@ lobbyRouter.get('/:code', async c => {
     }));
   }
 
+  // Somebody looking at the lobby is the lobby being used. This is what
+  // keeps a material-only group alive while its host works in it.
+  await touchLobbyActivity(lobby.id);
+
   // The displayed host follows whoever hosts right now — a promoted
   // participant hosts the session from here on, not the original creator.
   let hostName = lobby.host?.name ?? null;
@@ -219,6 +254,8 @@ lobbyRouter.post('/:code/join', async c => {
     joinedAt: p.joinedAt.toISOString(),
   }));
 
+  await touchLobbyActivity(lobby.id);
+
   return c.json({ ok: true as const, hostUserId, participants });
 });
 
@@ -262,6 +299,64 @@ lobbyRouter.post('/:code/close', async c => {
   if (!result.ok) {
     if (result.reason === 'not-host') {
       return c.json({ error: 'Only the host can close this lobby.' }, 403);
+    }
+    return c.json({ error: 'No lobby found with that code.' }, 404);
+  }
+  return c.json({ ok: true as const });
+});
+
+// ── Delete a lobby ───────────────────────────────────────────────────────────
+// Host-only, and this is the one that actually removes things: the lobby row,
+// its roster and the shared files that went with it. Closing only stops
+// people arriving — a closed lobby still sits in the host's list, which is
+// exactly how a screenful of dead rooms builds up.
+lobbyRouter.delete('/:code', async c => {
+  const user = c.get('user');
+
+  const code = normalizeLobbyCode(c.req.param('code') ?? '');
+  if (!code) {
+    return c.json({ error: 'Lobby codes are six digits.' }, 400);
+  }
+
+  const lobby = await prisma.lobby.findUnique({ where: { code } });
+  if (!lobby) {
+    return c.json({ error: 'No lobby found with that code.' }, 404);
+  }
+
+  const result = await deleteLobby(lobby.id, user.id);
+  if (!result.ok) {
+    if (result.reason === 'not-host') {
+      return c.json({ error: 'Only the host can delete this lobby.' }, 403);
+    }
+    return c.json({ error: 'No lobby found with that code.' }, 404);
+  }
+  return c.json({ ok: true as const });
+});
+
+// ── Reopen a study group ─────────────────────────────────────────────────────
+// A group that closed itself after sitting idle can be brought back, along
+// with the material on it. A lobby that fronts a finished session cannot —
+// there is nothing behind it any more.
+lobbyRouter.post('/:code/reopen', async c => {
+  const user = c.get('user');
+
+  const code = normalizeLobbyCode(c.req.param('code') ?? '');
+  if (!code) {
+    return c.json({ error: 'Lobby codes are six digits.' }, 400);
+  }
+
+  const lobby = await prisma.lobby.findUnique({ where: { code } });
+  if (!lobby) {
+    return c.json({ error: 'No lobby found with that code.' }, 404);
+  }
+
+  const result = await reopenLobby(lobby.id, user.id);
+  if (!result.ok) {
+    if (result.reason === 'not-host') {
+      return c.json({ error: 'Only the host can reopen this lobby.' }, 403);
+    }
+    if (result.reason === 'not-reopenable') {
+      return c.json({ error: 'This session has ended — it cannot be reopened.' }, 410);
     }
     return c.json({ error: 'No lobby found with that code.' }, 404);
   }
