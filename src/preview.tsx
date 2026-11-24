@@ -32,6 +32,7 @@ import Onboarding from './components/Onboarding';
 import type { Note, Contact, Flashcard, Folder, PracticeQuestion, SavedSearch, StudyDocument } from './types';
 import type { UseAIResult } from './hooks/useAI';
 import { PAGE_TITLES } from './config/nav';
+import StudyPlanView from './components/StudyPlanView';
 
 const param = new URLSearchParams(location.search);
 const VIEW: string = param.get('view') ?? 'dashboard';
@@ -293,6 +294,16 @@ if (typeof window !== 'undefined') {
 const now = Date.now();
 const day = 86400000;
 
+/**
+ * YYYY-MM-DD for a point in time, in local time — the format review history
+ * uses. `now` in this file is a timestamp rather than a Date, so this takes
+ * either.
+ */
+const dayKey = (value: number | Date) => {
+  const d = value instanceof Date ? value : new Date(value);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 const folders: Folder[] = [
   { id: 'f1', name: 'Cognitive psychology', createdAt: new Date(now - 40 * day) },
   { id: 'f2', name: 'Linear algebra', createdAt: new Date(now - 30 * day) },
@@ -359,7 +370,15 @@ const notes: Note[] = Array.from({ length: 14 }, (_, i) => ({
   createdAt: new Date(now - (i + 1) * day),
   updatedAt: new Date(now - i * day),
   folderId: folders[i % 3].id,
+  // The first note carries highlights so the "Make cards" button can be
+  // exercised in the preview.
+  highlights: i === 0 ? [
+    { id: 'hl1', text: 'Working memory holds roughly four chunks at any one moment.', color: '#fde68a', createdAt: new Date(now - day) },
+    { id: 'hl2', text: 'Chunking is the strategy of grouping individual items into larger units.', color: '#bbf7d0', createdAt: new Date(now - day) },
+  ] : [],
 }));
+
+const TOPICS = ['Cognitive psychology', 'Statistics', 'Neuroscience'];
 
 const flashcards: Flashcard[] = Array.from({ length: 26 }, (_, i) => ({
   id: `c${i}`,
@@ -369,7 +388,17 @@ const flashcards: Flashcard[] = Array.from({ length: 26 }, (_, i) => ({
   createdAt: new Date(now - (i + 2) * day),
   updatedAt: new Date(now - i * day),
   folderId: folders[i % 3].id,
+  topic: TOPICS[i % 3],
   repetitions: i % 4,
+  // Card 7 keeps failing — it shows up as a "tough card" in the plan.
+  leechCount: i === 7 ? 3 : 0,
+  reviewHistory: i === 7
+    ? [
+        { date: dayKey(now - 6 * day), quality: 0 },
+        { date: dayKey(now - 4 * day), quality: 0 },
+        { date: dayKey(now - 2 * day), quality: 0 },
+      ]
+    : [],
   nextReview: i % 3 === 0 ? new Date(now - day) : new Date(now + 3 * day),
 }));
 
@@ -390,6 +419,10 @@ const practiceQuestions: PracticeQuestion[] = Array.from({ length: 6 }, (_, i) =
   answer: 'Review material at widening intervals to beat the forgetting curve.',
   type: 'open' as const,
   noteId: notes[i].id,
+  topic: TOPICS[i % 3],
+  // One was answered wrong — it belongs in the mistakes book.
+  lastAnsweredCorrect: i === 2 ? false : undefined,
+  nextReview: i % 2 === 0 ? new Date(now - day) : undefined,
   createdAt: new Date(now - (i + 1) * day),
 }));
 
@@ -527,6 +560,15 @@ function Preview() {
           flashcards={cardList} setFlashcards={setCardList}
           practiceQuestions={questions} setPracticeQuestions={setQuestions}
           {...shared}
+        />
+      );
+      case 'plan': return (
+        <StudyPlanView
+          flashcards={cardList}
+          practiceQuestions={questions}
+          notes={noteList}
+          setCurrentView={noop}
+          onStartReview={noop}
         />
       );
       case 'timer': return <StudyTimer />;

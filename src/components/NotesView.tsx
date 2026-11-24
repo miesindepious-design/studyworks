@@ -13,6 +13,7 @@ import { uploadFile, deleteRemoteAttachment } from '../api/attachments';
 import { deleteNote as deleteNoteAPI, bulkDeleteNotes } from '../api/notes';
 import { unfurlUrl } from '../api/phase2';
 import { findRelated, findBacklinks } from '../utils/backlinks';
+import { highlightsToCards, draftsToFlashcards, type HighlightCardMode } from '../utils/highlightsToCards';
 import { useDebounce } from '../hooks/useDebounce';
 import { saveVersion, getVersionsForNote } from '../utils/noteVersions';
 import { noteToMarkdown, noteToPlainText, downloadTextFile, copyToClipboard } from '../utils/exportMarkdown';
@@ -48,6 +49,10 @@ interface NotesViewProps {
   loadStarterPack: () => void;
   documents: StudyDocument[];
   setDocuments: (docs: StudyDocument[]) => void;
+  /** A note picked in the Study Plan — the view expands it when it arrives. */
+  pendingNoteId?: string | null;
+  /** Called once the pending note has been opened. */
+  onPendingNoteHandled?: () => void;
 }
 
 // helper: read current flashcards from the prop before append
@@ -71,7 +76,7 @@ export default function NotesView({
   folders, setFolders, practiceQuestions, setPracticeQuestions,
   incrementQaQueries, qaQueriesThisMonth,
   savedSearches, setSavedSearches, ai, loadStarterPack,
-  documents, setDocuments,
+  documents, setDocuments, pendingNoteId, onPendingNoteHandled,
 }: NotesViewProps) {
   const { award } = useProgression();
   const [title, setTitle] = useState('');
@@ -184,6 +189,18 @@ export default function NotesView({
 
   const updateNote = (noteId: string, patch: Partial<Note>) =>
     setNotes(notes.map(n => n.id === noteId ? { ...n, ...patch, updatedAt: new Date() } : n));
+
+  // ── Study plan hand-off ───────────────────────────────────────────────────
+  // A note picked in the Study Plan is expanded when it arrives, so the
+  // student lands on the note itself rather than the list it came from.
+  useEffect(() => {
+    if (!pendingNoteId) return;
+    const note = notes.find(n => n.id === pendingNoteId);
+    if (!note) return;
+    setExpandedNoteId(pendingNoteId);
+    updateNote(pendingNoteId, { lastRevisited: new Date() });
+    onPendingNoteHandled?.();
+  }, [pendingNoteId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Save a version snapshot if >5 min since last one
   const handleRestoreVersion = async (version: NoteVersion) => {
@@ -451,6 +468,23 @@ export default function NotesView({
     sel.removeAllRanges(); addToast('Highlight saved!', 'success');
   };
   const deleteHighlight = (noteId: string, hId: string) => { const note = notes.find(n => n.id === noteId); if (!note) return; updateNote(noteId, { highlights: (note.highlights || []).filter(h => h.id !== hId) }); };
+
+  // Turn the passages the student highlighted into flashcards. This uses the
+  // highlights themselves — the student has already decided what matters —
+  // rather than the whole note, and it needs no AI key.
+  const [highlightCardMode, setHighlightCardMode] = useState<HighlightCardMode>('cloze');
+  const makeCardsFromHighlights = (note: Note) => {
+    const highlights = note.highlights ?? [];
+    if (highlights.length === 0) { addToast('Highlight something first, then make cards from it.', 'info'); return; }
+    if (tier !== 'pro' && totalItems >= 50) { addToast('50 item limit reached.', 'info'); setCurrentView('pricing'); return; }
+
+    const drafts = highlightsToCards(note.title, highlights, highlightCardMode);
+    if (drafts.length === 0) { addToast('Those highlights are too short to make cards from.', 'info'); return; }
+
+    const newCards = draftsToFlashcards(drafts, note);
+    setFlashcards([...newCards, ...flashcards]);
+    addToast(`${newCards.length} card${newCards.length === 1 ? '' : 's'} made from your highlights!`, 'success');
+  };
 
   const savePersonalNote = (noteId: string) => {
     if (!personalNoteInput.trim()) return;
@@ -1431,6 +1465,28 @@ export default function NotesView({
                       <span className="text-sm text-muted">Color:</span>
                       {HIGHLIGHT_COLORS.map(c => <button key={c} onClick={() => setHighlightColor(c)} style={{ width: '22px', height: '22px', borderRadius: '50%', background: c, border: highlightColor === c ? '2px solid var(--accent)' : '2px solid transparent', cursor: 'pointer' }} />)}
                       <button className="btn btn-secondary btn-xs" onClick={() => addHighlight(note.id)}>+ Highlight Selection</button>
+                      {(note.highlights || []).length > 0 && (
+                        <>
+                          <span style={{ width: '1px', height: '18px', background: 'var(--border)' }} />
+                          <button
+                            className="btn btn-primary btn-xs"
+                            onClick={() => makeCardsFromHighlights(note)}
+                            title="Make flashcards from the passages you highlighted"
+                          >
+                            🃏 Make cards
+                          </button>
+                          <select
+                            className="select"
+                            value={highlightCardMode}
+                            onChange={e => setHighlightCardMode(e.target.value as HighlightCardMode)}
+                            style={{ padding: '0.15rem 0.35rem', fontSize: '0.7rem' }}
+                            aria-label="Highlight card style"
+                          >
+                            <option value="cloze">Cloze (hide a word)</option>
+                            <option value="recall">Recall (hide the passage)</option>
+                          </select>
+                        </>
+                      )}
                     </div>
                     {(note.highlights || []).length > 0
                       ? <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>{note.highlights!.map(h => <div key={h.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: h.color + '50', padding: '0.4rem 0.625rem', borderRadius: 'var(--radius)' }}><span className="text-sm" style={{ flex: 1 }}>"{h.text}"</span><button className="btn btn-ghost btn-xs" onClick={() => deleteHighlight(note.id, h.id)} style={{ color: 'var(--danger)' }}>✕</button></div>)}</div>

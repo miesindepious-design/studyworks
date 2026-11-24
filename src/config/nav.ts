@@ -9,14 +9,14 @@ import type { ComponentType } from 'react';
 import {
   IconDashboard, IconNotes, IconPeople, IconCards, IconTimer,
   IconTutor, IconStudyRoom, IconQuiz, IconLobby, IconPricing, IconSettings,
-  IconTrophy, IconDuel,
+  IconTrophy, IconDuel, IconTarget,
   type IconProps,
 } from '../components/icons';
 
 export type View =
   | 'dashboard' | 'notes' | 'contacts' | 'flashcards' | 'pricing' | 'settings'
   | 'multiplayer' | 'studyRoom' | 'tutor' | 'timer' | 'admin' | 'lobby'
-  | 'leaderboard' | 'duel';
+  | 'leaderboard' | 'duel' | 'plan';
 
 export interface NavItem {
   view: View;
@@ -38,6 +38,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Study',
     items: [
       { view: 'dashboard',   label: 'Dashboard',   icon: IconDashboard },
+      { view: 'plan',        label: 'Study Plan',  icon: IconTarget },
       { view: 'notes',       label: 'Notes',       icon: IconNotes },
       { view: 'contacts',    label: 'People',      icon: IconPeople },
       { view: 'flashcards',  label: 'Flashcards',  icon: IconCards },
@@ -69,6 +70,7 @@ export const NAV_ITEMS: NavItem[] = NAV_GROUPS.flatMap(g => g.items);
 
 export const PAGE_TITLES: Record<View, string> = {
   dashboard:   'Dashboard',
+  plan:        'Study Plan',
   notes:       'Notes & Knowledge Base',
   contacts:    'People & Reminders',
   flashcards:  'Flashcards',

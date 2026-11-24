@@ -8,6 +8,8 @@ import { useProgression } from '../game/ProgressionContext';
 import { isLeech, LEECH_THRESHOLD } from '../game/rules';
 import { renderCloze } from '../utils/cloze';
 import { useStudyGoals } from '../hooks/useStudyGoals';
+import { saveSession, getRecentSessions, computeAggregate } from '../db/flashcardStats';
+import type { SessionStat } from '../types';
 
 type Tier = 'free' | 'pro';
 type StudyMode = 'browse' | 'review' | 'practice-review' | 'intensive';
@@ -23,6 +25,14 @@ interface FlashcardsViewProps {
   setFolders: (folders: Folder[]) => void;
   practiceQuestions: PracticeQuestion[];
   setPracticeQuestions: (questions: PracticeQuestion[]) => void;
+  /**
+   * An item picked in the Study Plan. When set, the view jumps straight into
+   * a review of that specific card or question instead of making the student
+   * find it again.
+   */
+  pendingItem?: { kind: 'card' | 'question'; id: string } | null;
+  /** Called once the pending item has been opened, so the app can clear it. */
+  onPendingItemHandled?: () => void;
 }
 
 // SM-2 lives in `utils/sm2` so the same algorithm drives both flashcards
@@ -50,6 +60,7 @@ const RATE_BTNS = [
 export default function FlashcardsView({
   flashcards, setFlashcards, addToast, tier, setCurrentView,
   totalItems, folders, setFolders, practiceQuestions, setPracticeQuestions,
+  pendingItem, onPendingItemHandled,
 }: FlashcardsViewProps) {
 
   // ── Form state ────────────────────────────────────────────────────────────
@@ -74,6 +85,8 @@ export default function FlashcardsView({
   const [bulkMode, setBulkMode]         = useState(false);
   const [selected, setSelected]         = useState<Set<string>>(new Set());
   const [showStats, setShowStats]       = useState(false);
+  // The persisted session history, loaded when the statistics panel opens.
+  const [sessionHistory, setSessionHistory] = useState<SessionStat[]>([]);
   const [celebrate, setCelebrate]         = useState<{ emoji: string; title: string; subtitle?: string } | null>(null);
 
   // ── Review ────────────────────────────────────────────────────────────────
@@ -81,6 +94,21 @@ export default function FlashcardsView({
   const [reviewIndex, setReviewIndex]     = useState(0);
   const [reviewFlipped, setReviewFlipped] = useState(false);
   const [sessionStats, setSessionStats]   = useState({ again: 0, hard: 0, good: 0, easy: 0 });
+  // When the Study Plan hands over a specific card or question, it is shown
+  // first regardless of where it sits in the due queue. The focus is cleared
+  // once it has been rated, and the session continues with the normal queue.
+  const [reviewFocusId, setReviewFocusId]     = useState<string | null>(null);
+  const [practiceFocusId, setPracticeFocusId] = useState<string | null>(null);
+
+  // ── Session timing ─────────────────────────────────────────────────────────
+  // Every finished session is written to the `flashcard_sessions` store, so
+  // the statistics view can show how the student has actually been doing
+  // over time rather than only what is on screen right now. The store and
+  // the aggregate helpers already existed; nothing was ever writing to them.
+  const sessionStartedAtRef = useRef<number | null>(null);
+  // How long each card was on screen, in milliseconds. Averaged at the end.
+  const responseTimesRef   = useRef<number[]>([]);
+  const cardShownAtRef     = useRef<number | null>(null);
 
   // Fire-and-forget: every review contributes to the daily streak. We don't
   // await — IDB writes shouldn't block the UI. The streak widget on the
@@ -116,10 +144,16 @@ export default function FlashcardsView({
   const [practiceReviewIdx, setPracticeReviewIdx] = useState(0);
   const [practiceReveal, setPracticeReveal]       = useState(false);
   const [practiceChosen, setPracticeChosen]       = useState<string | null>(null);
-  const currentPracticeQuestion = duePracticeQuestions[practiceReviewIdx % Math.max(duePracticeQuestions.length, 1)];
+  const focusedPracticeQuestion = practiceFocusId
+    ? practiceQuestions.find(q => q.id === practiceFocusId)
+    : undefined;
+  const currentPracticeQuestion = focusedPracticeQuestion
+    ?? duePracticeQuestions[practiceReviewIdx % Math.max(duePracticeQuestions.length, 1)];
 
   const reviewCards       = dueCards.length > 0 ? dueCards : flashcards;
-  const currentReviewCard = reviewCards[reviewIndex % Math.max(reviewCards.length, 1)];
+  const focusedReviewCard = reviewFocusId ? flashcards.find(c => c.id === reviewFocusId) : undefined;
+  const currentReviewCard = focusedReviewCard
+    ?? reviewCards[reviewIndex % Math.max(reviewCards.length, 1)];
   const [fillInput, setFillInput] = useState('');
   const [fillSubmitted, setFillSubmitted] = useState(false);
 
@@ -169,12 +203,76 @@ export default function FlashcardsView({
       : 0,
   };
 
+  // Load the persisted session history when the statistics panel is opened.
+  // The store has been written on every finished session since sessions were
+  // first recorded; this is the first time anything read it back.
+  useEffect(() => {
+    if (!showStats) return;
+    let alive = true;
+    getRecentSessions(50)
+      .then(sessions => { if (alive) setSessionHistory(sessions); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [showStats]);
+
   // ── Actions ───────────────────────────────────────────────────────────────
+  /**
+   * Write the finished session to the history store.
+   *
+   * The ratings are already counted in `sessionStats`; this adds the timing
+   * that cannot be recovered later: how long the session took and how long
+   * the student spent on each card. A session with no cards is not worth
+   * recording.
+   */
+  const recordSession = (mode: SessionStat['mode']) => {
+    const startedAt = sessionStartedAtRef.current;
+    const cardsReviewed = sessionStats.again + sessionStats.hard + sessionStats.good + sessionStats.easy;
+    if (!startedAt || cardsReviewed === 0) {
+      sessionStartedAtRef.current = null;
+      responseTimesRef.current = [];
+      cardShownAtRef.current = null;
+      return;
+    }
+
+    const duration = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+    const times = responseTimesRef.current;
+    const avgResponseTime = times.length
+      ? Math.round(times.reduce((a, b) => a + b, 0) / times.length / 1000)
+      : 0;
+    // "Correct" means the student did not have to say "Again".
+    const correct = sessionStats.good + sessionStats.easy;
+
+    const stat: SessionStat = {
+      id: `${mode}-${startedAt}`,
+      date: new Date().toISOString().slice(0, 10),
+      mode,
+      duration,
+      cardsReviewed,
+      again: sessionStats.again,
+      hard: sessionStats.hard,
+      good: sessionStats.good,
+      easy: sessionStats.easy,
+      accuracy: cardsReviewed > 0 ? correct / cardsReviewed : 0,
+      avgResponseTime,
+    };
+
+    // Fire-and-forget — a failed history write must never interrupt a review.
+    saveSession(stat).catch(err =>
+      console.warn('[StudyWorks] Could not save session history:', err));
+
+    sessionStartedAtRef.current = null;
+    responseTimesRef.current = [];
+    cardShownAtRef.current = null;
+  };
+
   const startReview = () => {
     if (tier !== 'pro') { addToast('Spaced repetition is a Pro feature!', 'info'); setCurrentView('pricing'); return; }
     if (!flashcards.length) { addToast('Add some flashcards first!', 'info'); return; }
     setReviewIndex(0); setReviewFlipped(false);
     setSessionStats({ again: 0, hard: 0, good: 0, easy: 0 });
+    sessionStartedAtRef.current = Date.now();
+    responseTimesRef.current = [];
+    cardShownAtRef.current = Date.now();
     setStudyMode('review');
   };
 
@@ -196,8 +294,16 @@ export default function FlashcardsView({
     bumpStreak();
     award('flashcard_review');
     setReviewFlipped(false);
+    // The hand-off card has been done — carry on with the normal queue.
+    setReviewFocusId(null);
+    // How long this card was on screen, for the session history.
+    if (cardShownAtRef.current) {
+      responseTimesRef.current.push(Date.now() - cardShownAtRef.current);
+      cardShownAtRef.current = Date.now();
+    }
     if (reviewIndex + 1 >= reviewCards.length) {
       setCelebrate({ emoji: '🎉', title: 'Session complete!', subtitle: `${reviewCards.length} card${reviewCards.length > 1 ? 's' : ''} reviewed. Nice work!` });
+      recordSession('review');
       setStudyMode('browse'); setReviewIndex(0);
       award('flashcard_session');
       // Absolute totals — the store keeps the larger value, so this is safe
@@ -227,6 +333,8 @@ export default function FlashcardsView({
     award('practice_answered');
     setPracticeReveal(false);
     setPracticeChosen(null);
+    // The hand-off question has been done — carry on with the normal queue.
+    setPracticeFocusId(null);
     if (practiceReviewIdx + 1 >= duePracticeQuestions.length) {
       setCelebrate({ emoji: '🧠', title: 'Practice complete!', subtitle: `${duePracticeQuestions.length} question${duePracticeQuestions.length > 1 ? 's' : ''} reviewed.` });
       setStudyMode('browse');
@@ -269,6 +377,9 @@ export default function FlashcardsView({
     setIntensiveMastered(0);
     setIntensiveRounds(new Map());
     setReviewFlipped(false);
+    sessionStartedAtRef.current = Date.now();
+    responseTimesRef.current = [];
+    cardShownAtRef.current = Date.now();
     setStudyMode('intensive');
   };
 
@@ -297,6 +408,10 @@ export default function FlashcardsView({
     const key = RATE_BTNS[quality].label.toLowerCase() as keyof typeof sessionStats;
     setSessionStats(prev => ({ ...prev, [key]: prev[key] + 1 }));
     award('flashcard_review');
+    if (cardShownAtRef.current) {
+      responseTimesRef.current.push(Date.now() - cardShownAtRef.current);
+      cardShownAtRef.current = Date.now();
+    }
 
     const cardId = currentIntensiveCard.id;
     setIntensiveRounds(prev => {
@@ -335,11 +450,35 @@ export default function FlashcardsView({
     setFillSubmitted(false);
   }, [currentReviewCard?.id]);
 
+  // ── Study plan hand-off ───────────────────────────────────────────────────
+  // The Study Plan can hand over a specific card or question. Open it
+  // directly rather than making the student hunt for it in the queue.
+  useEffect(() => {
+    if (!pendingItem) return;
+    if (pendingItem.kind === 'card') {
+      setReviewFocusId(pendingItem.id);
+      setReviewFlipped(false);
+      setSessionStats({ again: 0, hard: 0, good: 0, easy: 0 });
+      sessionStartedAtRef.current = Date.now();
+      responseTimesRef.current = [];
+      cardShownAtRef.current = Date.now();
+      setStudyMode('review');
+    } else {
+      setPracticeFocusId(pendingItem.id);
+      setPracticeReveal(false);
+      setPracticeChosen(null);
+      setShowPractice(false);
+      setStudyMode('practice-review');
+    }
+    onPendingItemHandled?.();
+  }, [pendingItem]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // End the session when every original card has been mastered at least once.
   const intensiveAllDone = intensiveOriginalLenRef.current > 0 && intensiveMastered >= intensiveOriginalLenRef.current;
   useEffect(() => {
     if (studyMode === 'intensive' && intensiveAllDone) {
       setCelebrate({ emoji: '🔥', title: 'Intensive complete!', subtitle: `${intensiveOriginalLenRef.current} cards mastered. You crushed it!` });
+      recordSession('intensive');
       exitIntensive();
     }
   }, [intensiveAllDone]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -497,6 +636,44 @@ export default function FlashcardsView({
               </div>
             ))}
           </div>
+          {/* Session history — the persisted record of past sessions. */}
+          {sessionHistory.length > 0 && (
+            <div style={{ marginTop: '1.25rem' }}>
+              <p className="text-xs text-muted" style={{ marginBottom: '0.5rem' }}>
+                Session history · last {sessionHistory.length}
+              </p>
+              {(() => {
+                const agg = computeAggregate(sessionHistory);
+                return (
+                  <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '0.6rem', marginBottom: '0.75rem' }}>
+                    {[
+                      { label: 'Sessions',  value: agg.sessions,      color: 'var(--accent)' },
+                      { label: 'Cards',     value: agg.totalReviews, color: 'var(--accent-2)' },
+                      { label: 'Accuracy',  value: `${Math.round(agg.accuracy * 100)}%`, color: 'var(--success)' },
+                      { label: 'Avg time',  value: `${agg.avgResponseTime}s`, color: 'var(--text-2)' },
+                      { label: 'Study time', value: `${agg.totalMinutes}m`, color: 'var(--text-2)' },
+                    ].map(s => (
+                      <div key={s.label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem', padding: '0.6rem', borderRadius: 'var(--radius)', background: 'var(--surface-2)' }}>
+                        <span style={{ fontSize: '1.05rem', fontWeight: 800, color: s.color, fontVariantNumeric: 'tabular-nums' }}>{s.value}</span>
+                        <span className="text-xs text-muted">{s.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                {sessionHistory.slice(0, 8).map(s => (
+                  <div key={s.id} style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', fontSize: '0.78rem', color: 'var(--text-2)' }}>
+                    <span style={{ minWidth: '4.5rem', color: 'var(--text-3)' }}>{s.date.slice(5)}</span>
+                    <span className="tag" style={{ fontSize: '0.68rem' }}>{s.mode}</span>
+                    <span>{s.cardsReviewed} cards</span>
+                    <span>· {Math.round(s.accuracy * 100)}% right</span>
+                    <span>· {Math.max(1, Math.round(s.duration / 60))}m</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {stats.total > 0 && (
             <div>
               <p className="text-xs text-muted" style={{ marginBottom: '0.375rem' }}>Difficulty distribution</p>

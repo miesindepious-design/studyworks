@@ -49,6 +49,8 @@ import { IconDownload, IconUpload, IconSpinner } from './components/icons';
 import { ProgressionProvider } from './game/ProgressionContext';
 import LevelBadge from './components/LevelBadge';
 import LeaderboardView from './components/LeaderboardView';
+import StudyPlanView from './components/StudyPlanView';
+import type { PlanItem } from './utils/reviewPlan';
 import DuelView from './components/DuelView';
 import { getRoomFile, type RoomFileInfo } from './api/roomFiles';
 import { createGameRoom } from './api/game';
@@ -240,6 +242,12 @@ export default function App() {
   // A shared study file the player chose to hand to the AI tutor. The tutor
   // picks it up on mount, adds it to the document library and reads it.
   const [pendingTutorDoc, setPendingTutorDoc] = useState<PendingTutorDocument | null>(null);
+
+  // The item the student picked in the Study Plan. The plan is only useful if
+  // clicking something in it takes you to that thing, so the plan hands the
+  // choice over to the screen that can actually present it — the flashcards
+  // view for cards and practice questions, the notes view for notes.
+  const [pendingPlanItem, setPendingPlanItem] = useState<PlanItem | null>(null);
 
   // ── Theme (apply immediately from IDB value once loaded) ──────────────────
   const theme = (db.theme as Theme) || 'system';
@@ -626,6 +634,26 @@ export default function App() {
     addToast('Data exported!', 'success');
   };
 
+  // ── Study plan ─────────────────────────────────────────────────────────────
+  // Take the student from the plan to the thing they picked. Spaced
+  // repetition is a Pro feature, so the same gate the flashcards page uses
+  // applies here — the plan itself stays visible to everyone, because knowing
+  // what is due is useful even if reviewing it is not.
+  const handlePlanStartReview = (item: PlanItem) => {
+    if (item.kind === 'note') {
+      setPendingPlanItem(item);
+      setCurrentView('notes');
+      return;
+    }
+    if (tier !== 'pro' && trialDaysLeft <= 0) {
+      addToast('Spaced repetition is a Pro feature!', 'info');
+      setCurrentView('pricing');
+      return;
+    }
+    setPendingPlanItem(item);
+    setCurrentView('flashcards');
+  };
+
   // ── Copilot actions ───────────────────────────────────────────────────────
   // The Copilot can run a task on the user's behalf, not just point at a page.
   // Tasks that need a control on another page click it after the view has
@@ -818,10 +846,22 @@ export default function App() {
               insightsLoading={insightsLoading}
               addToast={addToast}
               authenticated={session.status === 'authenticated'}
+              onStartReview={handlePlanStartReview}
+            />
+          )}
+          {currentView === 'plan' && (
+            <StudyPlanView
+              flashcards={flashcardsUR.state}
+              practiceQuestions={db.practiceQuestions}
+              notes={notesUR.state}
+              setCurrentView={navigateTo}
+              onStartReview={handlePlanStartReview}
             />
           )}
           {currentView === 'notes' && (
             <NotesView
+              pendingNoteId={pendingPlanItem?.kind === 'note' ? pendingPlanItem.id : null}
+              onPendingNoteHandled={() => setPendingPlanItem(null)}
               notes={notesUR.state} setNotes={notesUR.set}
               flashcards={flashcardsUR.state} setFlashcards={flashcardsUR.set}
               tier={tier} setCurrentView={navigateTo} addToast={addToast}
@@ -849,6 +889,10 @@ export default function App() {
               addToast={addToast} tier={tier} setCurrentView={navigateTo}
               totalItems={totalItems} folders={db.folders} setFolders={db.setFolders}
               practiceQuestions={db.practiceQuestions} setPracticeQuestions={db.setPracticeQuestions}
+              pendingItem={pendingPlanItem && pendingPlanItem.kind !== 'note'
+                ? { kind: pendingPlanItem.kind, id: pendingPlanItem.id }
+                : null}
+              onPendingItemHandled={() => setPendingPlanItem(null)}
             />
           )}
           {currentView === 'pricing' && (

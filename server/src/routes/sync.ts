@@ -112,6 +112,24 @@ const NoteInput = z.object({
   summary:     z.string().optional().nullable(),
   folderId:    z.string().optional().nullable(),
   nextReminder: z.string().datetime().optional().nullable(),
+  // Highlights and personal notes are pulled from the server (the note query
+  // includes both relations) but were never written back to it, so anything
+  // the student highlighted or annotated on one device was missing on every
+  // other device. They are replaced wholesale on each push: the client
+  // always sends the complete list for the note.
+  highlights: z.array(z.object({
+    id:        z.string(),
+    text:      z.string(),
+    color:     z.string(),
+    note:      z.string().optional().nullable(),
+    createdAt: z.string().datetime(),
+  })).optional(),
+  personalNotes: z.array(z.object({
+    id:        z.string(),
+    content:   z.string(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })).optional(),
   createdAt:   z.string().datetime(),
   updatedAt:   z.string().datetime(),
 });
@@ -142,6 +160,19 @@ const FlashcardInput = z.object({
   interval:    z.number().optional().nullable(),
   repetitions: z.number().optional().nullable(),
   ef:          z.number().min(1.3).max(5.0).optional().nullable(), // SM-2 ef
+  // The fields below were missing from the input schema, so Zod stripped
+  // them from every push. The effect was silent and severe: a card's shape
+  // (cloze/fill-in), its subject, its leech count, its origin and its whole
+  // review trail were all discarded on sync, which broke the Mastery Map
+  // and reset the spaced-repetition history on the server copy.
+  type:        z.string().optional().nullable(),          // standard | fill-in | cloze
+  topic:       z.string().optional().nullable(),          // subject, for the Mastery Map
+  leechCount:  z.number().int().min(0).optional().nullable(),
+  source:      z.string().optional().nullable(),          // manual | note | ai | tutor
+  reviewHistory: z.array(z.object({
+    date:    z.string(),
+    quality: z.number().int().min(0).max(3),
+  })).optional().nullable(),
   createdAt:   z.string().datetime(),
   updatedAt:   z.string().datetime(),
 });
@@ -162,6 +193,10 @@ const PracticeInput = z.object({
   type:      z.string(),
   options:   z.array(z.string()).default([]),
   noteId:    z.string().optional().nullable(),
+  // The subject a question belongs to. Like the flashcard fields above, this
+  // was missing from the schema and so was stripped on every push, which
+  // quietly emptied practice questions out of the Mastery Map.
+  topic:     z.string().optional().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime().optional(),
   // SM-2 fields (optional — older clients won't send them)
@@ -261,6 +296,24 @@ syncRouter.post('/', zValidator('json', SyncBody), async c => {
     for (const n of (body as any).notes) {
       const existing = await tx.note.findUnique({ where: { id: n.id }, select: { updatedAt: true } });
       if (!existing || isIncomingNewer(n.updatedAt, existing.updatedAt)) {
+        // The highlight and personal-note lists are replaced wholesale. The
+        // client always sends the complete list for a note, so this is a
+        // mirror rather than a merge — and it means a highlight deleted on
+        // one device is deleted on all of them.
+        const highlightRows = (n.highlights ?? []).map((h: any) => ({
+          id:        h.id,
+          text:      h.text,
+          color:     h.color,
+          note:      h.note ?? null,
+          createdAt: new Date(h.createdAt),
+        }));
+        const personalNoteRows = (n.personalNotes ?? []).map((p: any) => ({
+          id:        p.id,
+          content:   p.content,
+          createdAt: new Date(p.createdAt),
+          updatedAt: new Date(p.updatedAt),
+        }));
+
         await tx.note.upsert({
           where:  { id: n.id },
           create: {
@@ -269,6 +322,8 @@ syncRouter.post('/', zValidator('json', SyncBody), async c => {
             createdAt:   new Date(n.createdAt),
             updatedAt:   new Date(n.updatedAt),
             nextReminder: n.nextReminder ? new Date(n.nextReminder) : undefined,
+            highlights:  { create: highlightRows },
+            personalNotes: { create: personalNoteRows },
           },
           update: {
             title:       n.title,
@@ -279,6 +334,8 @@ syncRouter.post('/', zValidator('json', SyncBody), async c => {
             folderId:    n.folderId,
             updatedAt:   new Date(n.updatedAt),
             nextReminder: n.nextReminder ? new Date(n.nextReminder) : null,
+            highlights:  { deleteMany: {}, create: highlightRows },
+            personalNotes: { deleteMany: {}, create: personalNoteRows },
           },
         });
         stats.notes++;
@@ -328,7 +385,7 @@ syncRouter.post('/', zValidator('json', SyncBody), async c => {
             ...fc,
             userId:     user.id,
             createdAt:  new Date(fc.createdAt),
-            updatedAt:   new Date(fc.updatedAt),
+            updatedAt:  new Date(fc.updatedAt),
             nextReview: fc.nextReview ? new Date(fc.nextReview) : undefined,
           },
           update: {
@@ -341,7 +398,17 @@ syncRouter.post('/', zValidator('json', SyncBody), async c => {
             interval:    fc.interval,
             repetitions: fc.repetitions,
             ef:          fc.ef ?? 2.5,
-            updatedAt:   new Date(fc.updatedAt),
+            // These were missing from the update branch, so a card that
+            // already existed on the server kept its old shape, subject,
+            // leech count and review trail even after the client had
+            // changed them. That is how a card's spaced-repetition history
+            // and Mastery Map subject got lost on every device.
+            type:          fc.type ?? 'standard',
+            topic:         fc.topic ?? null,
+            leechCount:    fc.leechCount ?? 0,
+            source:        fc.source ?? null,
+            reviewHistory: fc.reviewHistory ?? undefined,
+            updatedAt:     new Date(fc.updatedAt),
           },
         });
         stats.flashcards++;
@@ -362,6 +429,10 @@ syncRouter.post('/', zValidator('json', SyncBody), async c => {
             type:      pq.type,
             options:   pq.options,
             noteId:    pq.noteId,
+            // The subject was missing here too, so a question that had been
+            // filed under a topic lost that filing on the server and fell
+            // out of the Mastery Map.
+            topic:     pq.topic ?? null,
             nextReview: pq.nextReview ? new Date(pq.nextReview) : null,
             interval:   pq.interval,
             repetitions: pq.repetitions,

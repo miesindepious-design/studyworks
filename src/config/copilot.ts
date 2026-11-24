@@ -78,6 +78,7 @@ export const COPILOT_TASKS: CopilotTask[] = [
 
 /** Suggested questions shown before the user types anything. */
 export const COPILOT_SUGGESTIONS: string[] = [
+  'What should I study right now?',
   'Where do I find my flashcards?',
   'How do I back up my data?',
   'How do I turn on notifications?',
@@ -104,6 +105,53 @@ export const COPILOT_ARTICLES: CopilotArticle[] = [
       'Open Dashboard from the sidebar (or press ⌘1).',
       'Set today\'s goals in the Daily Goals card — they drive your weekly ring.',
       'Check the Activity heatmap to see your last three months of study.',
+    ],
+  },
+  {
+    id: 'study-plan',
+    title: 'What should I study right now?',
+    category: 'Getting started',
+    view: 'plan',
+    cta: 'Open the study plan',
+    keywords: ['study plan', 'what should i study', 'what to review', 'due', 'review now', 'today', 'plan', 'whats due'],
+    aliases: ['study list', 'to-do', 'what is due', 'review queue', 'next up'],
+    summary: 'The Study Plan is the one page that answers "what should I study now?". It merges every due flashcard, practice question and note into a single list, ordered by what needs attention first — tough cards and wrong answers before merely overdue work before new material. It also has a fortnight forecast and a mistakes book.',
+    steps: [
+      'Open Study Plan from the sidebar (second item under Study).',
+      'The Plan tab lists everything due, with the most urgent at the top.',
+      'Click any item to jump straight into reviewing it.',
+      'Check the Forecast tab to see how much is coming, and the Mistakes tab to re-review what you got wrong.',
+    ],
+  },
+  {
+    id: 'mistakes-book',
+    title: 'How do I review what I got wrong?',
+    category: 'Getting started',
+    view: 'plan',
+    cta: 'Open the mistakes book',
+    keywords: ['mistakes', 'wrong', 'mistakes book', 'error book', 'got wrong', 'incorrect', 'leech', 'tough cards', 'redo'],
+    aliases: ['mistake notebook', 'wrong answers', 'things I failed', 'tricky cards'],
+    summary: 'The Mistakes tab of the Study Plan collects everything you have got wrong — practice questions you answered incorrectly and cards you have failed more than once — grouped by subject, with the toughest cards first.',
+    steps: [
+      'Open Study Plan, then switch to the Mistakes tab.',
+      'Cards you keep failing are marked "Tough" — those are usually badly written, so edit them rather than memorising them.',
+      'Fix the card on the Flashcards page, then it drops out of the book.',
+    ],
+  },
+  {
+    id: 'highlight-to-cards',
+    title: 'How do I make flashcards from what I highlighted?',
+    category: 'Notes',
+    view: 'notes',
+    cta: 'Open notes',
+    keywords: ['highlight', 'highlights', 'make cards', 'cards from highlight', 'highlight to card', 'turn highlight into flashcard'],
+    aliases: ['highlight cards', 'study my highlights', 'cards from my highlights'],
+    summary: 'Open a note, highlight the passages that matter, then press "Make cards" in the Highlights section. Each highlight becomes a card — a cloze card that hides the key word, or a recall card that hides the whole passage. It needs no AI key.',
+    steps: [
+      'Open Notes and open the note you want.',
+      'Select text in the body and press "+ Highlight Selection".',
+      'Under Highlights, press "Make cards".',
+      'Choose Cloze (hide a word) or Recall (hide the passage), and the cards are added to your collection.',
     ],
   },
   {

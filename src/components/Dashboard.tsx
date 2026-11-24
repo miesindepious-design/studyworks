@@ -32,6 +32,8 @@ import MasteryMap from './MasteryMap';
 import WeeklyRecap from './WeeklyRecap';
 import FocusForest from './FocusForest';
 import ExamPlanner from './ExamPlanner';
+import StudyPlanSummary from './StudyPlanSummary';
+import type { PlanItem } from '../utils/reviewPlan';
 import { useProgression } from '../game/ProgressionContext';
 
 type Tier = 'free' | 'pro';
@@ -58,6 +60,8 @@ interface DashboardProps {
   addToast?: (message: string, type: 'success' | 'error' | 'info') => void;
   /** Whether the student is signed in — decides where exam plans are stored. */
   authenticated?: boolean;
+  /** Start reviewing an item picked from the plan panel. */
+  onStartReview?: (item: PlanItem) => void;
 }
 
 const STUDY_LOG_KEY = 'studyworks-study-log';
@@ -99,7 +103,14 @@ function loadAchievements(): Achievement[] {
 }
 
 function saveAchievements(achievements: Achievement[]) {
-  localStorage.setItem(ACHIEVEMENTS_KEY, JSON.stringify(achievements));
+  // Guarded like every other storage write in the app: when storage is
+  // unavailable (private mode, a blocked origin, a server-side render) the
+  // achievements still work for this session — they just are not persisted.
+  try {
+    localStorage.setItem(ACHIEVEMENTS_KEY, JSON.stringify(achievements));
+  } catch {
+    /* storage unavailable — the achievements simply will not persist */
+  }
 }
 
 function evaluateAchievements(
@@ -207,7 +218,7 @@ export default function Dashboard({
   userName, trialDaysLeft = 0, notes, contacts, flashcards, tier, totalItems,
   aiSummariesThisMonth, folders, practiceQuestions, setCurrentView, aiReady,
   aiProvider, onGenerateInsights, weeklyInsights, insightsLoading, addToast,
-  authenticated = false,
+  authenticated = false, onStartReview,
 }: DashboardProps) {
   const { award: progressionAward } = useProgression();
   const greeting = (() => {
@@ -1265,8 +1276,19 @@ export default function Dashboard({
         {/* ── Bottom row ─────────────────────────────────────────────────── */}
         <section className="sw-grid sw-grid-3">
 
-          {/* Exam countdown */}
+          {/* Today's plan — what to review, in priority order */}
           <Reveal fill delay={0}>
+            <StudyPlanSummary
+              flashcards={flashcards}
+              practiceQuestions={practiceQuestions}
+              notes={notes}
+              onOpenPlan={() => setCurrentView('plan')}
+              onStartReview={onStartReview}
+            />
+          </Reveal>
+
+          {/* Exam countdown */}
+          <Reveal fill delay={35}>
             <ExamPlanner
               flashcards={flashcards}
               authenticated={authenticated}
@@ -1276,7 +1298,7 @@ export default function Dashboard({
           </Reveal>
 
           {/* Weekly recap */}
-          <Reveal fill delay={35}>
+          <Reveal fill delay={70}>
             <WeeklyRecap
               cardsReviewed={weekCardsReviewed}
               accuracy={weekAccuracy}
@@ -1286,7 +1308,7 @@ export default function Dashboard({
           </Reveal>
 
           {/* Focus forest */}
-          <Reveal fill delay={70}>
+          <Reveal fill delay={105}>
             <FocusForest />
           </Reveal>
         </section>

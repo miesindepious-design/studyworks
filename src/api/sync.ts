@@ -13,6 +13,9 @@ function revivePractice(q: any): import('../types').PracticeQuestion {
     updatedAt: q.updatedAt ? new Date(q.updatedAt) : undefined,
     nextReview: q.nextReview ? new Date(q.nextReview) : undefined,
     ef:         typeof q.ef === 'number' ? q.ef : 2.5,
+    // The subject is what files a question under a heading in the Mastery
+    // Map, so it has to survive the round-trip.
+    topic:      q.topic ?? undefined,
   };
 }
 
@@ -63,11 +66,51 @@ export interface SyncPushPayload {
 
 export async function pushSync(payload: SyncPushPayload): Promise<void> {
   await apiPost('/api/sync', {
-    notes:             payload.notes.map(n => ({ ...n, createdAt: n.createdAt.toISOString(), updatedAt: n.updatedAt.toISOString(), nextReminder: n.nextReminder?.toISOString() ?? null })),
+    notes: payload.notes.map(n => ({
+      ...n,
+      createdAt: n.createdAt.toISOString(),
+      updatedAt: n.updatedAt.toISOString(),
+      nextReminder: n.nextReminder?.toISOString() ?? null,
+      // Highlights and personal notes are part of the note, so they travel
+      // with it. The server replaces its copy wholesale with what is sent
+      // here, which keeps every device showing the same annotations.
+      highlights: (n.highlights ?? []).map(h => ({
+        id: h.id,
+        text: h.text,
+        color: h.color,
+        note: h.note ?? null,
+        createdAt: h.createdAt instanceof Date ? h.createdAt.toISOString() : h.createdAt,
+      })),
+      personalNotes: (n.personalNotes ?? []).map(p => ({
+        id: p.id,
+        content: p.content,
+        createdAt: p.createdAt instanceof Date ? p.createdAt.toISOString() : p.createdAt,
+        updatedAt: p.updatedAt instanceof Date ? p.updatedAt.toISOString() : p.updatedAt,
+      })),
+    })),
     contacts:          payload.contacts.map(c => ({ ...c, createdAt: (c as any).createdAt?.toISOString?.() ?? new Date().toISOString(), updatedAt: (c as any).updatedAt?.toISOString?.() ?? new Date().toISOString(), nextReminder: c.nextReminder?.toISOString() ?? null, lastContacted: c.lastContacted?.toISOString() ?? null })),
-    flashcards:        payload.flashcards.map(f => ({ ...f, ef: f.ef ?? 2.5, createdAt: f.createdAt.toISOString(), updatedAt: (f as any).updatedAt?.toISOString?.() ?? new Date().toISOString(), nextReview: f.nextReview?.toISOString() ?? null })),
+    // The fields below were being stripped by the server's input schema, so
+    // a card's shape, subject, leech count, origin and review trail were all
+    // lost on every push. They are now part of the contract.
+    flashcards:        payload.flashcards.map(f => ({
+      ...f,
+      ef: f.ef ?? 2.5,
+      createdAt: f.createdAt.toISOString(),
+      updatedAt: (f as any).updatedAt?.toISOString?.() ?? new Date().toISOString(),
+      nextReview: f.nextReview?.toISOString() ?? null,
+      type: f.type ?? 'standard',
+      topic: f.topic ?? null,
+      leechCount: f.leechCount ?? 0,
+      source: f.source ?? null,
+      reviewHistory: f.reviewHistory ?? [],
+    })),
     folders:           payload.folders.map(f => ({ ...f, createdAt: f.createdAt.toISOString() })),
-    practiceQuestions: payload.practiceQuestions.map(q => ({ ...q, createdAt: q.createdAt.toISOString(), nextReview: q.nextReview?.toISOString() ?? null })),
+    practiceQuestions: payload.practiceQuestions.map(q => ({
+      ...q,
+      createdAt: q.createdAt.toISOString(),
+      nextReview: q.nextReview?.toISOString() ?? null,
+      topic: q.topic ?? null,
+    })),
     savedSearches:     payload.savedSearches.map(s => ({ ...s, createdAt: s.createdAt.toISOString() })),
   });
 }
@@ -79,6 +122,9 @@ function reviveNote(n: any): Note {
     createdAt:    new Date(n.createdAt),
     updatedAt:    new Date(n.updatedAt),
     nextReminder: n.nextReminder ? new Date(n.nextReminder) : undefined,
+    // The server sends highlights and personal notes as child relations
+    // (`n.highlights` / `n.personalNotes`), while the client stores them
+    // under those same names. The dates arrive as ISO strings.
     highlights:   (n.highlights || []).map((h: any) => ({ ...h, createdAt: new Date(h.createdAt) })),
     personalNotes: (n.personalNotes || []).map((p: any) => ({ ...p, createdAt: new Date(p.createdAt), updatedAt: new Date(p.updatedAt) })),
     files: (n.attachments || n.files || []).map((a: any) => ({
@@ -109,5 +155,13 @@ function reviveFlashcard(f: any): Flashcard {
     updatedAt:  new Date(f.updatedAt ?? f.createdAt),
     nextReview: f.nextReview ? new Date(f.nextReview) : undefined,
     ef:         typeof f.ef === 'number' ? f.ef : 2.5,
+    // A card that has never been reviewed has no shape, subject or history.
+    // Filling in the defaults here means every consumer can rely on these
+    // fields being present after a pull.
+    type:        f.type ?? 'standard',
+    topic:       f.topic ?? undefined,
+    leechCount:  typeof f.leechCount === 'number' ? f.leechCount : 0,
+    source:      f.source ?? undefined,
+    reviewHistory: Array.isArray(f.reviewHistory) ? f.reviewHistory : [],
   };
 }
