@@ -8,6 +8,7 @@ import { useProgression } from '../game/ProgressionContext';
 import { isLeech, LEECH_THRESHOLD } from '../game/rules';
 import { renderCloze } from '../utils/cloze';
 import { useStudyGoals } from '../hooks/useStudyGoals';
+import { useDeckSettings } from '../hooks/useDeckSettings';
 import { saveSession, getRecentSessions, computeAggregate } from '../db/flashcardStats';
 import type { SessionStat } from '../types';
 
@@ -122,10 +123,25 @@ export default function FlashcardsView({
   const [showAnswer, setShowAnswer]     = useState(false);
 
   // ── Due cards ─────────────────────────────────────────────────────────────
+  // The daily limits apply here too. A backlog of eight hundred due cards
+  // means a session of eight hundred, unless the limit caps it — and a
+  // session of eight hundred is how a student stops studying.
+  const { limits } = useDeckSettings();
+
   const dueCards = useMemo(() => {
     const now = new Date();
     return flashcards.filter(c => !c.nextReview || new Date(c.nextReview) <= now);
   }, [flashcards]);
+
+  /** The due cards that fit within today's limits. */
+  const todayCards = useMemo(() => {
+    const reviews = dueCards.filter(c => (c.repetitions ?? 0) > 0 || (c.reviewHistory?.length ?? 0) > 0);
+    const fresh = dueCards.filter(c => (c.repetitions ?? 0) === 0 && !(c.reviewHistory?.length ?? 0));
+    if (reviews.length <= limits.reviewsPerDay && fresh.length <= limits.newPerDay) return dueCards;
+    // Reviews first (they are already seen and due again), then new cards up
+    // to the limit.
+    return [...reviews.slice(0, limits.reviewsPerDay), ...fresh.slice(0, limits.newPerDay)];
+  }, [dueCards, limits]);
 
   // Due practice questions — same SRS scheduler as flashcards. Practice
   // questions that have never been answered are treated as due.
@@ -150,7 +166,7 @@ export default function FlashcardsView({
   const currentPracticeQuestion = focusedPracticeQuestion
     ?? duePracticeQuestions[practiceReviewIdx % Math.max(duePracticeQuestions.length, 1)];
 
-  const reviewCards       = dueCards.length > 0 ? dueCards : flashcards;
+  const reviewCards       = todayCards.length > 0 ? todayCards : (dueCards.length > 0 ? dueCards : flashcards);
   const focusedReviewCard = reviewFocusId ? flashcards.find(c => c.id === reviewFocusId) : undefined;
   const currentReviewCard = focusedReviewCard
     ?? reviewCards[reviewIndex % Math.max(reviewCards.length, 1)];

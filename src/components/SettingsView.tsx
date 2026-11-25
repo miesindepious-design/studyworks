@@ -12,6 +12,8 @@ import TimerSettingsPanel from './TimerSettingsPanel';
 import ShortcutEditor from './ShortcutEditor';
 import { useTimerSettings } from '../hooks/useTimerSettings';
 import { useStudyGoals } from '../hooks/useStudyGoals';
+import { useDeckSettings } from '../hooks/useDeckSettings';
+import { MAX_LIMIT } from '../utils/deckSettings';
 import {
   EDUCATION_LEVELS,
   SCHOOL_STAGES,
@@ -99,6 +101,7 @@ export default function SettingsView({
 
   // Daily study targets — shared with the Dashboard.
   const { goals, updateGoal } = useStudyGoals();
+  const { limits, setLimits } = useDeckSettings();
 
   // AI config state
   const [aiConfig, setAiConfigState] = useState<AIConfig>({ provider: 'gemini', apiKey: '', model: 'gemini-2.5-flash', enabled: false });
@@ -737,6 +740,74 @@ export default function SettingsView({
 
                 <p className="card-note" style={{ margin: '1rem 0 0' }}>
                   The same targets drive your dashboard progress ring.
+                </p>
+              </div>
+            </div>
+
+            {/* ── Daily limits ─────────────────────────────────────────── */}
+            <div
+              className={`sw-settings-cell sw-span-3${matches('limit', 'daily', 'backlog', 'cap', 'deck') ? '' : ' is-filtered'}`}
+              id="settings-limits"
+            >
+              <div className="card">
+                <div className="card-header">
+                  <div>
+                    <span className="card-title">🧱 Daily Limits</span>
+                    <p className="card-note" style={{ margin: '4px 0 0' }}>
+                      A small amount every day beats a mountain once
+                    </p>
+                  </div>
+                  <div className="sw-card-aside">
+                    <span className="sw-glyph" aria-hidden="true"><IconTarget size={14} /></span>
+                  </div>
+                </div>
+
+                <p className="card-note" style={{ margin: '0 0 1rem' }}>
+                  When a backlog builds up, these caps decide how much of it you tackle today.
+                  The rest waits for tomorrow — it is not lost, and it is not overdue.
+                </p>
+
+                <div className="sw-kv sw-goal-rows">
+                  <div className="sw-kv-row">
+                    <span className="sw-kv-key">New cards per day</span>
+                    <span className="sw-row" style={{ gap: 8 }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-xs"
+                        onClick={() => setLimits({ newPerDay: Math.max(0, limits.newPerDay - 5) })}
+                        aria-label="Fewer new cards per day"
+                      >−</button>
+                      <span className="sw-kv-val">{limits.newPerDay}</span>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-xs"
+                        onClick={() => setLimits({ newPerDay: Math.min(MAX_LIMIT, limits.newPerDay + 5) })}
+                        aria-label="More new cards per day"
+                      >+</button>
+                    </span>
+                  </div>
+                  <div className="sw-kv-row">
+                    <span className="sw-kv-key">Reviews per day</span>
+                    <span className="sw-row" style={{ gap: 8 }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-xs"
+                        onClick={() => setLimits({ reviewsPerDay: Math.max(0, limits.reviewsPerDay - 25) })}
+                        aria-label="Fewer reviews per day"
+                      >−</button>
+                      <span className="sw-kv-val">{limits.reviewsPerDay}</span>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-xs"
+                        onClick={() => setLimits({ reviewsPerDay: Math.min(MAX_LIMIT, limits.reviewsPerDay + 25) })}
+                        aria-label="More reviews per day"
+                      >+</button>
+                    </span>
+                  </div>
+                </div>
+
+                <p className="card-note" style={{ margin: '1rem 0 0' }}>
+                  The Study Plan and the flashcard review both stop at these limits.
                 </p>
               </div>
             </div>

@@ -32,6 +32,8 @@ import {
   type PlanKind,
 } from '../utils/reviewPlan';
 import { buildMistakes, groupMistakesByTopic, mistakesSummary } from '../utils/errorNotebook';
+import { buildDailyQueue, limitToday, limitSummary } from '../utils/deckSettings';
+import { useDeckSettings } from '../hooks/useDeckSettings';
 import { IconArrowRight, IconCards, IconNotes, IconTarget } from './icons';
 
 interface Props {
@@ -75,6 +77,29 @@ export default function StudyPlanView({
     [flashcards, practiceQuestions, notes],
   );
 
+  // The daily limits. The plan is ordered by urgency, so capping it takes
+  // from the least important end — which is what a backlog should do.
+  const { limits, decks } = useDeckSettings();
+  const daily = useMemo(() => {
+    const queue = buildDailyQueue(plan.items, flashcards, practiceQuestions, notes);
+    return limitToday(queue, limits, decks);
+  }, [plan.items, flashcards, practiceQuestions, notes, limits, decks]);
+
+  /** The items that fit within today's limits, in plan order. */
+  const todayItems = useMemo(() => {
+    const allowed = new Set([
+      ...daily.cards.map(c => c.id),
+      ...daily.questions.map(q => q.id),
+      ...daily.notes.map(n => n.id),
+    ]);
+    return plan.items.filter(i => allowed.has(i.id));
+  }, [plan.items, daily]);
+
+  const limitNote = useMemo(
+    () => limitSummary(daily, limits),
+    [daily, limits],
+  );
+
   const forecast = useMemo(
     () => buildForecast(flashcards, practiceQuestions, notes, new Date(), 14),
     [flashcards, practiceQuestions, notes],
@@ -103,8 +128,8 @@ export default function StudyPlanView({
           <p className="text-sm text-muted">{planSummary(plan)}</p>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          {plan.items.length > 0 && onStartReview && (
-            <button className="btn btn-primary" onClick={() => onStartReview(plan.items[0])}>
+          {todayItems.length > 0 && onStartReview && (
+            <button className="btn btn-primary" onClick={() => onStartReview(todayItems[0])}>
               <IconTarget size={15} /> Start reviewing
             </button>
           )}
@@ -158,15 +183,16 @@ export default function StudyPlanView({
                 <div>
                   <h3 className="sw-panel-title">What to review</h3>
                   <p className="sw-panel-sub">
-                    {plan.counts.card} card{plan.counts.card === 1 ? '' : 's'} ·{' '}
-                    {plan.counts.question} question{plan.counts.question === 1 ? '' : 's'} ·{' '}
-                    {plan.counts.note} note{plan.counts.note === 1 ? '' : 's'}
+                    {daily.cards.length} card{daily.cards.length === 1 ? '' : 's'} ·{' '}
+                    {daily.questions.length} question{daily.questions.length === 1 ? '' : 's'} ·{' '}
+                    {daily.notes.length} note{daily.notes.length === 1 ? '' : 's'}
                     {overdue > 0 && ` · ${overdue} overdue`}
+                    {daily.deferredCount > 0 && ` · ${daily.deferredCount} waiting`}
                   </p>
                 </div>
               </div>
 
-              {plan.items.length === 0 ? (
+              {todayItems.length === 0 ? (
                 <div className="sw-empty">
                   <div className="sw-empty-icon">✅</div>
                   <p className="sw-empty-title">You are all caught up</p>
@@ -175,8 +201,14 @@ export default function StudyPlanView({
                   </p>
                 </div>
               ) : (
+                <>
+                {limitNote && (
+                  <p className="text-xs text-muted" style={{ marginBottom: '0.75rem' }}>
+                    ⏳ {limitNote}
+                  </p>
+                )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  {plan.items.map(item => (
+                  {todayItems.map(item => (
                     <button
                       key={`${item.kind}-${item.id}`}
                       className="sw-plan-item"
@@ -200,6 +232,7 @@ export default function StudyPlanView({
                     </button>
                   ))}
                 </div>
+                </>
               )}
             </div>
           )}

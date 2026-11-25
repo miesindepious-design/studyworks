@@ -8,29 +8,31 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 
 ---
 
-## 1. Note-level spaced repetition
+## 1. Note-level spaced repetition — DONE
 **Why first:** the whole spaced-repetition engine works only for flashcards.
 Notes have `lastRevisited` and `nextReminder`, but nothing schedules a note to
 come back — so the material a student actually writes never resurfaces as
-they forget it. This is the biggest structural gap in the app.
+they forget it. This was the biggest structural gap in the app.
 
-- [ ] `Note` gains `repetitions`, `interval`, `ef`, `nextReview`, `reviewHistory`
-- [ ] Server: `Note` model gains the same fields + migration
-- [ ] Sync: the new fields survive a push/pull
-- [ ] A "Recall notes" review mode: show the note's title and a masked summary,
+- [x] `Note` gains `repetitions`, `interval`, `ef`, `nextReview`, `reviewHistory`
+- [x] Server: `Note` model gains the same fields + migration (applied)
+- [x] Sync: the new fields survive a push/pull
+- [x] A "Recall notes" review mode: show the note's title and a masked summary,
       reveal, self-rate, schedule with SM-2
-- [ ] Notes join the Study Plan queue on the same terms as cards
-- [ ] Mastery Map counts notes, not just cards and questions
-- [ ] `note_reviewed` XP event (the daily quests need one)
+- [x] Notes join the Study Plan queue on the same terms as cards
+- [x] Mastery Map counts notes, not just cards and questions
+- [x] `note_reviewed` XP event (the daily quests need one)
 
-## 2. Deck settings — daily limits and per-deck overrides
+## 2. Deck settings — daily limits — DONE (global limits; per-deck next)
 **Why:** a backlog of 800 due cards currently means one enormous session or
 none at all. Anki users expect "20 new per day" and "max 200 reviews".
 
-- [ ] `DeckSettings` model: per-folder new/day, reviews/day, per-item overrides
-- [ ] The daily queue respects the limits (cards, questions, notes together)
-- [ ] Settings UI for the global defaults and per-deck overrides
-- [ ] The plan says when it is stopping, and why
+- [x] `DailyLimits` model: new/day and reviews/day, with sane defaults
+- [x] The daily queue respects the limits (cards, questions, notes together)
+- [x] Settings UI for the global limits
+- [x] The plan says when it is stopping, and why
+- [ ] Per-deck overrides in the Settings UI (the engine and the store support
+      them; the UI for choosing a deck is still to come)
 
 ## 3. Deck progress
 **Why:** `DeckProgress` is declared in `src/types.ts` and used nowhere. The
