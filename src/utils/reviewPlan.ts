@@ -216,14 +216,24 @@ export function buildReviewPlan(
   }
 
   // ── Notes due for a revisit ────────────────────────────────────────────────
-  // Notes are not scheduled by SM-2 — the student sets `nextReminder` when
-  // they want to look at a note again. A note with a reminder that has passed
-  // belongs in the plan.
+  // A note becomes due two ways. The student can set `nextReminder` by hand
+  // ("look at this again on Friday"), and the SM-2 scheduler sets `nextReview`
+  // once the note has been recalled at least once. Either one puts it in the
+  // plan; the earlier date wins, because that is when it is actually needed.
   for (const note of notes) {
-    if (!note.nextReminder) continue;
-    const due = new Date(note.nextReminder);
-    if (Number.isNaN(due.getTime())) continue;
+    const candidates: Date[] = [];
+    if (note.nextReminder) {
+      const d = new Date(note.nextReminder);
+      if (!Number.isNaN(d.getTime())) candidates.push(d);
+    }
+    if (note.nextReview) {
+      const d = new Date(note.nextReview);
+      if (!Number.isNaN(d.getTime())) candidates.push(d);
+    }
+    if (candidates.length === 0) continue;
 
+    // The earliest schedule is the one that matters.
+    const due = candidates.reduce((a, b) => (a.getTime() <= b.getTime() ? a : b));
     const late = overdueDays(due, now);
     if (late === 0 && due.getTime() > now.getTime()) continue; // not due yet
 
@@ -358,7 +368,12 @@ export function buildForecast(
 
   for (const c of flashcards) add(c.nextReview ? new Date(c.nextReview) : undefined, 'card');
   for (const q of questions) add(q.nextReview ? new Date(q.nextReview) : undefined, 'question');
-  for (const n of notes) add(n.nextReminder ? new Date(n.nextReminder) : undefined, 'note');
+  for (const n of notes) {
+    // A note can be scheduled by the student or by the SM-2 scheduler. Both
+    // are counted, so the forecast shows the real workload.
+    add(n.nextReminder ? new Date(n.nextReminder) : undefined, 'note');
+    add(n.nextReview ? new Date(n.nextReview) : undefined, 'note');
+  }
 
   return Array.from(buckets.values());
 }

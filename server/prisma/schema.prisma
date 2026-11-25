@@ -155,6 +155,16 @@ model Note {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // Spaced-repetition state. A note that is never reviewed is a note the
+  // student forgets, so notes are scheduled on the same SM-2 curve as cards
+  // and practice questions.
+  repetitions  Int      @default(0)
+  interval     Int      @default(0)
+  ef           Float    @default(2.5)
+  nextReview   DateTime?
+  reviewHistory Json?
+  leechCount   Int      @default(0)
+
   user      User      @relation(fields: [userId],  references: [id], onDelete: Cascade)
   folder    Folder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
 

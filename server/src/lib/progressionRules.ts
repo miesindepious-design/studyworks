@@ -24,6 +24,7 @@ export type XpEventType =
   | 'flashcard_session'
   | 'note_created'
   | 'note_edited'
+  | 'note_reviewed'
   | 'summary_generated'
   | 'flashcards_generated'
   | 'practice_answered'
@@ -56,6 +57,7 @@ export const XP_EVENTS: Record<XpEventType, XpEventDef> = {
   flashcard_session:  { xp: 10, label: 'Review session done',  quest: 'review',      step: 5 },
   note_created:       { xp: 6,  label: 'Note created',         quest: 'notes',       step: 1 },
   note_edited:        { xp: 1,  label: 'Note edited',          quest: 'notes',       step: 1 },
+  note_reviewed:      { xp: 3,  label: 'Note recalled',        quest: 'notes',       step: 1 },
   summary_generated:  { xp: 5,  label: 'Summary generated',    quest: 'summary',     step: 1 },
   flashcards_generated:{ xp: 8,  label: 'Flashcards generated', quest: 'cards',       step: 1 },
   practice_answered:  { xp: 3,  label: 'Practice answered',    quest: 'practice',    step: 1 },

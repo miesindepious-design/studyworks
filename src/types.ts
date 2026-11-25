@@ -62,6 +62,24 @@ export interface Note {
   document?: GeneratedDocumentMeta;
   lastRevisited?: Date;
   nextReminder?: Date;
+  /**
+   * Spaced-repetition state. A note that is never reviewed is a note the
+   * student will forget, so notes are scheduled on the same SM-2 curve as
+   * cards and practice questions. These fields mirror `Flashcard` exactly,
+   * which is what lets one scheduler drive all three.
+   */
+  repetitions?: number;
+  interval?: number;
+  ef?: number;
+  /** When this note should come back. */
+  nextReview?: Date;
+  /** The trail of self-assessed recall ratings, most recent last. */
+  reviewHistory?: Array<{ date: string; quality: number }>;
+  /**
+   * How many times this note has been rated "Again". Three or more means
+   * the note itself is the problem — usually too long to recall.
+   */
+  leechCount?: number;
 }
 
 export interface Contact {

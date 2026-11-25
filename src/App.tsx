@@ -50,6 +50,7 @@ import { ProgressionProvider } from './game/ProgressionContext';
 import LevelBadge from './components/LevelBadge';
 import LeaderboardView from './components/LeaderboardView';
 import StudyPlanView from './components/StudyPlanView';
+import NoteRecallView from './components/NoteRecallView';
 import type { PlanItem } from './utils/reviewPlan';
 import DuelView from './components/DuelView';
 import { getRoomFile, type RoomFileInfo } from './api/roomFiles';
@@ -641,8 +642,10 @@ export default function App() {
   // what is due is useful even if reviewing it is not.
   const handlePlanStartReview = (item: PlanItem) => {
     if (item.kind === 'note') {
+      // A note in the plan is a note to recall, so it opens the recall
+      // screen — that is the screen that can actually present it.
       setPendingPlanItem(item);
-      setCurrentView('notes');
+      setCurrentView('recall');
       return;
     }
     if (tier !== 'pro' && trialDaysLeft <= 0) {
@@ -856,6 +859,17 @@ export default function App() {
               notes={notesUR.state}
               setCurrentView={navigateTo}
               onStartReview={handlePlanStartReview}
+            />
+          )}
+          {currentView === 'recall' && (
+            <NoteRecallView
+              notes={notesUR.state}
+              setNotes={notesUR.set}
+              onExit={() => { setPendingPlanItem(null); setCurrentView('plan'); }}
+              onOpenNote={noteId => {
+                setPendingPlanItem({ id: noteId, kind: 'note', title: '', detail: '', priority: 0, reason: 'due', isNew: false });
+                setCurrentView('notes');
+              }}
             />
           )}
           {currentView === 'notes' && (

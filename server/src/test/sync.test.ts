@@ -233,6 +233,44 @@ describe('Sync LWW — push endpoint', () => {
     expect(call.update.personalNotes.create[0].content).toBe('my thought');
   });
 
+  it('keeps a note\'s spaced-repetition state', async () => {
+    // Without these in the schema, Zod stripped them from every push and a
+    // note's schedule was reset on every sync — so a note due in three days
+    // came back due immediately on the next device.
+    const { request, login } = await buildTestApp();
+    prismaMock.folder.findUnique.mockResolvedValue(null);
+    prismaMock.note.findUnique.mockResolvedValue(null);
+    prismaMock.note.upsert.mockResolvedValue({} as any);
+    prismaMock.contact.findUnique.mockResolvedValue(null);
+    prismaMock.flashcard.findUnique.mockResolvedValue(null);
+    prismaMock.practiceQuestion.findUnique.mockResolvedValue(null);
+    prismaMock.savedSearch.findUnique.mockResolvedValue(null);
+
+    login(baseUser);
+    const res = await request('/api/sync', {
+      method: 'POST',
+      body: JSON.stringify({
+        notes: [{
+          id: 'n1', title: 'T', content: 'C', tags: [], type: 'note',
+          repetitions: 4, interval: 12, ef: 2.6, leechCount: 1,
+          nextReview: '2026-01-20T09:00:00.000Z',
+          reviewHistory: [{ date: '2026-01-10', quality: 2 }],
+          createdAt: '2026-01-01T10:00:00.000Z', updatedAt: '2026-01-11T10:00:00.000Z',
+        }],
+        contacts: [], flashcards: [], folders: [], practiceQuestions: [], savedSearches: [],
+      }),
+    });
+    expect(res.status).toBe(200);
+
+    const call = prismaMock.note.upsert.mock.calls[0][0] as any;
+    expect(call.update.repetitions).toBe(4);
+    expect(call.update.interval).toBe(12);
+    expect(call.update.ef).toBe(2.6);
+    expect(call.update.leechCount).toBe(1);
+    expect(call.update.nextReview).toBeInstanceOf(Date);
+    expect(call.update.reviewHistory).toEqual([{ date: '2026-01-10', quality: 2 }]);
+  });
+
   it('protects contacts the same way', async () => {
     const { request, login } = await buildTestApp();
     prismaMock.folder.findUnique.mockResolvedValue(null);

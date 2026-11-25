@@ -10,12 +10,14 @@
  * the list is always the best thing to study next.
  */
 import { useMemo } from 'react';
-import type { Flashcard, PracticeQuestion } from '../types';
+import type { Flashcard, Note, PracticeQuestion } from '../types';
 import { computeMastery, weakestTopics } from '../utils/mastery';
 
 export interface MasteryMapProps {
   flashcards: Flashcard[];
   practiceQuestions?: PracticeQuestion[];
+  /** Notes count towards the map too — they are scheduled material now. */
+  notes?: Note[];
   /** Called with a topic when the student clicks one. */
   onPickTopic?: (topic: string) => void;
   /** How many topics to show. */
@@ -32,12 +34,13 @@ function barColour(pct: number): string {
 export default function MasteryMap({
   flashcards,
   practiceQuestions = [],
+  notes = [],
   onPickTopic,
   limit = 8,
 }: MasteryMapProps) {
   const mastery = useMemo(
-    () => computeMastery(flashcards, practiceQuestions),
-    [flashcards, practiceQuestions],
+    () => computeMastery(flashcards, practiceQuestions, new Date(), notes),
+    [flashcards, practiceQuestions, notes],
   );
 
   const topics = mastery.slice(0, limit);

@@ -923,6 +923,9 @@ export default function Dashboard({
           <button type="button" className="sw-recall-btn" onClick={() => setCurrentView('flashcards')}>
             Quick review <IconArrowRight size={14} />
           </button>
+          <button type="button" className="sw-recall-btn" onClick={() => setCurrentView('recall')}>
+            Recall notes <IconArrowRight size={14} />
+          </button>
         </div>
       </section>
 
@@ -937,6 +940,7 @@ export default function Dashboard({
           <MasteryMap
             flashcards={flashcards}
             practiceQuestions={practiceQuestions}
+            notes={notes}
             onPickTopic={() => setCurrentView('flashcards')}
           />
         </Reveal>

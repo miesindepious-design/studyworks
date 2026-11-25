@@ -11,7 +11,7 @@
  * factor says the student finds it easy — a card that keeps being answered
  * "again" is not mastered no matter how many times it has come round.
  */
-import type { Flashcard, PracticeQuestion } from '../types';
+import type { Flashcard, Note, PracticeQuestion } from '../types';
 
 export type MasteryStage = 'new' | 'learning' | 'mastered';
 
@@ -63,6 +63,7 @@ export function computeMastery(
   flashcards: Flashcard[],
   practiceQuestions: PracticeQuestion[] = [],
   now = new Date(),
+  notes: Note[] = [],
 ): TopicMastery[] {
   const map = new Map<string, TopicMastery>();
 
@@ -122,6 +123,38 @@ export function computeMastery(
     const entry = ensure(topic);
     entry.total += 1;
     if (!q.nextReview || new Date(q.nextReview) <= now) entry.due += 1;
+  }
+
+  // Notes count towards the topic too. A note is not a card, but it is
+  // material the student is meant to know, and it is now scheduled on the
+  // same curve — so it belongs on the map.
+  for (const note of notes) {
+    // A note's topic comes from its folder, since notes are filed by folder
+    // rather than carrying a subject tag.
+    const topic = (note.topic ?? '').trim() || UNTITLED_TOPIC;
+    const entry = ensure(topic);
+    entry.total += 1;
+
+    const reps = note.repetitions ?? 0;
+    const ef = note.ef ?? 2.5;
+    if (reps === 0) entry.new += 1;
+    else if (reps >= MASTERED_REPETITIONS && ef >= MASTERED_EF) entry.mastered += 1;
+    else entry.learning += 1;
+
+    if (note.nextReview && new Date(note.nextReview) <= now) entry.due += 1;
+    if ((note.leechCount ?? 0) >= 3) entry.leeches += 1;
+
+    const history = note.reviewHistory ?? [];
+    if (history.length > 0) {
+      let g = good.get(topic) ?? 0;
+      let t = total.get(topic) ?? 0;
+      for (const h of history) {
+        if (h.quality >= 2) g += 1;
+        t += 1;
+      }
+      good.set(topic, g);
+      total.set(topic, t);
+    }
   }
 
   const out: TopicMastery[] = [];

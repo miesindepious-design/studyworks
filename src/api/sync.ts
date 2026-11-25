@@ -71,6 +71,14 @@ export async function pushSync(payload: SyncPushPayload): Promise<void> {
       createdAt: n.createdAt.toISOString(),
       updatedAt: n.updatedAt.toISOString(),
       nextReminder: n.nextReminder?.toISOString() ?? null,
+      // The note's spaced-repetition state travels with it, so a note that
+      // is due in three days stays due in three days on the other device.
+      nextReview:  n.nextReview?.toISOString() ?? null,
+      repetitions: n.repetitions ?? 0,
+      interval:    n.interval ?? 0,
+      ef:          n.ef ?? 2.5,
+      leechCount:  n.leechCount ?? 0,
+      reviewHistory: n.reviewHistory ?? [],
       // Highlights and personal notes are part of the note, so they travel
       // with it. The server replaces its copy wholesale with what is sent
       // here, which keeps every device showing the same annotations.
@@ -122,6 +130,14 @@ function reviveNote(n: any): Note {
     createdAt:    new Date(n.createdAt),
     updatedAt:    new Date(n.updatedAt),
     nextReminder: n.nextReminder ? new Date(n.nextReminder) : undefined,
+    // The note's spaced-repetition state, with the same defaults the card
+    // revive uses, so every consumer can rely on these being present.
+    nextReview:  n.nextReview ? new Date(n.nextReview) : undefined,
+    repetitions: typeof n.repetitions === 'number' ? n.repetitions : 0,
+    interval:    typeof n.interval === 'number' ? n.interval : 0,
+    ef:          typeof n.ef === 'number' ? n.ef : 2.5,
+    leechCount:  typeof n.leechCount === 'number' ? n.leechCount : 0,
+    reviewHistory: Array.isArray(n.reviewHistory) ? n.reviewHistory : [],
     // The server sends highlights and personal notes as child relations
     // (`n.highlights` / `n.personalNotes`), while the client stores them
     // under those same names. The dates arrive as ISO strings.

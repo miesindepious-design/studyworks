@@ -33,6 +33,7 @@ import type { Note, Contact, Flashcard, Folder, PracticeQuestion, SavedSearch, S
 import type { UseAIResult } from './hooks/useAI';
 import { PAGE_TITLES } from './config/nav';
 import StudyPlanView from './components/StudyPlanView';
+import NoteRecallView from './components/NoteRecallView';
 
 const param = new URLSearchParams(location.search);
 const VIEW: string = param.get('view') ?? 'dashboard';
@@ -376,6 +377,13 @@ const notes: Note[] = Array.from({ length: 14 }, (_, i) => ({
     { id: 'hl1', text: 'Working memory holds roughly four chunks at any one moment.', color: '#fde68a', createdAt: new Date(now - day) },
     { id: 'hl2', text: 'Chunking is the strategy of grouping individual items into larger units.', color: '#bbf7d0', createdAt: new Date(now - day) },
   ] : [],
+  // The first few notes have been recalled before and are due again, so the
+  // recall screen has something to show.
+  repetitions: i < 3 ? 2 : undefined,
+  interval:    i < 3 ? 4 : undefined,
+  ef:          i < 3 ? 2.5 : undefined,
+  nextReview:  i < 3 ? new Date(now - day) : undefined,
+  reviewHistory: i < 3 ? [{ date: dayKey(now - 6 * day), quality: 2 }] : undefined,
 }));
 
 const TOPICS = ['Cognitive psychology', 'Statistics', 'Neuroscience'];
@@ -569,6 +577,13 @@ function Preview() {
           notes={noteList}
           setCurrentView={noop}
           onStartReview={noop}
+        />
+      );
+      case 'recall': return (
+        <NoteRecallView
+          notes={noteList}
+          setNotes={setNoteList}
+          onExit={noop}
         />
       );
       case 'timer': return <StudyTimer />;

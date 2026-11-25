@@ -112,6 +112,17 @@ const NoteInput = z.object({
   summary:     z.string().optional().nullable(),
   folderId:    z.string().optional().nullable(),
   nextReminder: z.string().datetime().optional().nullable(),
+  // Spaced-repetition state. Without these in the schema, Zod stripped them
+  // from every push and a note's schedule was reset on every sync.
+  repetitions:   z.number().int().min(0).optional().nullable(),
+  interval:      z.number().int().min(0).optional().nullable(),
+  ef:            z.number().min(1.3).max(5.0).optional().nullable(),
+  nextReview:    z.string().datetime().optional().nullable(),
+  leechCount:    z.number().int().min(0).optional().nullable(),
+  reviewHistory: z.array(z.object({
+    date:    z.string(),
+    quality: z.number().int().min(0).max(3),
+  })).optional().nullable(),
   // Highlights and personal notes are pulled from the server (the note query
   // includes both relations) but were never written back to it, so anything
   // the student highlighted or annotated on one device was missing on every
@@ -322,6 +333,7 @@ syncRouter.post('/', zValidator('json', SyncBody), async c => {
             createdAt:   new Date(n.createdAt),
             updatedAt:   new Date(n.updatedAt),
             nextReminder: n.nextReminder ? new Date(n.nextReminder) : undefined,
+            nextReview:  n.nextReview ? new Date(n.nextReview) : undefined,
             highlights:  { create: highlightRows },
             personalNotes: { create: personalNoteRows },
           },
@@ -334,6 +346,15 @@ syncRouter.post('/', zValidator('json', SyncBody), async c => {
             folderId:    n.folderId,
             updatedAt:   new Date(n.updatedAt),
             nextReminder: n.nextReminder ? new Date(n.nextReminder) : null,
+            // The note's spaced-repetition state. Without this the schedule
+            // was reset on every sync, so a note that was due in three days
+            // came back due immediately on the next device.
+            repetitions:   n.repetitions ?? 0,
+            interval:      n.interval ?? 0,
+            ef:            n.ef ?? 2.5,
+            nextReview:    n.nextReview ? new Date(n.nextReview) : null,
+            leechCount:    n.leechCount ?? 0,
+            reviewHistory: n.reviewHistory ?? undefined,
             highlights:  { deleteMany: {}, create: highlightRows },
             personalNotes: { deleteMany: {}, create: personalNoteRows },
           },
