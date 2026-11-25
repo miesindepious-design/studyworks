@@ -9,6 +9,7 @@ import { isLeech, LEECH_THRESHOLD } from '../game/rules';
 import { renderCloze } from '../utils/cloze';
 import { useStudyGoals } from '../hooks/useStudyGoals';
 import { useDeckSettings } from '../hooks/useDeckSettings';
+import DeckProgressPanel from './DeckProgressPanel';
 import { saveSession, getRecentSessions, computeAggregate } from '../db/flashcardStats';
 import type { SessionStat } from '../types';
 
@@ -1087,6 +1088,18 @@ export default function FlashcardsView({
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Deck progress — how far through each folder of cards the student is. */}
+      {studyMode === 'browse' && flashcards.length > 0 && (
+        <div style={{ marginBottom: '1.25rem' }}>
+          <DeckProgressPanel
+            flashcards={flashcards}
+            folders={folders}
+            selectedFolder={selectedFolder}
+            onSelectFolder={folderId => setSelectedFolder(folderId === selectedFolder ? 'all' : folderId)}
+          />
         </div>
       )}
 
