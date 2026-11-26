@@ -23,7 +23,6 @@ import type { Flashcard, Note, PracticeQuestion } from '../types';
 
 const noop = () => {};
 
-const NOW = new Date(2026, 0, 15, 12, 0, 0);
 
 function card(over: Partial<Flashcard> = {}): Flashcard {
   return {

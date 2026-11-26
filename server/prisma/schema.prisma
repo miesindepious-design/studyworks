@@ -71,6 +71,7 @@ model User {
   progress   UserProgress?
   gameRating GameRating?
   examPlans  ExamPlan[]
+  assignments Assignment[]
 
   // Phase 5: matches (live results + asynchronous duels)
   matchesAsChallenger GameMatch[] @relation("MatchChallenger")
@@ -665,4 +666,32 @@ model ExamPlan {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@index([userId])
+}
+
+// ── Grade tracker ─────────────────────────────────────────────────────────────
+// A student needs one number that means something: where they stand, and
+// what they must score on the rest to hit their target. That only works if
+// the weights are honest — a 1% quiz and a 99% final are not the same
+// thing — so each assignment carries the share of the course grade it is
+// worth, and the maths happens on the client.
+model Assignment {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  course    String   @default("General")
+  category  String   @default("Assignment") // Homework | Quiz | Exam | Project | Lab
+  // Percentage points of the final course grade this is worth.
+  weight    Float    @default(0)
+  // The mark received. Null means it has not been marked yet.
+  score     Float?
+  // The mark it is out of.
+  maxScore  Float    @default(100)
+  dueDate   DateTime?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@index([userId, course])
 }

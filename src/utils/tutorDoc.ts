@@ -230,7 +230,7 @@ function splitTableRow(line: string): string[] {
 // ── Building the document model from a tutor session ────────────────────────
 
 export interface TutorTurnInput {
-  mode: 'lesson' | 'simpler' | 'deeper' | 'quiz';
+  mode: 'lesson' | 'simpler' | 'deeper' | 'quiz' | 'socratic';
   response: string;
   keyPoints?: KeyPoint[];
   analysis?: DocumentAnalysis | null;
@@ -250,6 +250,7 @@ const MODE_LABEL: Record<TutorTurnInput['mode'], string> = {
   simpler: 'In simpler words',
   deeper: 'Going deeper',
   quiz: 'Practice questions',
+  socratic: 'Socratic session',
 };
 
 /**

@@ -49,6 +49,7 @@ import { IconDownload, IconUpload, IconSpinner } from './components/icons';
 import { ProgressionProvider } from './game/ProgressionContext';
 import LevelBadge from './components/LevelBadge';
 import LeaderboardView from './components/LeaderboardView';
+import GradesView from './components/GradesView';
 import StudyPlanView from './components/StudyPlanView';
 import NoteRecallView from './components/NoteRecallView';
 import type { PlanItem } from './utils/reviewPlan';
@@ -1032,6 +1033,12 @@ export default function App() {
           )}
           {currentView === 'timer' && (
             <StudyTimer />
+          )}
+          {currentView === 'grades' && (
+            <GradesView
+              authenticated={session.status === 'authenticated'}
+              addToast={addToast}
+            />
           )}
           {currentView === 'leaderboard' && (
             <LeaderboardView />

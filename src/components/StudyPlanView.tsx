@@ -34,7 +34,7 @@ import {
 import { buildMistakes, groupMistakesByTopic, mistakesSummary } from '../utils/errorNotebook';
 import { buildDailyQueue, limitToday, limitSummary } from '../utils/deckSettings';
 import { useDeckSettings } from '../hooks/useDeckSettings';
-import { IconArrowRight, IconCards, IconNotes, IconTarget } from './icons';
+import { IconCards, IconTarget } from './icons';
 
 interface Props {
   flashcards: Flashcard[];

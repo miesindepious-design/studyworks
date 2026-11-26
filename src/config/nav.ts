@@ -9,14 +9,14 @@ import type { ComponentType } from 'react';
 import {
   IconDashboard, IconNotes, IconPeople, IconCards, IconTimer,
   IconTutor, IconStudyRoom, IconQuiz, IconLobby, IconPricing, IconSettings,
-  IconTrophy, IconDuel, IconTarget, IconNotes as IconRecall,
+  IconTrophy, IconDuel, IconTarget, IconGrades, IconNotes as IconRecall,
   type IconProps,
 } from '../components/icons';
 
 export type View =
   | 'dashboard' | 'notes' | 'contacts' | 'flashcards' | 'pricing' | 'settings'
   | 'multiplayer' | 'studyRoom' | 'tutor' | 'timer' | 'admin' | 'lobby'
-  | 'leaderboard' | 'duel' | 'plan' | 'recall';
+  | 'leaderboard' | 'duel' | 'plan' | 'recall' | 'grades';
 
 export interface NavItem {
   view: View;
@@ -44,6 +44,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { view: 'flashcards',  label: 'Flashcards',  icon: IconCards },
       { view: 'recall',      label: 'Recall Notes', icon: IconRecall },
       { view: 'timer',       label: 'Timer',       icon: IconTimer },
+      { view: 'grades',      label: 'Grades',      icon: IconGrades },
       { view: 'leaderboard', label: 'Leaderboard', icon: IconTrophy },
     ],
   },
@@ -82,6 +83,7 @@ export const PAGE_TITLES: Record<View, string> = {
   studyRoom:   'Study Room',
   lobby:       'Lobby',
   timer:       'Study Timer',
+  grades:      'Grades',
   leaderboard: 'Leaderboard',
   duel:        'Duels',
   settings:    'Settings',

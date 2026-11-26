@@ -252,8 +252,18 @@ export function IconTarget(p: IconProps) {
   );
 }
 
-export function IconSparkles(p: IconProps) {
+/** A report card — the grade tracker. */
+export function IconGrades(p: IconProps) {
   return (
+    <Svg {...p}>
+      <path d="M6 3.75h9.5L19 7.25v13H6z" />
+      <path d="M15 3.75v3.5h3.5" />
+      <path d="M9.5 12.5h6M9.5 16h4" />
+    </Svg>
+  );
+}
+
+export function IconSparkles(p: IconProps) {  return (
     <Svg {...p}>
       <path d="m12 3 1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9L12 3Z" />
       <path d="M18.5 15.5 19.4 18l2.5.9-2.5.9-.9 2.5-.9-2.5-2.5-.9 2.5-.9.9-2.5Z" />

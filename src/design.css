@@ -4627,3 +4627,70 @@ select.sw-focus-select option {
 @media (max-width: 620px) {
   .sw-delete-counts { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ── Grade tracker ───────────────────────────────────────────────────────── */
+.sw-grades-top {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.sw-grades-headline {
+  background: linear-gradient(135deg, var(--surface-1), var(--surface-2));
+}
+
+.sw-grades-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+.sw-grades-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.sw-grades-courses {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.6rem;
+}
+.sw-grades-course {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md, 12px);
+  background: var(--surface-1);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+}
+.sw-grades-course:hover { transform: translateY(-1px); }
+
+.sw-grades-list { display: flex; flex-direction: column; }
+.sw-grades-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--border-soft);
+  flex-wrap: wrap;
+}
+.sw-grades-row:first-child { border-top: none; }
+.sw-grades-row-main { flex: 1 1 220px; min-width: 0; }
+.sw-grades-row-mark {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+}
+.sw-grades-row-actions { display: flex; gap: 0.25rem; flex: 0 0 auto; }
+
+@media (max-width: 640px) {
+  .sw-grades-row { align-items: flex-start; }
+  .sw-grades-row-main { flex: 1 1 100%; }
+}
