@@ -49,7 +49,7 @@ interface Props {
   onPendingDocumentConsumed?: () => void;
 }
 
-type TutorMode = 'lesson' | 'simpler' | 'deeper' | 'quiz';
+type TutorMode = 'lesson' | 'simpler' | 'deeper' | 'quiz' | 'socratic';
 
 /** The name of each document format, as the student sees it. */
 const FORMAT_LABEL: Record<GeneratedDocFormat, string> = {
@@ -158,7 +158,12 @@ export function buildChatHistory(
       ? `Topic: ${turn.topic}\n\n${turn.instruction}`
       : turn.mode === 'quiz'
         ? `My answer to your question: ${turn.question || '(no answer given)'}`
-        : `Topic: ${turn.topic}`;
+        : turn.mode === 'socratic'
+          // A Socratic turn carries the student's answer in `question`, the
+          // same field a quiz answer uses. The topic stays in view on every
+          // turn — without it the model loses what it is leading them to.
+          ? `Topic: ${turn.topic}${turn.question ? `\nMy answer: ${turn.question}` : ''}`
+          : `Topic: ${turn.topic}`;
     out.push({ role: 'user', content: ask });
     out.push({ role: 'assistant', content: stripDiagramMarkup(turn.response) });
   }
@@ -223,6 +228,14 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
   const [confusedFor, setConfusedFor] = useState<string | null>(null);
   const [confusedQuote, setConfusedQuote] = useState('');
   const [confusedNote, setConfusedNote] = useState('');
+  // ── Socratic session ────────────────────────────────────────────────────────
+  // A Socratic session is a conversation, not a single answer, so it gets its
+  // own panel and its own input box: the student answers the tutor's question
+  // and the reply is the next question. `socraticTurns` counts the exchanges
+  // so the panel can say how far in they are.
+  const [socraticActive, setSocraticActive] = useState(false);
+  const [socraticAnswer, setSocraticAnswer] = useState('');
+  const [socraticTopic, setSocraticTopic] = useState('');
   // The student's latest highlight inside a tutor answer. Captured on
   // `selectionchange` because clicking the button itself collapses the DOM
   // selection before the click handler can read it.
@@ -543,12 +556,21 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
     setLoading(true);
     setError(null);
     try {
+      // The student's own reply rides along as `lastAnswer`. A quiz answer
+      // and a Socratic reply are both answers to a question the tutor asked,
+      // so they travel the same road.
+      const studentReply = mode === 'quiz'
+        ? answer
+        : mode === 'socratic'
+          ? socraticAnswer
+          : '';
+
       const res = await serverTutor({
         topic: effectiveTopic,
         mode,
         educationLevel: level,
         history: buildChatHistory(history),
-        lastAnswer: mode === 'quiz' ? answer || undefined : undefined,
+        lastAnswer: studentReply || undefined,
         instruction: opts?.instruction ?? undefined,
         documents: tutorDocs,
         documentBrief,
@@ -574,7 +596,11 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
         id: crypto.randomUUID(),
         mode,
         topic: effectiveTopic,
-        question: mode === 'quiz' ? answer || undefined : undefined,
+        question: mode === 'quiz'
+          ? answer || undefined
+          : mode === 'socratic'
+            ? socraticAnswer || undefined
+            : undefined,
         response: res.response,
         followUp: opts?.followUp,
         instruction: opts?.instruction,
@@ -584,11 +610,18 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
       };
       setHistory(prev => [...prev, turn]);
       setAnswer('');
+      if (mode === 'socratic') {
+        // The reply is the next question, so the panel stays open and the
+        // answer box is emptied for the student's next attempt.
+        setSocraticAnswer('');
+        setSocraticActive(true);
+        setSocraticTopic(effectiveTopic);
+      }
       setTopic(effectiveTopic);
       setActiveTopic(effectiveTopic);
       // XP: a lesson, a simpler/deeper re-explanation or a quiz answer all
       // count as tutor work, but a real quiz answer is worth a bit more.
-      award(mode === 'quiz' ? 'tutor_quiz' : 'tutor_session');
+      award(mode === 'quiz' ? 'tutor_quiz' : mode === 'socratic' ? 'tutor_socratic' : 'tutor_session');
       // Voice mode: read the answer aloud
       if (voiceModeRef.current) speakText(res.response);
     } catch (err: any) {
@@ -598,7 +631,40 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
     } finally {
       setLoading(false);
     }
-  }, [topic, unlocked, level, history, answer, addToast, setCurrentView, speakText, tutorDocs, documentBrief, updateDocument]);
+  }, [topic, unlocked, level, history, answer, socraticAnswer, addToast, setCurrentView, speakText, tutorDocs, documentBrief, updateDocument]);
+
+  /**
+   * Start a Socratic session. The tutor asks the first question; from there
+   * the panel below carries the conversation.
+   */
+  const startSocratic = useCallback(async () => {
+    const t = topic.trim() || activeTopic || '';
+    if (!t) { addToast('Enter a topic first.', 'info'); return; }
+    setSocraticTopic(t);
+    setSocraticActive(true);
+    await send('socratic', t);
+  }, [topic, activeTopic, send, addToast]);
+
+  /** Answer the tutor's question. */
+  const sendSocraticAnswer = useCallback(() => {
+    if (!socraticAnswer.trim()) return;
+    send('socratic', socraticTopic || topic.trim());
+  }, [socraticAnswer, socraticTopic, topic, send]);
+
+  /**
+   * Give up and be told. The student asked for it, so the tutor explains the
+   * topic straight away — but the Socratic exchange stays in the transcript,
+   * so the model can see what the student was missing.
+   */
+  const revealSocratic = useCallback(() => {
+    const t = socraticTopic || topic.trim();
+    setSocraticActive(false);
+    setSocraticAnswer('');
+    if (!t) return;
+    send('lesson', t, {
+      instruction: `I tried to work this out Socratically but I could not get there. Please just explain ${t} directly and clearly now.`,
+    });
+  }, [socraticTopic, topic, send]);
 
   /** Read the dropped / browsed files locally and keep their text in memory. */
   const handleFiles = useCallback(async (incoming: File[]) => {
@@ -979,12 +1045,20 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
     </div>
   );
 
-  /** Mode buttons (simpler / deeper / quiz / save). */
+  /** Mode buttons (simpler / deeper / quiz / socratic / save). */
   const modeControls = (
     <div className="sw-tutor-modes">
       <button className="btn btn-secondary btn-sm" onClick={() => send('simpler')} disabled={loading || !latestResponse}>Simpler</button>
       <button className="btn btn-secondary btn-sm" onClick={() => send('deeper')} disabled={loading || !latestResponse}>Dive deeper</button>
       <button className="btn btn-secondary btn-sm" onClick={() => send('quiz')} disabled={loading || !latestResponse}>Test me</button>
+      <button
+        className={`btn btn-sm ${socraticActive ? 'btn-primary' : 'btn-secondary'}`}
+        onClick={startSocratic}
+        disabled={loading || !(topic.trim() || activeTopic)}
+        title="The tutor asks you questions instead of telling you the answer — you work it out"
+      >
+        🧭 {socraticActive ? 'Socratic on' : 'Socratic'}
+      </button>
       {activeTopic && (
         <button className="btn btn-ghost btn-sm" onClick={() => setShowDocDialog(true)} disabled={saving || loading}>
           {saving ? 'Saving…' : '📄 Save as document'}
@@ -992,6 +1066,68 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
       )}
     </div>
   );
+
+  /**
+   * The Socratic panel: the tutor's question and the student's answer box.
+   * It only appears once a Socratic session is running — the mode is not a
+   * toggle on the existing lesson flow, it is a different kind of exchange.
+   */
+  const socraticPanel = (() => {
+    if (!socraticActive) return null;
+    const exchanges = history.filter(t => t.mode === 'socratic').length;
+    return (
+      <div
+        className="card"
+        style={{ padding: '1.1rem 1.25rem', margin: '0.75rem 0', borderColor: 'var(--accent)' }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+          <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700 }}>
+            🧭 Socratic session{socraticTopic ? ` — ${socraticTopic}` : ''}
+          </h4>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => { setSocraticActive(false); setSocraticAnswer(''); }}
+            title="Leave the Socratic session — the transcript stays"
+          >
+            ✕
+          </button>
+        </div>
+        <p className="text-xs text-muted" style={{ margin: '0.4rem 0 0.75rem' }}>
+          The tutor asks, you answer. It will not hand you the answer — that is the
+          whole point, because working it out is what makes it stick.
+          {exchanges > 0 && ` ${exchanges} exchange${exchanges === 1 ? '' : 's'} so far.`}
+        </p>
+        <textarea
+          className="textarea"
+          rows={3}
+          value={socraticAnswer}
+          onChange={e => setSocraticAnswer(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendSocraticAnswer();
+          }}
+          placeholder="Answer the tutor's question in your own words…"
+          aria-label="Your answer"
+        />
+        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.6rem', flexWrap: 'wrap' }}>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={revealSocratic}
+            disabled={loading}
+            title="Stop the questions and get the explanation"
+          >
+            Just tell me the answer
+          </button>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={sendSocraticAnswer}
+            disabled={loading || !socraticAnswer.trim()}
+          >
+            {loading ? 'Thinking…' : 'Answer'}
+          </button>
+        </div>
+      </div>
+    );
+  })();
 
   /**
    * The "save as a document" panel: the format that fits the session is
@@ -1117,6 +1253,16 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
           <DocumentBriefing analysis={turn.analysis} />
         ) : (
           <>
+            {/* In a Socratic session the turn carries the student's answer
+                and the tutor's reply to it, so the answer is shown first —
+                otherwise the transcript reads as if the tutor asked a
+                question nobody answered. */}
+            {turn.mode === 'socratic' && turn.question && (
+              <div className="sw-tutor-asked">
+                <span className="sw-tutor-asked-label">🧭 You answered:</span>
+                <p>{turn.question}</p>
+              </div>
+            )}
             {/* Formatted, symbol-free answer */}
             <div data-turn-id={turn.id}>
               {renderAiText(turn.response)}
@@ -1129,8 +1275,10 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
           </>
         )}
 
-        {/* Follow-up interactions for explanation turns */}
-        {turn.mode !== 'quiz' && (
+        {/* Follow-up interactions for explanation turns. A Socratic turn is
+            not an explanation — offering a diagram or a re-explanation
+            breaks the contract that the tutor asks and the student answers. */}
+        {turn.mode !== 'quiz' && turn.mode !== 'socratic' && (
           <div className="sw-tutor-followups">
             <button
               className="btn btn-secondary btn-sm"
@@ -1277,6 +1425,7 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
         {askRow}
         {voiceControls}
         {modeControls}
+        {socraticPanel}
         {docDialog}
       </div>
       <div className="sw-tutor-fs-list" ref={panelRef}>
@@ -1348,6 +1497,8 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
           {voiceControls}
 
           {modeControls}
+
+          {socraticPanel}
 
           {docDialog}
 

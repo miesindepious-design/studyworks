@@ -79,4 +79,26 @@ describe('buildChatHistory', () => {
     ]);
     expect(history[1].content).toContain('──▶');
   });
+
+  it('replays a Socratic answer as the student turn', () => {
+    const history = buildChatHistory([
+      turn({ mode: 'socratic', question: 'sunlight, water and CO2', response: 'Good. Where is that energy captured?' }),
+    ]);
+    expect(history[0].role).toBe('user');
+    expect(history[0].content).toContain('sunlight, water and CO2');
+    expect(history[1].role).toBe('assistant');
+    expect(history[1].content).toContain('Where is that energy captured');
+  });
+
+  it('keeps the topic in view on every Socratic turn', () => {
+    // Without the topic the model loses what it is leading the student to,
+    // and the second question of a session drifts off the subject.
+    const history = buildChatHistory([
+      turn({ mode: 'socratic', response: 'First question?' }),
+      turn({ mode: 'socratic', question: 'My first answer', response: 'Second question?' }),
+    ]);
+    expect(history[0].content).toContain('photosynthesis');
+    expect(history[2].content).toContain('photosynthesis');
+    expect(history[2].content).toContain('My first answer');
+  });
 });

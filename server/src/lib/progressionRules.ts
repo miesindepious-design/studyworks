@@ -30,6 +30,7 @@ export type XpEventType =
   | 'practice_answered'
   | 'tutor_session'
   | 'tutor_quiz'
+  | 'tutor_socratic'
   | 'quiz_played'
   | 'quiz_won'
   | 'duel_completed'
@@ -63,6 +64,7 @@ export const XP_EVENTS: Record<XpEventType, XpEventDef> = {
   practice_answered:  { xp: 3,  label: 'Practice answered',    quest: 'practice',    step: 1 },
   tutor_session:      { xp: 10, label: 'Tutor session',        quest: 'tutor',       step: 1 },
   tutor_quiz:         { xp: 4,  label: 'Tutor question',       quest: 'tutor',       step: 1 },
+  tutor_socratic:     { xp: 8,  label: 'Socratic answer',      quest: 'tutor',       step: 1 },
   quiz_played:        { xp: 25, label: 'Quiz battle played',   quest: 'battle',      step: 1 },
   quiz_won:           { xp: 30, label: 'Quiz battle won',      quest: 'battle',      step: 1 },
   duel_completed:     { xp: 20, label: 'Duel completed',       quest: 'battle',      step: 1 },

@@ -438,11 +438,11 @@ Generate 4-5 insights. Each "body" should be 1-2 sentences, specific and actiona
 });
 
 // ── AI Tutor ──────────────────────────────────────────────────────────────────
-type TutorMode = 'lesson' | 'simpler' | 'deeper' | 'quiz';
+type TutorMode = 'lesson' | 'simpler' | 'deeper' | 'quiz' | 'socratic';
 
 const TutorRequestBody = z.object({
   topic:       z.string().min(1),
-  mode:        z.enum(['lesson', 'simpler', 'deeper', 'quiz']).default('lesson'),
+  mode:        z.enum(['lesson', 'simpler', 'deeper', 'quiz', 'socratic']).default('lesson'),
   educationLevel: z.string().optional().nullable(),
   history: z.array(z.object({
     role: z.enum(['system', 'user', 'assistant']),
@@ -534,6 +534,17 @@ aiRouter.post('/tutor', requireAI, zValidator('json', TutorRequestBody), async c
     simpler: `The student found the previous explanation too hard. Re-explain the same topic at a simpler level for ${audience}. Use more everyday analogies, shorter sentences, and explicit step-by-step reasoning. Avoid jargon where possible, or define every term you use.`,
     deeper: `The student wants to go beyond the standard curriculum. Extend the lesson into a more advanced, research-oriented treatment suitable for ${audience}. Include stronger formalism, edge cases, modern interpretations, and references to deeper ideas. Frame it as exam-grade advanced notes: likely exam topics, derivations, comparison tables, and common pitfalls.`,
     quiz: `Generate a short mastery quiz for the topic so far. Mix recall, conceptual, and application questions. After each question, give brief feedback. Finish with a short assessment of whether the student seems ready to move on.`,
+    socratic: `You are running a Socratic session on "${topic}" for a ${audience} student. You do not tell the student the answer — you lead them to it by asking questions.
+
+Rules for every reply:
+- Ask EXACTLY ONE question per reply. Never two questions in the same reply.
+- Never state the answer, the definition or the conclusion yourself. If the student asks you to "just tell them", do not lecture: ask the one question that lets them work it out, and offer to reveal the answer if they ask a second time.
+- Build up from what the student already knows. Ask about a prerequisite before you ask about the hard part.
+- If the student's answer is wrong, say which part of it is off and ask a narrower question that lets them spot the mistake themselves. Do not restate the correct answer.
+- If the student is stuck, give a smaller hint — then, if they are still stuck, a smaller hint still. Only give the answer after they have genuinely tried, and then say plainly what the answer was and why.
+- Keep the reply short: at most four short sentences plus the question.
+- When the student has shown they understand, say so plainly, summarise in one line what they worked out, and ask one deeper question to stretch them further.
+- Never use headings, tables or diagrams in a Socratic reply — a wall of notes is exactly the thing the student is being asked not to read.`,
   };
 
   // Output contract. The client renders the reply as markdown, so a little
@@ -576,8 +587,11 @@ Diagram rules — a picture costs far more tokens than a sentence, so use the ch
   }
 
   // The key-points block is what powers the "Key points to remember" panel.
-  // A quiz doesn't need one — it produces questions, not revision notes.
-  const wantsKeyPoints = mode !== 'quiz';
+  // A quiz doesn't need one — it produces questions, not revision notes. A
+  // Socratic reply doesn't either: it is one question, and a list of key
+  // points under it would hand the student the very thing we are asking them
+  // to work out for themselves.
+  const wantsKeyPoints = mode !== 'quiz' && mode !== 'socratic';
 
   const messages = [
     {
@@ -592,11 +606,24 @@ Diagram rules — a picture costs far more tokens than a sentence, so use the ch
       // it must never be dropped — not even when a quiz answer is present.
       // The uploaded material rides here too: it is source material to
       // ground the answer on, not an instruction.
-      content: [
-        lastAnswer ? `Student answer: ${lastAnswer}` : `Topic: ${topic}`,
-        instruction ?? '',
-        documentContext.trim(),
-      ].filter(Boolean).join('\n\n'),
+      //
+      // A Socratic session is different: the student's reply to the tutor's
+      // previous question arrives as `lastAnswer`, and the topic has to stay
+      // in view every time or the model loses what it is leading them to.
+      content: mode === 'socratic'
+        ? [
+            `Topic: ${topic}`,
+            lastAnswer
+              ? `Student answer: ${lastAnswer}`
+              : 'The student has just asked to work through this topic Socratically. Open with your first question.',
+            instruction ?? '',
+            documentContext.trim(),
+          ].filter(Boolean).join('\n\n')
+        : [
+            lastAnswer ? `Student answer: ${lastAnswer}` : `Topic: ${topic}`,
+            instruction ?? '',
+            documentContext.trim(),
+          ].filter(Boolean).join('\n\n'),
     },
   ];
 
@@ -606,14 +633,19 @@ Diagram rules — a picture costs far more tokens than a sentence, so use the ch
       model: cfg.model,
       apiKey: cfg.apiKey,
       messages,
-      temperature: mode === 'quiz' ? 0.4 : 0.7,
+      temperature: mode === 'quiz' ? 0.4 : mode === 'socratic' ? 0.6 : 0.7,
       // A lesson is long: exam-ready notes *plus* a labelled SVG diagram.
       // At 4000 tokens the reply was sometimes cut off mid-diagram, which
       // left the student staring at raw SVG markup instead of a picture.
-      maxTokens: mode === 'quiz' ? 1200 : 8000,
+      //
+      // A Socratic reply is one question — a few sentences at most. Letting
+      // the model write 8000 tokens of it would break the whole point of the
+      // mode, so it gets a tight budget and it has to fit in one.
+      maxTokens: mode === 'quiz' ? 1200 : mode === 'socratic' ? 700 : 8000,
       // A lesson is the one place where thinking pays off; a quiz just
-      // needs recall.
-      thinking: mode === 'quiz' ? 'low' : 'medium',
+      // needs recall. A Socratic question needs thought but not deep
+      // reasoning — the model is asking, not solving.
+      thinking: mode === 'quiz' ? 'low' : mode === 'socratic' ? 'low' : 'medium',
     });
 
     // Split the machine-readable key-points block out of the reply so the

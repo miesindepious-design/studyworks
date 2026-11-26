@@ -206,7 +206,7 @@ export function narrowPracticeQuestion(
 
 export interface TutorRequest {
   topic: string;
-  mode: 'lesson' | 'simpler' | 'deeper' | 'quiz';
+  mode: 'lesson' | 'simpler' | 'deeper' | 'quiz' | 'socratic';
   educationLevel?: string | null;
   history?: { role: 'system' | 'user' | 'assistant'; content: string }[];
   lastAnswer?: string | null;
