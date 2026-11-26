@@ -26,6 +26,7 @@ import {
 } from '../config/studentProfile';
 import { buildExportPayload, downloadJSON, openPrintableExport } from '../utils/dataExport';
 import AnkiPanel from './AnkiPanel';
+import { getDigestPreferences, saveDigestPreferences, sendDigestNow, DIGEST_DAY_NAMES } from '../api/digest';
 import {
   IconBell, IconPeople, IconTimer, IconSparkles, IconTutor,
   IconDownload, IconLock, IconSearch,
@@ -103,6 +104,12 @@ export default function SettingsView({
   const { goals, updateGoal } = useStudyGoals();
   const { limits, setLimits } = useDeckSettings();
 
+  // Weekly email digest — off until the student turns it on.
+  const [digestOn, setDigestOn] = useState(false);
+  const [digestDay, setDigestDay] = useState(1);
+  const [digestSaving, setDigestSaving] = useState(false);
+  const [digestSending, setDigestSending] = useState(false);
+
   // AI config state
   const [aiConfig, setAiConfigState] = useState<AIConfig>({ provider: 'gemini', apiKey: '', model: 'gemini-2.5-flash', enabled: false });
   const [showKey, setShowKey]     = useState(false);
@@ -118,6 +125,11 @@ export default function SettingsView({
 
   useEffect(() => {
     getAIConfig().then(setAiConfigState);
+    // The digest preference lives on the server so it follows the student
+    // between devices.
+    getDigestPreferences()
+      .then(p => { setDigestOn(p.enabled); setDigestDay(p.day); })
+      .catch(() => {});
     serverAI.fetchAISettings().then(s => {
       if (s) {
         setServerManaged(s.serverManaged);
@@ -889,6 +901,123 @@ export default function SettingsView({
                     </div>
                   ))}
                 </div>
+              </div>
+            </div>
+
+            {/* ── Weekly digest ─────────────────────────────────────────── */}
+            <div
+              className={`sw-settings-cell sw-span-3${matches('digest', 'email', 'weekly', 'newsletter') ? '' : ' is-filtered'}`}
+              id="settings-digest"
+            >
+              <div className="card">
+                <div className="card-header">
+                  <div>
+                    <span className="card-title">📬 Weekly digest</span>
+                    <p className="card-note" style={{ margin: '4px 0 0' }}>
+                      One email a week: what you studied, what is waiting
+                    </p>
+                  </div>
+                  <div className="sw-card-aside">
+                    <span className="sw-glyph" aria-hidden="true"><IconBell size={14} /></span>
+                    <span className="sw-card-status" style={{ color: digestOn ? 'var(--success)' : 'var(--muted-foreground)' }}>
+                      {digestOn ? 'On' : 'Off'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="sw-switch-row">
+                  <div>
+                    <div className="sw-switch-label">Email me my week</div>
+                    <div className="sw-switch-note">
+                      Off by default. Nothing is sent until you turn this on, and turning it
+                      off stops it immediately.
+                    </div>
+                  </div>
+                  <button
+                    className="toggle"
+                    onClick={async () => {
+                      const next = !digestOn;
+                      setDigestOn(next);
+                      setDigestSaving(true);
+                      try {
+                        await saveDigestPreferences({ enabled: next, day: digestDay });
+                        onAddToast(
+                          next
+                            ? `Weekly digest on — it will land every ${DIGEST_DAY_NAMES[digestDay]}.`
+                            : 'Weekly digest off.',
+                          'success',
+                        );
+                      } catch (err: any) {
+                        setDigestOn(!next); // put the switch back
+                        onAddToast(err.message || 'Could not save the digest setting.', 'error');
+                      } finally {
+                        setDigestSaving(false);
+                      }
+                    }}
+                    role="switch"
+                    aria-checked={digestOn}
+                    aria-label="Email me my week"
+                    disabled={digestSaving}
+                  />
+                </div>
+
+                {digestOn && (
+                  <>
+                    <div className="sw-switch-row" style={{ marginTop: '0.75rem' }}>
+                      <div>
+                        <div className="sw-switch-label">Which day</div>
+                        <div className="sw-switch-note">
+                          The email arrives on this day, covering the week just gone.
+                        </div>
+                      </div>
+                      <select
+                        className="select select-sm"
+                        value={digestDay}
+                        onChange={async e => {
+                          const day = Number(e.target.value);
+                          setDigestDay(day);
+                          try {
+                            await saveDigestPreferences({ enabled: true, day });
+                          } catch (err: any) {
+                            onAddToast(err.message || 'Could not save the day.', 'error');
+                          }
+                        }}
+                        style={{ width: 'auto' }}
+                        aria-label="Day the digest arrives"
+                      >
+                        {DIGEST_DAY_NAMES.map((name, i) => (
+                          <option key={name} value={i}>{name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="sw-switch-row" style={{ marginTop: '0.5rem' }}>
+                      <div>
+                        <div className="sw-switch-label">Send me one now</div>
+                        <div className="sw-switch-note">
+                          A preview of the real thing, so you know what you are signing up for.
+                        </div>
+                      </div>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        disabled={digestSending}
+                        onClick={async () => {
+                          setDigestSending(true);
+                          try {
+                            await sendDigestNow();
+                            onAddToast('Digest sent — check your inbox.', 'success');
+                          } catch (err: any) {
+                            onAddToast(err.message || 'Could not send the digest.', 'error');
+                          } finally {
+                            setDigestSending(false);
+                          }
+                        }}
+                      >
+                        {digestSending ? 'Sending…' : '📧 Send it'}
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 

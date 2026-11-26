@@ -20,7 +20,8 @@
     "keepalive": "tsx src/keepalive.ts",
     "keepalive:build": "tsc -p tsconfig.voice.json",
     "keepalive:start": "node dist-voice/keepalive.js",
-    "keys:check": "node scripts/check-ai-keys.mjs"
+    "keys:check": "node scripts/check-ai-keys.mjs",
+    "digest:cron": "tsx src/digestCron.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1086.0",

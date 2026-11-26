@@ -64,6 +64,13 @@ model User {
   lobbies     Lobby[]
   lobbyVisits LobbyParticipant[]
 
+  // Weekly email digest — opt-in, off by default. Nobody gets mail they
+  // did not ask for. `digestDay` is 0 = Sunday … 6 = Saturday.
+  digestEnabled    Boolean   @default(false)
+  digestDay        Int       @default(1)
+  // When the last digest went out, so a retried run never double-sends.
+  digestLastSentAt DateTime?
+
   // Phase 6: shared study files dropped into a lobby
   roomFiles   RoomFile[]
 
