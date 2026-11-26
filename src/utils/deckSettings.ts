@@ -61,6 +61,10 @@ export interface DeckLimit {
 /**
  * An item waiting in the queue, split into the two kinds the limits count
  * separately.
+ *
+ * `T` is the payload — the thing being reviewed. The wrapper adds the two
+ * facts the limits need: whether the student has seen it before, and which
+ * deck it belongs to.
  */
 export interface LimitedItem<T> {
   item: T;
@@ -70,12 +74,25 @@ export interface LimitedItem<T> {
   folderId?: string;
 }
 
+/**
+ * The minimum a queue entry has to carry for the limits to work.
+ *
+ * The payload itself lives under a different key in different queues —
+ * `item` in a plain queue, `value` in the day's combined queue — so the
+ * limits never touch it. They only need to know new-or-not and which deck
+ * it belongs to.
+ */
+export interface LimitedEntry {
+  isNew: boolean;
+  folderId?: string;
+}
+
 /** What the limits did to a queue. */
 export interface LimitedQueue<T> {
   /** The items that fit within today's limits. */
-  included: LimitedItem<T>[];
+  included: T[];
   /** The items held back for another day. */
-  deferred: LimitedItem<T>[];
+  deferred: T[];
   /** How many of each kind made the cut. */
   includedNew: number;
   includedReviews: number;
@@ -130,7 +147,7 @@ export function isNewItem(item: {
  * work) is what gets into today's session, and the least urgent new cards
  * are what gets pushed to tomorrow.
  */
-export function applyDailyLimits<T extends LimitedItem<unknown>>(
+export function applyDailyLimits<T extends LimitedEntry>(
   queue: T[],
   global: DailyLimits = DEFAULT_LIMITS,
   decks: DeckLimit[] = [],

@@ -50,6 +50,7 @@ import { ProgressionProvider } from './game/ProgressionContext';
 import LevelBadge from './components/LevelBadge';
 import LeaderboardView from './components/LeaderboardView';
 import GradesView from './components/GradesView';
+import CitationsView from './components/CitationsView';
 import StudyPlanView from './components/StudyPlanView';
 import NoteRecallView from './components/NoteRecallView';
 import type { PlanItem } from './utils/reviewPlan';
@@ -1036,6 +1037,12 @@ export default function App() {
           )}
           {currentView === 'grades' && (
             <GradesView
+              authenticated={session.status === 'authenticated'}
+              addToast={addToast}
+            />
+          )}
+          {currentView === 'citations' && (
+            <CitationsView
               authenticated={session.status === 'authenticated'}
               addToast={addToast}
             />

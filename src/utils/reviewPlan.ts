@@ -135,7 +135,6 @@ export function buildReviewPlan(
   limit = 60,
 ): ReviewPlan {
   const items: PlanItem[] = [];
-  const today = startOfDay(now);
 
   // ── Flashcards ──────────────────────────────────────────────────────────────
   for (const card of flashcards) {

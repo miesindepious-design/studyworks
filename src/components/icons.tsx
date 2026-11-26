@@ -263,6 +263,18 @@ export function IconGrades(p: IconProps) {
   );
 }
 
+/** An open book with a citation marker — the bibliography. */
+export function IconCitations(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M12 6.5S9.8 4.75 5.5 4.75H4v13h1.5c4.3 0 6.5 1.75 6.5 1.75" />
+      <path d="M12 6.5s2.2-1.75 6.5-1.75H20v13h-1.5c-4.3 0-6.5 1.75-6.5 1.75" />
+      <path d="M12 6.5v13" />
+      <path d="M7 9h2.5M14.5 9H17" />
+    </Svg>
+  );
+}
+
 export function IconSparkles(p: IconProps) {  return (
     <Svg {...p}>
       <path d="m12 3 1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9L12 3Z" />

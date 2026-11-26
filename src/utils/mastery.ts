@@ -129,9 +129,9 @@ export function computeMastery(
   // material the student is meant to know, and it is now scheduled on the
   // same curve — so it belongs on the map.
   for (const note of notes) {
-    // A note's topic comes from its folder, since notes are filed by folder
-    // rather than carrying a subject tag.
-    const topic = (note.topic ?? '').trim() || UNTITLED_TOPIC;
+    // A note's topic is the subject it was tagged with; an untagged note
+    // lands under "General" rather than being dropped from the map.
+    const topic = topicOf(note);
     const entry = ensure(topic);
     entry.total += 1;
 

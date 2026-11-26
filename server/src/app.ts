@@ -28,6 +28,7 @@ import { progressionRouter } from './routes/progression.js';
 import { duelsRouter } from './routes/duels.js';
 import { examsRouter } from './routes/exams.js';
 import { gradesRouter } from './routes/grades.js';
+import { citationsRouter } from './routes/citations.js';
 import { digestRouter } from './routes/digest.js';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
@@ -92,6 +93,7 @@ app.route('/api/progression', progressionRouter);
 app.route('/api/duels',       duelsRouter);
 app.route('/api/exams',       examsRouter);
 app.route('/api/grades',      gradesRouter);
+app.route('/api/citations',   citationsRouter);
 app.route('/api/digest',     digestRouter);
 
 // Admin

@@ -18,7 +18,6 @@ import {
   isNoteLeech,
   noteDifficultyReason,
   NOTE_LEECH_THRESHOLD,
-  type NoteRecallQuality,
 } from './noteSrs';
 import type { Note } from '../types';
 
@@ -155,7 +154,7 @@ describe('scheduleNote', () => {
     let last = 0;
     for (let i = 0; i < 4; i++) {
       const result = scheduleNote(n, 2, NOW);
-      last = result.interval;
+      last = result.interval ?? 0;
       n = { ...n, ...result };
     }
     expect(last).toBeGreaterThan(1);
@@ -165,7 +164,7 @@ describe('scheduleNote', () => {
     const short = scheduleNote(note(), 3, NOW);
     const long = scheduleNote(note({ content: 'sentence. '.repeat(100) }), 3, NOW);
     // "Easy" is capped at "Good" for a long note, so its interval is shorter.
-    expect(long.interval).toBeLessThan(short.interval);
+    expect(long.interval ?? 0).toBeLessThan(short.interval ?? 0);
   });
 });
 

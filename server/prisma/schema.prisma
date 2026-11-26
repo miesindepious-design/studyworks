@@ -79,6 +79,7 @@ model User {
   gameRating GameRating?
   examPlans  ExamPlan[]
   assignments Assignment[]
+  citations   Citation[]
 
   // Phase 5: matches (live results + asynchronous duels)
   matchesAsChallenger GameMatch[] @relation("MatchChallenger")
@@ -701,4 +702,35 @@ model Assignment {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@index([userId])
   @@index([userId, course])
+}
+
+// A source in the student's bibliography. Only the facts are stored — the
+// formatting into APA/MLA/Harvard/Chicago happens on the client, so
+// switching style never re-saves anything.
+model Citation {
+  id        String   @id @default(cuid())
+  userId    String
+  // book | journal | website | chapter | video | report | thesis
+  type      String   @default("book")
+  // One author per entry, "Last, First" or "First Last".
+  authors   String[] @default([])
+  editor    String?
+  year      String   @default("")
+  title     String
+  // The containing work: a journal name, a book title, a website name.
+  container String?
+  publisher String?
+  place     String?
+  volume    String?
+  issue     String?
+  pages     String?
+  url       String?
+  doi       String?
+  // The date the page was looked at, ISO (YYYY-MM-DD).
+  accessed  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
 }

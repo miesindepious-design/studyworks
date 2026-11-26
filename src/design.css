@@ -4694,3 +4694,65 @@ select.sw-focus-select option {
   .sw-grades-row { align-items: flex-start; }
   .sw-grades-row-main { flex: 1 1 100%; }
 }
+
+/* ── Citations & bibliography ─────────────────────────────────────────────── */
+.sw-cite-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+.sw-cite-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+/* The reference list itself — a hanging indent, the way a bibliography is set. */
+.sw-cite-output {
+  margin: 0;
+  padding: 0.25rem 0 0.25rem 1.5rem;
+  font-family: var(--font-serif, Georgia, 'Times New Roman', serif);
+  font-size: 0.92rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-indent: -1.5rem;
+  color: var(--text);
+}
+
+.sw-cite-list { display: flex; flex-direction: column; }
+.sw-cite-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--border-soft);
+  flex-wrap: wrap;
+}
+.sw-cite-row:first-child { border-top: none; }
+.sw-cite-row-main { flex: 1 1 260px; min-width: 0; }
+.sw-cite-row-actions { display: flex; gap: 0.25rem; flex: 0 0 auto; }
+
+/* How this source looks in the currently selected style. */
+.sw-cite-preview {
+  margin-top: 0.3rem;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--border);
+  font-family: var(--font-serif, Georgia, 'Times New Roman', serif);
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.sw-cite-row code {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.78rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: var(--surface-2);
+}
+
+@media (max-width: 640px) {
+  .sw-cite-row { align-items: flex-start; }
+  .sw-cite-row-main { flex: 1 1 100%; }
+}

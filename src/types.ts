@@ -51,6 +51,11 @@ export interface Note {
   updatedAt: Date;
   summary?: string;
   folderId?: string;
+  /**
+   * The subject the note belongs to, so the mastery map can group it with
+   * the cards on the same topic. Notes without one fall under "General".
+   */
+  topic?: string;
   files?: FileAttachment[];
   highlights?: Highlight[];
   personalNotes?: PersonalNote[];
