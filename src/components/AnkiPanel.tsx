@@ -2,13 +2,24 @@
  * AnkiPanel — move cards between StudyWorks and Anki.
  *
  * Students often already keep a deck in Anki, and being locked into one app
- * is the fastest way to lose one. Export writes a standard Anki text file;
- * import reads one back (tab or comma separated) and merges the cards in
- * without duplicating what is already there.
+ * is the fastest way to lose one.
+ *
+ * Two exports, because they are good for different things:
+ *
+ *   - `.apkg` is a real Anki collection. Anki opens it directly, and the
+ *     cards keep their scheduling state — intervals, ease factors, the
+ *     review trail — instead of every card landing back in the new queue.
+ *   - the text file is the interchange format. It is what a student pastes
+ *     into Anki's own import wizard, and it is the one thing Anki and
+ *     every other tool can read.
+ *
+ * Import reads a text file back (tab or comma separated) and merges the
+ * cards in without duplicating what is already there.
  */
 import { useRef, useState } from 'react';
 import type { Flashcard } from '../types';
 import { downloadTextFile, exportToAnki, parseAnkiFile } from '../utils/anki';
+import { buildApkg, apkgFileName } from '../utils/ankiApkgBuild';
 
 export interface AnkiPanelProps {
   flashcards: Flashcard[];
@@ -21,6 +32,7 @@ export interface AnkiPanelProps {
 export default function AnkiPanel({ flashcards, setFlashcards, onToast, onImported }: AnkiPanelProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const doExport = () => {
     if (!flashcards.length) {
@@ -30,6 +42,49 @@ export default function AnkiPanel({ flashcards, setFlashcards, onToast, onImport
     const text = exportToAnki(flashcards);
     downloadTextFile(`studyworks-cards-${new Date().toISOString().slice(0, 10)}.txt`, text);
     onToast?.(`Exported ${flashcards.length} cards for Anki.`, 'success');
+  };
+
+  /**
+   * Export a real Anki collection.
+   *
+   * The card's own folder becomes the Anki deck, so a student with three
+   * courses gets three decks rather than one flat pile.
+   */
+  const doExportApkg = async () => {
+    if (!flashcards.length) {
+      onToast?.('There are no cards to export yet.', 'info');
+      return;
+    }
+    setExporting(true);
+    try {
+      const cards = flashcards.map(c => ({
+        question: c.question,
+        answer: c.answer,
+        tags: c.tags,
+        deckName: c.folderId || 'Default',
+        interval: c.interval ?? 0,
+        ef: c.ef ?? 2.5,
+        repetitions: c.repetitions ?? 0,
+        lapses: c.leechCount ?? 0,
+        nextReview: c.nextReview ?? null,
+        reviewHistory: c.reviewHistory,
+      }));
+      const blob = await buildApkg(cards);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = apkgFileName();
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      // Give the browser a moment to start the download before the URL dies.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      onToast?.(`Exported a real Anki collection with ${flashcards.length} cards.`, 'success');
+    } catch (err) {
+      onToast?.((err as Error).message || 'Could not build the Anki collection.', 'error');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const doImport = async (file: File) => {
@@ -90,14 +145,19 @@ export default function AnkiPanel({ flashcards, setFlashcards, onToast, onImport
       <div>
         <h4 style={{ margin: 0, fontSize: '0.9rem' }}>🗂️ Anki import &amp; export</h4>
         <p style={{ margin: '0.25rem 0 0', fontSize: '0.78rem', color: 'var(--text-2)' }}>
-          Move your cards in and out of Anki. Export writes a standard Anki text file; import reads
-          tab or comma separated files and skips anything you already have.
+          Move your cards in and out of Anki. The <strong>.apkg</strong> export is a real Anki
+          collection — Anki opens it directly and the cards keep their schedule. The text export is
+          the interchange format. Import reads tab or comma separated files and skips anything you
+          already have.
         </p>
       </div>
 
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <button className="btn btn-primary btn-sm" onClick={doExportApkg} disabled={exporting}>
+          {exporting ? 'Building…' : `📦 Export .apkg (${flashcards.length})`}
+        </button>
         <button className="btn btn-secondary btn-sm" onClick={doExport}>
-          Export {flashcards.length} cards
+          Export text file
         </button>
         <button
           className="btn btn-ghost btn-sm"

@@ -42,6 +42,7 @@
     "resend": "^4.5.1",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.4",
+    "sql.js": "^1.17.0",
     "stripe": "^17.7.0",
     "tesseract.js": "^7.0.0",
     "trystero": "^0.26.0",

@@ -72,15 +72,17 @@ describe('Settings page — no feature repeats itself', () => {
 
   it('renders exactly the expected set of cards', () => {
     // The order follows the page's bento layout: profile / timer / daily
-    // goal across the top row, then the daily limits, notifications and
-    // appearance on the second, install + shortcuts on the third, then the
-    // full-width AI card, the sharing trio, and the data band.
+    // goal across the top row, then the daily limits, notifications and the
+    // weekly digest on the second, appearance / install + shortcuts on the
+    // third, then the full-width AI card, the sharing trio, and the data
+    // band.
     expect(titles).toEqual([
       '🎓 Student Profile',
       '⏱️ Study Timer',
       '🎯 Daily goal',
       '🧱 Daily Limits',
       '🔔 Notifications &amp; Reminders',
+      '📬 Weekly digest',
       '🎨 Appearance',
       '📱 Install App',
       '⌨️ Keyboard Shortcuts',
