@@ -121,6 +121,8 @@ export interface Flashcard {
   /** Where the card came from, so the app can offer to fix AI-made ones. */
   source?: 'manual' | 'note' | 'ai' | 'tutor' | 'import';
   reviewHistory?: Array<{ date: string; quality: number }>;
+  /** When an AI rewrite of this card was accepted (leech fixer). ISO string. */
+  fixedAt?: string;
 }
 
 export interface PracticeQuestion {

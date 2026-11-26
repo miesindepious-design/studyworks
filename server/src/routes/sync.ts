@@ -184,6 +184,10 @@ const FlashcardInput = z.object({
     date:    z.string(),
     quality: z.number().int().min(0).max(3),
   })).optional().nullable(),
+  // When an AI rewrite of the card was accepted (leech fixer). Omitted from
+  // the schema, this would be stripped on every push and the fixer would be
+  // offered again on every device.
+  fixedAt:     z.string().datetime().optional().nullable(),
   createdAt:   z.string().datetime(),
   updatedAt:   z.string().datetime(),
 });
@@ -408,6 +412,8 @@ syncRouter.post('/', zValidator('json', SyncBody), async c => {
             createdAt:  new Date(fc.createdAt),
             updatedAt:  new Date(fc.updatedAt),
             nextReview: fc.nextReview ? new Date(fc.nextReview) : undefined,
+            // The client sends these as ISO strings; Prisma wants Dates.
+            fixedAt:    fc.fixedAt ? new Date(fc.fixedAt) : undefined,
           },
           update: {
             question:    fc.question,
@@ -429,6 +435,7 @@ syncRouter.post('/', zValidator('json', SyncBody), async c => {
             leechCount:    fc.leechCount ?? 0,
             source:        fc.source ?? null,
             reviewHistory: fc.reviewHistory ?? undefined,
+            fixedAt:       fc.fixedAt ? new Date(fc.fixedAt) : null,
             updatedAt:     new Date(fc.updatedAt),
           },
         });

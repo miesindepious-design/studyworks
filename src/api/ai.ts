@@ -109,6 +109,34 @@ export async function serverPracticeQuestions(title: string, content: string, co
   return res.questions;
 }
 
+/** A proposed rewrite of a leech card, straight from the server. */
+export interface CardFix {
+  question: string;
+  answer: string;
+  /** One short sentence on what was wrong with the original wording. */
+  whatChanged: string;
+}
+
+/**
+ * Ask the AI to rewrite a card the student keeps failing. Nothing is saved
+ * here — the caller shows the rewrite next to the original and only applies
+ * it if the student accepts.
+ */
+export async function serverFixCard(
+  question: string,
+  answer: string,
+  opts: { topic?: string; leechCount?: number } = {},
+): Promise<CardFix> {
+  const res = await apiPost<CardFix & { error?: string }>('/api/ai/fix-card', {
+    question,
+    answer,
+    topic: opts.topic,
+    leechCount: opts.leechCount,
+  });
+  if (res.error) throw new Error(res.error);
+  return { question: res.question, answer: res.answer, whatChanged: res.whatChanged };
+}
+
 export async function serverQA(query: string, notes: Note[]): Promise<string> {
   const contexts = notes.map(n => ({
     title:   n.title,

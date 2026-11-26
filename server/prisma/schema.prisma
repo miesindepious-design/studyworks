@@ -262,6 +262,10 @@ model Flashcard {
   source      String?   // manual | note | ai | tutor
   // [{ date: 'YYYY-MM-DD', quality: 0-3 }] — the review trail shown on a card.
   reviewHistory Json?
+  // When an AI rewrite of this card was accepted. A card that has been fixed
+  // is not offered the fixer again — otherwise a single stubborn leech could
+  // burn AI calls (and farm the leech_fixed XP) forever.
+  fixedAt     DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

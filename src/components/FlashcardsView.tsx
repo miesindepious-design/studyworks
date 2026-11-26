@@ -10,6 +10,8 @@ import { renderCloze } from '../utils/cloze';
 import { useStudyGoals } from '../hooks/useStudyGoals';
 import { useDeckSettings } from '../hooks/useDeckSettings';
 import DeckProgressPanel from './DeckProgressPanel';
+import { serverFixCard, type CardFix } from '../api/ai';
+import { canOfferCardFix, applyCardFix } from '../utils/cardFix';
 import { saveSession, getRecentSessions, computeAggregate } from '../db/flashcardStats';
 import type { SessionStat } from '../types';
 
@@ -77,6 +79,18 @@ export default function FlashcardsView({
   const [newFolderName, setNewFolderName]   = useState('');
   const [editingCard, setEditingCard] = useState<Flashcard | null>(null);
   const [formOpen, setFormOpen]       = useState(false);
+
+  // ── AI leech fixer ────────────────────────────────────────────────────────
+  // The card being fixed is tracked by id and looked up fresh from the array,
+  // so the dialog can never apply a rewrite to a stale copy of the card.
+  const [fixCardId, setFixCardId]       = useState<string | null>(null);
+  const [fixLoading, setFixLoading]     = useState(false);
+  const [fixError, setFixError]         = useState<string | null>(null);
+  const [fixProposal, setFixProposal]   = useState<CardFix | null>(null);
+  // The proposed wording is editable — the student reviews it and can tweak
+  // it before anything is saved. Nothing overwrites the card silently.
+  const [fixQuestion, setFixQuestion]   = useState('');
+  const [fixAnswer, setFixAnswer]       = useState('');
 
   // ── Browse ────────────────────────────────────────────────────────────────
   const [currentCard, setCurrentCard] = useState(0);
@@ -537,6 +551,51 @@ export default function FlashcardsView({
 
   const startEdit = (c: Flashcard) => { setEditingCard(c); setQuestion(c.question); setAnswer(c.answer); setTags(c.tags.join(', ')); setSelectedFolder(c.folderId || 'default'); setCardTopic(c.topic ?? ''); setCardType(c.type ?? 'standard'); setFormOpen(true); };
   const cancelEdit = () => { setEditingCard(null); setQuestion(''); setAnswer(''); setTags(''); setCardTopic(''); setCardType('standard'); setFormOpen(false); };
+
+  // ── AI leech fixer ────────────────────────────────────────────────────────
+  // The card being fixed is looked up fresh from the array at every step, so
+  // the dialog can never apply a rewrite to a stale copy of the card.
+  const fixingCard = fixCardId ? flashcards.find(c => c.id === fixCardId) ?? null : null;
+
+  const openFix = async (c: Flashcard) => {
+    setFixCardId(c.id);
+    setFixError(null);
+    setFixProposal(null);
+    setFixQuestion('');
+    setFixAnswer('');
+    setFixLoading(true);
+    try {
+      const proposal = await serverFixCard(c.question, c.answer, { topic: c.topic, leechCount: c.leechCount });
+      setFixProposal(proposal);
+      setFixQuestion(proposal.question);
+      setFixAnswer(proposal.answer);
+    } catch (e) {
+      setFixError((e as Error).message || 'The rewrite failed. Try again in a moment.');
+    } finally {
+      setFixLoading(false);
+    }
+  };
+
+  const retryFix = () => {
+    if (fixingCard) openFix(fixingCard);
+  };
+
+  const closeFix = () => {
+    setFixCardId(null);
+    setFixProposal(null);
+    setFixError(null);
+    setFixLoading(false);
+  };
+
+  const acceptFix = () => {
+    if (!fixingCard || !fixQuestion.trim() || !fixAnswer.trim()) return;
+    setFlashcards(flashcards.map(c => c.id === fixingCard.id
+      ? applyCardFix(c, { question: fixQuestion.trim(), answer: fixAnswer.trim(), whatChanged: fixProposal?.whatChanged ?? '' })
+      : c));
+    award('leech_fixed');
+    addToast('Card rewritten — tough card fixed!', 'success');
+    closeFix();
+  };
 
   const deleteFlashcard = async (id: string) => {
     if (!confirm('Delete this flashcard?')) return;
@@ -1110,6 +1169,13 @@ export default function FlashcardsView({
             <div className="flip-inner">
               <div className="flip-face front" style={{ minHeight: '280px', position: 'relative' }}>
                 <div style={{ position: 'absolute', top: '0.875rem', right: '0.875rem', display: 'flex', gap: '0.375rem' }} onClick={e => e.stopPropagation()}>
+                  {canOfferCardFix(card) && (
+                    <button
+                      className="btn btn-ghost btn-xs"
+                      title="Rewrite this card with AI — it keeps failing, so the wording is probably the problem"
+                      onClick={() => openFix(card)}
+                    >🪄</button>
+                  )}
                   <button className="btn btn-ghost btn-xs" onClick={() => startEdit(card)}>✏️</button>
                   <button className="btn btn-danger btn-xs" onClick={() => deleteFlashcard(card.id)}>🗑️</button>
                 </div>
@@ -1118,10 +1184,18 @@ export default function FlashcardsView({
                     {card.difficulty}{card.nextReview ? ` · ${new Date(card.nextReview).toLocaleDateString()}` : ''}
                   </span>
                 )}
-                {isLeech(card) && (
+                {card.fixedAt ? (
                   <span
-                    title={`This card has been rated "Again" ${card.leechCount ?? 0} times — the wording may be the problem, not you. Try rewriting it.`}
-                    style={{ position: 'absolute', bottom: '0.875rem', right: '0.875rem', background: 'rgba(251,113,133,.15)', color: 'var(--danger)', padding: '0.2rem 0.6rem', borderRadius: 'var(--radius-full)', fontSize: '0.72rem', fontWeight: 700 }}
+                    title={`This card was rewritten with AI on ${new Date(card.fixedAt).toLocaleDateString()}. If it still keeps failing, edit it by hand.`}
+                    style={{ position: 'absolute', bottom: '0.875rem', right: '0.875rem', background: 'rgba(113,128,150,.15)', color: 'var(--muted-foreground)', padding: '0.2rem 0.6rem', borderRadius: 'var(--radius-full)', fontSize: '0.72rem', fontWeight: 700 }}
+                  >
+                    🩹 fixed
+                  </span>
+                ) : isLeech(card) && (
+                  <span
+                    title={`This card has been rated "Again" ${card.leechCount ?? 0} times — the wording may be the problem, not you. Click to rewrite it with AI.`}
+                    onClick={e => { e.stopPropagation(); openFix(card); }}
+                    style={{ position: 'absolute', bottom: '0.875rem', right: '0.875rem', background: 'rgba(251,113,133,.15)', color: 'var(--danger)', padding: '0.2rem 0.6rem', borderRadius: 'var(--radius-full)', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer' }}
                   >
                     🩹 tough card
                   </span>
@@ -1180,6 +1254,72 @@ export default function FlashcardsView({
           subtitle={celebrate.subtitle}
           onClose={() => setCelebrate(null)}
         />
+      )}
+
+      {/* AI leech fixer — review and accept. Nothing is saved until the
+          student applies the rewrite, and the suggestion is editable, so the
+          card is never overwritten silently. */}
+      {fixCardId && fixingCard && (
+        <div className="modal-backdrop" onClick={closeFix}>
+          <div className="modal-panel" role="dialog" aria-modal="true" aria-label="Fix this card with AI" onClick={e => e.stopPropagation()} style={{ maxWidth: '680px', width: '94%' }}>
+            <div className="modal-header">
+              <span className="modal-title">🪄 Fix this card with AI</span>
+              <button className="btn btn-ghost btn-xs" onClick={closeFix} aria-label="Close">✕</button>
+            </div>
+            <div className="modal-body">
+              {fixLoading && (
+                <p className="text-sm text-muted" style={{ padding: '2rem 0', textAlign: 'center' }}>
+                  Rewriting the card… a moment.
+                </p>
+              )}
+              {fixError && (
+                <div>
+                  <p className="text-sm" style={{ color: 'var(--danger)' }}>{fixError}</p>
+                  <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '1rem' }}>
+                    <button className="btn btn-secondary btn-sm" onClick={closeFix}>Close</button>
+                    <button className="btn btn-primary btn-sm" onClick={retryFix}>Try again</button>
+                  </div>
+                </div>
+              )}
+              {fixProposal && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {fixProposal.whatChanged && (
+                    <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>
+                      <strong>What was wrong:</strong> {fixProposal.whatChanged}
+                    </p>
+                  )}
+                  <div className="sw-two-col">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      <div>
+                        <p className="text-xs text-muted" style={{ marginBottom: '0.25rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Current question</p>
+                        <p className="text-sm">{fixingCard.question}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted" style={{ marginBottom: '0.25rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Current answer</p>
+                        <p className="text-sm">{fixingCard.answer}</p>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <label className="text-xs text-muted" htmlFor="fix-question" style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>Suggested question — edit freely</label>
+                      <textarea id="fix-question" className="textarea" rows={3} value={fixQuestion} onChange={e => setFixQuestion(e.target.value)} />
+                      <label className="text-xs text-muted" htmlFor="fix-answer" style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>Suggested answer</label>
+                      <textarea id="fix-answer" className="textarea" rows={2} value={fixAnswer} onChange={e => setFixAnswer(e.target.value)} />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted">
+                    Your review history on this card is kept. Once applied, this card is not offered the fixer again — if it still keeps failing, edit it by hand.
+                  </p>
+                  <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                    <button className="btn btn-secondary btn-sm" onClick={closeFix}>Keep as is</button>
+                    <button className="btn btn-primary btn-sm" onClick={acceptFix} disabled={!fixQuestion.trim() || !fixAnswer.trim()}>
+                      ✓ Apply rewrite
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

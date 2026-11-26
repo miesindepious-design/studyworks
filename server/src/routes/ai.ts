@@ -952,3 +952,87 @@ Return JSON: { "cards": [ { "question": "... {{c1}} ...", "answer": "..." } ] }`
     return c.json({ error: (e as Error).message }, 502);
   }
 });
+
+// ── POST /api/ai/fix-card — rewrite a leech card so it sticks ─────────────────
+// A card rated "Again" again and again is usually badly worded, not badly
+// studied: two facts in one question, an ambiguous answer, a negation nobody
+// parses. The rewrite keeps the same fact but says it cleanly. The client
+// shows the rewrite side by side with the original and nothing is saved until
+// the student accepts — the server never touches the card itself.
+const FixCardBody = z.object({
+  question: z.string().min(1).max(2000),
+  answer:   z.string().min(1).max(4000),
+  topic:    z.string().max(120).optional(),
+  // How many times the card has been rated "Again" — a hint for how much the
+  // wording is the problem (a 12-times leech needs surgery, not a polish).
+  leechCount: z.number().int().min(0).max(10_000).optional(),
+});
+
+aiRouter.post('/fix-card', requireAI, zValidator('json', FixCardBody), async c => {
+  const user = c.get('user');
+  const { question, answer, topic, leechCount } = c.req.valid('json');
+
+  let cfg;
+  try { cfg = await loadAIConfig(user.id); }
+  catch (e) { return c.json({ error: (e as Error).message }, 400); }
+
+  const studentCtx = studentPromptContext(studentProfileBits(user));
+
+  try {
+    const raw = await callProvider({
+      provider: cfg.provider, model: cfg.model, apiKey: cfg.apiKey,
+      messages: [
+        { role: 'system', content: `${SYSTEM_BASE}${studentCtx}` },
+        {
+          role: 'user',
+          content: `Rewrite this flashcard so a student can actually remember it.${topic ? ` Subject: ${topic}.` : ''}${leechCount ? ` It has been rated "Again" ${leechCount} times, so the wording is almost certainly the problem.` : ''}
+
+Question: ${question}
+Answer: ${answer}
+
+Rules:
+- Keep the exact same fact — never answer a different question.
+- One idea per card. If the question smuggles in two, split out the one that makes the answer long, and keep the question answerable in a word or a sentence.
+- Make the question precise: no "what about", no vagueness, no double negatives.
+- Make the answer short and unambiguous — the shortest thing that is still complete.
+- Never use LaTeX or symbol soup; write formulas as plain text ("E = mc^2", "a/b").
+- Preserve cloze markers ({{c1}}) if the question has one.
+Return JSON: { "question": "...", "answer": "...", "whatChanged": "one short sentence on what was wrong" }`,
+        },
+      ],
+      temperature: 0.4, maxTokens: 800, jsonMode: true, thinking: 'low',
+    });
+
+    const fix = parseFixCardReply(raw);
+    if (!fix) return c.json({ error: 'The model did not return a usable rewrite' }, 502);
+    return c.json(fix);
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 502);
+  }
+});
+
+/**
+ * Normalise the fix-card reply. The model occasionally wraps the JSON in a
+ * code fence, so the fence is stripped before parsing — and if the result is
+ * not a usable card, nothing is returned rather than a half-rewrite.
+ */
+function parseFixCardReply(raw: string): { question: string; answer: string; whatChanged: string } | null {
+  let obj: any = null;
+  try {
+    const trimmed = raw.trim();
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    obj = JSON.parse(fenced ? fenced[1].trim() : trimmed);
+  } catch {
+    return null;
+  }
+
+  const question = typeof obj?.question === 'string' ? obj.question.trim() : '';
+  const answer   = typeof obj?.answer   === 'string' ? obj.answer.trim()   : '';
+  if (!question || !answer) return null;
+
+  return {
+    question,
+    answer,
+    whatChanged: typeof obj?.whatChanged === 'string' ? obj.whatChanged.trim() : '',
+  };
+}
