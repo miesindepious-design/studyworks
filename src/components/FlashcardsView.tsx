@@ -11,6 +11,7 @@ import { useStudyGoals } from '../hooks/useStudyGoals';
 import { useDeckSettings } from '../hooks/useDeckSettings';
 import DeckProgressPanel from './DeckProgressPanel';
 import { serverFixCard, type CardFix } from '../api/ai';
+import ImportPanel from './ImportPanel';
 import { canOfferCardFix, applyCardFix } from '../utils/cardFix';
 import { saveSession, getRecentSessions, computeAggregate } from '../db/flashcardStats';
 import type { SessionStat } from '../types';
@@ -79,6 +80,9 @@ export default function FlashcardsView({
   const [newFolderName, setNewFolderName]   = useState('');
   const [editingCard, setEditingCard] = useState<Flashcard | null>(null);
   const [formOpen, setFormOpen]       = useState(false);
+  // The import panel — a student with cards somewhere else opens this
+  // instead of retyping a deck they already have.
+  const [showImport, setShowImport]   = useState(false);
 
   // ── AI leech fixer ────────────────────────────────────────────────────────
   // The card being fixed is tracked by id and looked up fresh from the array,
@@ -657,6 +661,13 @@ export default function FlashcardsView({
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <button
+            className="btn btn-secondary"
+            onClick={() => setShowImport(v => !v)}
+            title="Bring cards in from Quizlet, Notion or Google Docs"
+          >
+            {showImport ? '✕ Close import' : '📥 Import cards'}
+          </button>
           {tier === 'pro' && practiceQuestions.length > 0 && (
             <button className="btn btn-secondary" onClick={() => { setShowPractice(o => !o); setStudyMode('browse'); }}>
               {showPractice ? '✕ Hide Practice' : '❓ Practice Qs'}
@@ -774,6 +785,19 @@ export default function FlashcardsView({
           <span style={{ fontSize: '1.25rem' }}>⚠️</span>
           <p>Approaching your 50 item limit!</p>
           <button className="btn btn-secondary btn-sm" onClick={() => setCurrentView('pricing')}>Upgrade</button>
+        </div>
+      )}
+
+      {/* Import panel */}
+      {showImport && (
+        <div className="animate-in" style={{ marginBottom: '1.25rem' }}>
+          <ImportPanel
+            flashcards={flashcards}
+            setFlashcards={setFlashcards}
+            folders={folders}
+            onToast={addToast}
+            onImported={count => award('card_created', count)}
+          />
         </div>
       )}
 
