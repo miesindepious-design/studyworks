@@ -13,7 +13,6 @@
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { createSign } from 'crypto';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -43,10 +42,12 @@ if (!existsSync(exePath)) {
 // ── Sign the installer ───────────────────────────────────────────────────────
 const privKeyDer = Buffer.from(privKeyB64, 'base64');
 const exeBytes   = readFileSync(exePath);
-const signer     = createSign('sha512');
-signer.update(exeBytes);
-signer.end();
-const signature  = signer.sign({ key: privKeyDer, format: 'der', type: 'pkcs8', dsaEncoding: 'der' }).toString('base64');
+
+// Ed25519 signing — use `createPrivateKey` then sign with algorithm explicitly
+const { createPrivateKey, sign: cryptoSign } = await import('crypto');
+const privateKeyObj = createPrivateKey({ key: privKeyDer, format: 'der', type: 'pkcs8' });
+const signatureBytes = cryptoSign(null, exeBytes, privateKeyObj);
+const signature = signatureBytes.toString('base64');
 
 // ── Update releases/latest.json ──────────────────────────────────────────────
 const releaseFile = resolve(root, 'releases/latest.json');
