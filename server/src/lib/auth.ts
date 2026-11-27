@@ -24,10 +24,22 @@ export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: 'postgresql' }),
   secret: BETTER_AUTH_SECRET,
   baseURL: process.env.BETTER_AUTH_URL || 'http://localhost:3001',
-  // The auth router is mounted at /auth (see routes/auth.ts), so Better
-  // Auth's internal router must use the same basePath. Its default is
-  // /api/auth, which would 404 against our /auth/* mount.
   basePath: '/auth',
+  // Allow the session cookie to be sent from the Tauri desktop app.
+  // Tauri runs on tauri://localhost which is a different origin from the
+  // Vercel server, so cookies need SameSite=None; Secure to cross that
+  // boundary. Without this Better Auth defaults to SameSite=Lax which
+  // blocks cross-origin cookie sending entirely.
+  advanced: {
+    crossSubdomainCookies: {
+      enabled: true,
+    },
+    defaultCookieAttributes: {
+      sameSite: 'none',
+      secure: true,
+      httpOnly: true,
+    },
+  },
   trustedOrigins: [
     process.env.FRONTEND_URL || 'http://localhost:5173',
     'https://studyworksfirst-git-master-miesindepious-designs-projects.vercel.app',
