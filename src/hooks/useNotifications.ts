@@ -44,16 +44,27 @@ export function useNotifications(): UseNotificationsResult {
   const notify = useCallback((title: string, options?: NotificationOptions) => {
     if (!supported || Notification.permission !== 'granted') return;
 
-    // Use SW if available for richer notifications
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.ready.then(reg => {
-        reg.showNotification(title, {
-          icon: '/icon-192.png',
-          badge: '/icon-192.png',
-          ...options,
-        });
+    // In the Tauri desktop app the service worker can't register (tauri://
+    // origin is not HTTPS), so serviceWorker.ready hangs indefinitely.
+    // Skip that path and show a direct Notification instead.
+    const isTauri = '__TAURI__' in window;
+
+    if (!isTauri && 'serviceWorker' in navigator) {
+      // Race serviceWorker.ready against a 2-second timeout so the
+      // notification is never silently dropped if the SW is slow to activate.
+      const swReady = navigator.serviceWorker.ready;
+      const timeout = new Promise<null>(res => setTimeout(() => res(null), 2000));
+      Promise.race([swReady, timeout]).then(reg => {
+        if (reg) {
+          (reg as ServiceWorkerRegistration).showNotification(title, {
+            icon: '/icon-192.png',
+            badge: '/icon-192.png',
+            ...options,
+          });
+        } else {
+          new Notification(title, options);
+        }
       }).catch(() => {
-        // Fallback to direct notification
         new Notification(title, options);
       });
     } else {

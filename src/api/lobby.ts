@@ -144,6 +144,11 @@ export function createLobby(body: { kind: LobbyKind; title?: string; maxParticip
  * the player to the right screen for the session.
  */
 export function lobbyShareUrl(code: string, origin?: string) {
-  const base = origin ?? (typeof window !== 'undefined' ? window.location.origin : '');
+  // In the Tauri desktop app window.location.origin is tauri://localhost —
+  // not a shareable URL.  Fall back to the production Vercel URL.
+  const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+  const API_BASE = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '';
+  const defaultOrigin = isTauri ? API_BASE : (typeof window !== 'undefined' ? window.location.origin : '');
+  const base = origin ?? defaultOrigin;
   return `${base}/?lobby=${code}`;
 }

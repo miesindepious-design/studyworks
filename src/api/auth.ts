@@ -47,20 +47,35 @@ export async function signIn(email: string, password: string): Promise<AuthSessi
 }
 
 // ── Sign in with Google ───────────────────────────────────────────────────────
-// Better Auth social flow: request a Google authorization URL, then redirect
-// the whole window there. Google sends the user back to the server callback
-// (/auth/callback/google), which sets the session cookie and redirects to
-// `callbackURL`. On errors Better Auth appends ?error=... to the callback.
+// Browser build: normal Better Auth social flow — redirect in-page.
+// Desktop build: open the Google auth URL in the system browser so Google
+// gets a real https:// redirect URI (tauri://localhost is rejected by Google).
+// After sign-in the session cookie is set on the Vercel domain, which is the
+// same origin all API calls go to, so the cookie arrives automatically.
 export async function signInWithGoogle(): Promise<void> {
+  const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+
+  // The callbackURL the server redirects to after Google confirms the user.
+  // In the desktop app we send them back to the Vercel URL (which sets the
+  // cookie there), then they return to the desktop app manually.
+  const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '';
+  const callbackURL      = isTauri ? API_BASE + '/?desktop=1'          : window.location.origin;
+  const errorCallbackURL = isTauri ? API_BASE + '/?authError=google'   : `${window.location.origin}?authError=google`;
+
   const { url } = await apiFetch<{ url: string; redirect: boolean }>('/auth/sign-in/social', {
     method: 'POST',
-    body: JSON.stringify({
-      provider: 'google',
-      callbackURL: window.location.origin,          // back to the app on success
-      errorCallbackURL: `${window.location.origin}?authError=google`, // and on failure
-    }),
+    body: JSON.stringify({ provider: 'google', callbackURL, errorCallbackURL }),
   });
-  window.location.href = url; // hand the browser to Google
+
+  if (isTauri) {
+    // Open in the system browser — user completes sign-in there.
+    // @ts-ignore — Tauri's invoke is injected at runtime
+    await window.__TAURI__.core.invoke('open_in_browser', { url });
+    // Fire an event so AuthPage can show "Return to the app after signing in"
+    window.dispatchEvent(new CustomEvent('sw:desktop-auth-opened'));
+  } else {
+    window.location.href = url;
+  }
 }
 
 // ── Sign out ──────────────────────────────────────────────────────────────────
@@ -85,9 +100,14 @@ export async function getSession(): Promise<AuthSession | null> {
 
 // ── Forgot password ───────────────────────────────────────────────────────────
 export async function forgotPassword(email: string): Promise<void> {
+  // In the desktop app window.location.origin is tauri://localhost — not a
+  // URL any browser can open from an email link.  Use the Vercel URL instead.
+  const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+  const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '';
+  const origin = isTauri ? API_BASE : window.location.origin;
   await apiFetch('/auth/forget-password', {
     method: 'POST',
-    body: JSON.stringify({ email, redirectTo: `${window.location.origin}/reset-password` }),
+    body: JSON.stringify({ email, redirectTo: `${origin}/reset-password` }),
   });
 }
 

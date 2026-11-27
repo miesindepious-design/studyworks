@@ -119,7 +119,12 @@ export default function DuelView({ onToast, onDuelComplete, initialCode }: DuelV
   };
 
   const copyCode = async (code: string) => {
-    const url = `${window.location.origin}/?duel=${code}`;
+    // In the desktop app window.location.origin is tauri://localhost — not shareable.
+    const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+    const base = isTauri
+      ? ((import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '')
+      : window.location.origin;
+    const url = `${base}/?duel=${code}`;
     try {
       await navigator.clipboard.writeText(url);
       onToast?.('Duel link copied — send it to your rival.', 'success');

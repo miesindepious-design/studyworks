@@ -41,3 +41,8 @@ coverage/
 .workbuddy-ai/
 _t*.mjs
 _audit_tmp/
+
+# Tauri — compiled Rust artifacts (large, reproducible from source)
+src-tauri/target/
+# Keep the generated icons that Tauri created so the build works on CI
+# !src-tauri/icons/

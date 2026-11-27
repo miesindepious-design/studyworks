@@ -11,6 +11,10 @@
     "dev:all": "concurrently -n client,server,voice -c blue,green,magenta \"npm run dev:client\" \"npm run dev:server\" \"npm run dev:voice\"",
     "build": "vite build",
     "build:all": "npm run build && npm run build --prefix server",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "release": "node scripts/make-release.mjs",
     "db:migrate": "npm run db:migrate --prefix server",
     "db:generate": "npm run db:generate --prefix server",
     "postinstall": "prisma generate --schema=server/prisma/schema.prisma",
@@ -50,6 +54,7 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.12.6",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",

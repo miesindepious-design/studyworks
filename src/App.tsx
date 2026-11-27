@@ -60,6 +60,7 @@ import { getRoomFile, type RoomFileInfo } from './api/roomFiles';
 import { createGameRoom } from './api/game';
 import { createDuel } from './api/progression';
 import type { PendingTutorDocument } from './types';
+import UpdateNotifier from './components/UpdateNotifier';
 
 type Theme = 'light' | 'dark' | 'system';
 type Tier  = 'free' | 'pro';
@@ -1110,6 +1111,9 @@ export default function App() {
       <div className="toast-stack">
         {toasts.map(t => <Toast key={t.id} message={t.message} type={t.type} onClose={() => removeToast(t.id)} />)}
       </div>
+
+      {/* Desktop auto-update banner — invisible in the browser build */}
+      <UpdateNotifier />
 
       {/* Modals */}
       {!db.onboardingDone && <Onboarding onComplete={db.setOnboardingDone} product={productProfile} onLoadStarterPack={db.loadStarterPack} onAISaved={ai.reloadConfig} />}

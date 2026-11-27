@@ -2,7 +2,10 @@
  * Base API client — all requests go through here.
  * - Adds credentials (session cookie) automatically
  * - Throws APIError with status + message on non-2xx
- * - In dev, requests are proxied by Vite to localhost:3001
+ * - In dev/web, requests are proxied by Vite to localhost:3001
+ * - In the Tauri desktop app, VITE_API_URL must be set to the production
+ *   server URL (e.g. https://your-server.onrender.com) because there is no
+ *   Vite proxy at runtime.
  */
 
 export class APIError extends Error {
@@ -27,7 +30,14 @@ export async function apiFetch<T = unknown>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const res = await fetch(path, {
+  // In the Tauri desktop build there is no Vite proxy, so all API calls
+  // must go to the absolute production server URL.  VITE_API_URL is set
+  // at build time via the .env file; in the web build it is left empty and
+  // relative paths work as before.
+  const base = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '';
+  const url  = base ? `${base}${path}` : path;
+
+  const res = await fetch(url, {
     ...options,
     credentials: 'include', // send session cookie
     headers: {

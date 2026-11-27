@@ -90,12 +90,31 @@ export default function AuthPage({ onAuth }: AuthPageProps) {
     reset();
     setGoogleLoading(true);
     try {
-      await signInWithGoogle(); // navigates away on success
+      await signInWithGoogle();
+      // In the desktop app, signInWithGoogle opens the browser and returns
+      // immediately — show a message so the user knows what to do next.
+      const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+      if (isTauri) {
+        setSuccess('Your browser opened. Sign in with Google there, then come back to this app and click "I\'ve signed in" below.');
+        setGoogleLoading(false);
+      }
+      // Browser build: navigates away, so we never reach here.
     } catch (err: any) {
-      // Only reached if the server rejected the request (e.g. Google OAuth
-      // not configured). The redirect path never returns here.
       setError(err.message || 'Google sign-in is not available right now.');
       setGoogleLoading(false);
+    }
+  };
+
+  // Desktop-only: after the user signs in through the browser, clicking this
+  // button re-checks the session — the cookie is now live on the Vercel domain.
+  const handleDesktopReturn = async () => {
+    reset();
+    setLoading(true);
+    try {
+      // Trigger a session refresh — the parent component will pick it up.
+      window.location.reload();
+    } catch {
+      setLoading(false);
     }
   };
 
@@ -271,6 +290,18 @@ export default function AuthPage({ onAuth }: AuthPageProps) {
                 </svg>
                 {googleLoading ? 'Redirecting…' : 'Continue with Google'}
               </button>
+
+              {/* Desktop app: show "I've signed in" button after browser opens */}
+              {success && '__TAURI__' in window && (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleDesktopReturn}
+                  style={{ width: '100%', marginBottom: '0.75rem' }}
+                >
+                  ✅ I've signed in — open the app
+                </button>
+              )}
 
               {/* Divider */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>

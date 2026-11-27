@@ -37,6 +37,9 @@ export const auth = betterAuth({
     'https://studyworks-seven.vercel.app',
     'http://localhost:5173',
     'http://localhost:3000',
+    // Tauri desktop app origins
+    'tauri://localhost',
+    'https://tauri.localhost',
   ],
 
   emailAndPassword: {

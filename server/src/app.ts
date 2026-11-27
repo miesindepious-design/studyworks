@@ -47,6 +47,10 @@ app.use('*', cors({
     'https://studyworks-miesindepious-designs-projects.vercel.app',
     'https://studyworks-eight.vercel.app',
     'https://studyworks-seven.vercel.app',
+    // Tauri desktop app — the webview origin in production builds
+    'tauri://localhost',
+    // Tauri desktop app in dev mode
+    'http://localhost:5173',
   ],
   credentials: true,
   allowHeaders:  ['Content-Type', 'Authorization'],
