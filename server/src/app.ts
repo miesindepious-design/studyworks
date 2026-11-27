@@ -105,6 +105,23 @@ app.route('/api/digest',     digestRouter);
 // Admin
 app.route('/api/admin', adminRouter);
 
+// ── Desktop app auto-updater manifest ────────────────────────────────────────
+// Served from the API so it works even with a private GitHub repo.
+// The updater in tauri.conf.json points here.
+app.get('/api/releases/latest', c => {
+  return c.json({
+    version: '0.2.0',
+    notes: 'Fixed Google sign-in, multiplayer sockets, share URLs and notifications in the desktop app.',
+    pub_date: '2026-11-27T23:20:13.000Z',
+    platforms: {
+      'windows-x86_64': {
+        signature: 'F0sAHRHV7O2YMWJ3YDrVx5n3WDmVKeZ0gopZWWR7pMfHfZgvMTXd8v6Jwww61fcSMNTD/Pb5EGuArRqvXh41Bw==',
+        url: 'https://github.com/miesindepious-design/studyworks/releases/download/v0.2.0/StudyWorks_0.2.0_x64-setup.zip',
+      },
+    },
+  });
+});
+
 // ── 404 ────────────────────────────────────────────────────────────────────────
 app.notFound(c => c.json({ error: 'Not found' }, 404));
 app.onError((err, c) => {
