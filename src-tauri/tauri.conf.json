@@ -30,7 +30,7 @@
     "updater": {
       "pubkey": "MCowBQYDK2VwAyEAmPnKwOQfPOxoMQj8IuoK6PWLWQxPThPehFLpDebJrWk=",
       "endpoints": [
-        "https://raw.githubusercontent.com/miesindepious-design/studyworks/main/releases/latest.json"
+        "https://raw.githubusercontent.com/miesindepious-design/studyworks/master/releases/latest.json"
       ],
       "dialog": false,
       "gracePeriodMs": 1000
