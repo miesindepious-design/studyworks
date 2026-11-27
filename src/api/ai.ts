@@ -240,6 +240,20 @@ export interface TutorResponse {
   response: string;
   /** The important points for this topic — rendered as a revision panel. */
   keyPoints?: KeyPoint[];
+  /**
+   * Web sources used in this reply. Empty when no search was performed.
+   * Stored with the chat turn so sources still appear when the student
+   * reopens the chat.
+   */
+  sources?: TutorSource[];
+}
+
+/** One web source cited in a tutor reply. */
+export interface TutorSource {
+  title:   string;
+  url:     string;
+  snippet: string;
+  domain:  string;
 }
 
 export async function serverTutor(body: TutorRequest): Promise<TutorResponse> {

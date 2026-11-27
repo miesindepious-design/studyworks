@@ -112,7 +112,10 @@ const NoteInput = z.object({
   tags:        z.array(z.string()).default([]),
   summary:     z.string().optional().nullable(),
   folderId:    z.string().optional().nullable(),
-  nextReminder: z.string().datetime().optional().nullable(),
+  nextReminder:  z.string().datetime().optional().nullable(),
+  // When the note was last opened, so the Dashboard can count revisited
+  // notes across devices.  Nullable because older clients won't send it.
+  lastRevisited: z.string().datetime().optional().nullable(),
   // Spaced-repetition state. Without these in the schema, Zod stripped them
   // from every push and a note's schedule was reset on every sync.
   repetitions:   z.number().int().min(0).optional().nullable(),
@@ -343,6 +346,7 @@ syncRouter.post('/', zValidator('json', SyncBody), async c => {
             createdAt:   new Date(n.createdAt),
             updatedAt:   new Date(n.updatedAt),
             nextReminder: n.nextReminder ? new Date(n.nextReminder) : undefined,
+            lastRevisited: n.lastRevisited ? new Date(n.lastRevisited) : undefined,
             nextReview:  n.nextReview ? new Date(n.nextReview) : undefined,
             highlights:  { create: highlightRows },
             personalNotes: { create: personalNoteRows },
@@ -356,6 +360,10 @@ syncRouter.post('/', zValidator('json', SyncBody), async c => {
             folderId:    n.folderId,
             updatedAt:   new Date(n.updatedAt),
             nextReminder: n.nextReminder ? new Date(n.nextReminder) : null,
+            // Update lastRevisited only if the incoming value is set — never
+            // clear it, because a device that never opened the note shouldn't
+            // wipe out when another device last opened it.
+            ...(n.lastRevisited ? { lastRevisited: new Date(n.lastRevisited) } : {}),
             // The note's spaced-repetition state. Without this the schedule
             // was reset on every sync, so a note that was due in three days
             // came back due immediately on the next device.

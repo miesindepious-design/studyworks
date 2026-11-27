@@ -84,6 +84,10 @@ export default function ImportPanel({
         repetitions: 0,
         interval: 0,
         ef: 2.5,
+        // Where it came from. An imported card was written by somebody else,
+        // so the AI rewriter is not offered for it — the student asked for
+        // these to be kept as they are.
+        source: 'import' as const,
       }));
 
     if (!fresh.length) {

@@ -917,6 +917,7 @@ export default function App() {
             <NotesView
               pendingNoteId={pendingPlanItem?.kind === 'note' ? pendingPlanItem.id : null}
               onPendingNoteHandled={() => setPendingPlanItem(null)}
+              authenticated={session.status === 'authenticated'}
               notes={notesUR.state} setNotes={notesUR.set}
               flashcards={flashcardsUR.state} setFlashcards={flashcardsUR.set}
               tier={tier} setCurrentView={navigateTo} addToast={addToast}
@@ -1084,6 +1085,7 @@ export default function App() {
             <CitationsView
               authenticated={session.status === 'authenticated'}
               addToast={addToast}
+              notes={notesUR.state.map(n => ({ id: n.id, title: n.title }))}
             />
           )}
           {currentView === 'leaderboard' && (

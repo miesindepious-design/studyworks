@@ -18,6 +18,7 @@ import { useDebounce } from '../hooks/useDebounce';
 import { saveVersion, getVersionsForNote } from '../utils/noteVersions';
 import { noteToMarkdown, noteToPlainText, downloadTextFile, copyToClipboard } from '../utils/exportMarkdown';
 import RichTextEditor from './RichTextEditor';
+import NoteSources from './NoteSources';
 import DocumentsPanel from './DocumentsPanel';
 import NoteDocumentCard from './NoteDocumentCard';
 import ConfirmModal from './ConfirmModal';
@@ -53,6 +54,8 @@ interface NotesViewProps {
   pendingNoteId?: string | null;
   /** Called once the pending note has been opened. */
   onPendingNoteHandled?: () => void;
+  /** Whether the student is signed in — decides where citations come from. */
+  authenticated?: boolean;
 }
 
 // helper: read current flashcards from the prop before append
@@ -77,6 +80,7 @@ export default function NotesView({
   incrementQaQueries, qaQueriesThisMonth,
   savedSearches, setSavedSearches, ai, loadStarterPack,
   documents, setDocuments, pendingNoteId, onPendingNoteHandled,
+  authenticated = false,
 }: NotesViewProps) {
   const { award } = useProgression();
   const [title, setTitle] = useState('');
@@ -573,6 +577,11 @@ export default function NotesView({
         type:       g.type ?? 'standard',
         createdAt:  new Date(),
         folderId:   note.folderId,
+        // Where the card came from. An AI-made card is the one most likely
+        // to be badly worded — the machine invented the question and nobody
+        // read it carefully — so this is what lets the student offer it for
+        // a rewrite instead of just re-memorising it.
+        source:     'ai',
       }));
       setFlashcards([...flashcards, ...newCards]);
       addToast(`${newCards.length} flashcard${newCards.length === 1 ? '' : 's'} added!`, 'success');
@@ -1298,6 +1307,13 @@ export default function NotesView({
                   onDetach={(noteId) => updateNote(noteId, { document: undefined })}
                 />
               )}
+
+              {/* The sources behind this note. */}
+              <NoteSources
+                noteId={note.id}
+                authenticated={authenticated}
+                onOpenCitations={() => setCurrentView('citations')}
+              />
 
               {/* AI Summary */}
               {note.summary && (

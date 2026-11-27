@@ -14,7 +14,7 @@
  * citation you cannot trust.
  */
 
-export type CitationStyle = 'apa' | 'mla' | 'harvard' | 'chicago';
+export type CitationStyle = 'apa' | 'mla' | 'harvard' | 'chicago' | 'ieee';
 
 export type SourceType =
   | 'book'
@@ -53,6 +53,7 @@ export const STYLE_LABEL: Record<CitationStyle, string> = {
   mla:     'MLA 9th',
   harvard: 'Harvard',
   chicago: 'Chicago',
+  ieee:    'IEEE',
 };
 
 export const SOURCE_TYPE_LABEL: Record<SourceType, string> = {
@@ -396,12 +397,105 @@ export function formatChicago(source: Source): string {
   return parts.join(' ').replace(/\s+/g, ' ').replace(/\s+([.,])/g, '$1').trim();
 }
 
+/** IEEE author list: "A. Smith, B. Jones, and C. Brown". */
+function ieeeAuthors(source: Source): string {
+  const authors = authorsOf(source);
+  if (!authors.length) return '';
+
+  // IEEE puts the initials first and the surname last — the opposite way
+  // round from APA — and separates the names with commas.
+  const names = authors.map(a => {
+    const initials = a.initials ? `${a.initials} ` : '';
+    return `${initials}${a.last}`;
+  });
+
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
+}
+
+/** IEEE month abbreviation: "March" → "Mar.". */
+const IEEE_MONTHS = ['Jan.', 'Feb.', 'Mar.', 'Apr.', 'May', 'Jun.',
+  'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'];
+
+/** IEEE wants "Mar. 2026" — the month, then the year. */
+function ieeeMonthYear(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${IEEE_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+/**
+ * IEEE.
+ *
+ * The engineering style. It differs from the others in two ways that matter:
+ * the author list is numbered rather than dated, and the title of a journal
+ * article is quoted while the name of the journal is not.
+ */
+export function formatIeee(source: Source): string {
+  const authors = ieeeAuthors(source);
+  const parts: string[] = [];
+
+  if (authors) parts.push(`${authors},`);
+
+  switch (source.type) {
+    case 'journal':
+      parts.push(`"${source.title},"`);
+      if (source.container) parts.push(`${source.container},`);
+      if (source.volume) parts.push(`vol. ${source.volume},`);
+      if (source.issue) parts.push(`no. ${source.issue},`);
+      if (source.pages) parts.push(`pp. ${source.pages},`);
+      if (source.year) parts.push(`${source.year}.`);
+      break;
+    case 'chapter':
+      parts.push(`"${source.title}," in`);
+      if (source.container) parts.push(`${source.container},`);
+      if (source.place || source.publisher) {
+        parts.push(`${source.place ? `${source.place}: ` : ''}${source.publisher ?? ''},`);
+      }
+      if (source.year) parts.push(`${source.year},`);
+      if (source.pages) parts.push(`pp. ${source.pages}.`);
+      break;
+    case 'website':
+    case 'video':
+      parts.push(`"${source.title},"`);
+      if (source.container) parts.push(`${source.container}.`);
+      if (source.accessed) parts.push(`Accessed: ${ieeeMonthYear(source.accessed)}.`);
+      parts.push('[Online].');
+      break;
+    case 'thesis':
+      parts.push(`"${source.title},"`);
+      parts.push(`${source.container ? `${source.container}, ` : ''}Ph.D. dissertation,`);
+      if (source.year) parts.push(`${source.year}.`);
+      break;
+    case 'report':
+      parts.push(`${source.title},`);
+      if (source.place || source.publisher) {
+        parts.push(`${source.place ? `${source.place}: ` : ''}${source.publisher ?? ''},`);
+      }
+      if (source.year) parts.push(`${source.year}.`);
+      break;
+    default:
+      parts.push(`${source.title}.`);
+      if (source.place || source.publisher) {
+        parts.push(`${source.place ? `${source.place}: ` : ''}${source.publisher ?? ''},`);
+      }
+      if (source.year) parts.push(`${source.year}.`);
+  }
+
+  const link = locator(source);
+  if (link) parts.push(`Available: ${link}`);
+
+  return parts.join(' ').replace(/\s+/g, ' ').replace(/\s+([.,])/g, '$1').trim();
+}
+
 /** Format one source in the chosen style. */
 export function formatCitation(source: Source, style: CitationStyle): string {
   switch (style) {
     case 'mla':     return formatMla(source);
     case 'harvard': return formatHarvard(source);
     case 'chicago': return formatChicago(source);
+    case 'ieee':    return formatIeee(source);
     default:        return formatApa(source);
   }
 }
@@ -531,7 +625,16 @@ export function toRIS(sources: Source[]): string {
  * APA and Harvard use author-date; MLA and Chicago use an author-page
  * number, which is only known once the student has looked at the source.
  */
-export function inTextCitation(source: Source, style: CitationStyle, page?: string): string {
+/**
+ * The in-text form.
+ *
+ * IEEE numbers its references, so the in-text mark is a number in square
+ * brackets rather than a name and a year. The number is the source's
+ * position in the reference list, which the caller knows and this function
+ * does not — so it is passed in. Without it, a placeholder is shown rather
+ * than a number that might be wrong.
+ */
+export function inTextCitation(source: Source, style: CitationStyle, page?: string, number?: number): string {
   const authors = authorsOf(source);
   const name = authors.length
     ? (authors.length > 1 ? `${authors[0].last} et al.` : authors[0].last)
@@ -539,6 +642,8 @@ export function inTextCitation(source: Source, style: CitationStyle, page?: stri
   const year = source.year || 'n.d.';
 
   switch (style) {
+    case 'ieee':
+      return number !== undefined ? `[${number}]` : '[n]';
     case 'mla':
     case 'chicago':
       return page ? `(${name} ${page})` : `(${name})`;

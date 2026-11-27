@@ -26,7 +26,6 @@ declare global {
 }
 
 const T1 = '2026-11-20T10:00:00.000Z';
-const T2 = '2026-11-20T10:01:00.000Z';
 
 function note(over: Record<string, unknown> = {}) {
   return {

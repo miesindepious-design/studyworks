@@ -32,6 +32,7 @@ import MasteryMap from './MasteryMap';
 import WeeklyRecap from './WeeklyRecap';
 import FocusForest from './FocusForest';
 import ExamPlanner from './ExamPlanner';
+import GradesCard from './GradesCard';
 import StudyPlanSummary from './StudyPlanSummary';
 import type { PlanItem } from '../utils/reviewPlan';
 import { useProgression } from '../game/ProgressionContext';
@@ -1298,6 +1299,14 @@ export default function Dashboard({
               authenticated={authenticated}
               onToast={addToast}
               onPlanCreated={() => progressionAward('exam_plan_created')}
+            />
+          </Reveal>
+
+          {/* Grades — where the student stands, and what is still coming */}
+          <Reveal fill delay={50}>
+            <GradesCard
+              authenticated={authenticated}
+              onOpenGrades={() => setCurrentView('grades')}
             />
           </Reveal>
 

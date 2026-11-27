@@ -30,6 +30,7 @@ const BASE = {
   url: null,
   doi: null,
   accessed: null,
+  noteId: null,
   createdAt: new Date('2026-11-01T00:00:00Z'),
   updatedAt: new Date('2026-11-01T00:00:00Z'),
 };
@@ -176,6 +177,52 @@ describe('/api/citations', () => {
     const res = await request('/api/citations/c1', { method: 'DELETE' });
     expect(res.status).toBe(200);
     expect(prismaMock.citation.delete).toHaveBeenCalledWith({ where: { id: 'c1' } });
+  });
+
+  it('remembers the note a source was used in', async () => {
+    const { request, login } = await buildTestApp();
+    login({ id: 'u1', email: 'a@b.com', name: 'A', tier: 'FREE' });
+
+    prismaMock.note.findFirst.mockResolvedValue({ id: 'n1' } as any);
+    prismaMock.citation.create.mockResolvedValue({ ...BASE, noteId: 'n1' } as any);
+
+    const res = await request('/api/citations', {
+      method: 'POST',
+      body: { type: 'book', authors: ['Morrison, Toni'], title: 'Beloved', noteId: 'n1' },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.noteId).toBe('n1');
+    expect(prismaMock.citation.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ noteId: 'n1' }) }),
+    );
+  });
+
+  it('will not attach a source to somebody else\'s note', async () => {
+    const { request, login } = await buildTestApp();
+    login({ id: 'u1', email: 'a@b.com', name: 'A', tier: 'FREE' });
+
+    // The note lookup finds nothing — it is not this student\'s note.
+    prismaMock.note.findFirst.mockResolvedValue(null);
+
+    const res = await request('/api/citations', {
+      method: 'POST',
+      body: { type: 'book', authors: [], title: 'Beloved', noteId: 'someone-elses' },
+    });
+    expect(res.status).toBe(400);
+    expect(prismaMock.citation.create).not.toHaveBeenCalled();
+  });
+
+  it('asks for one note\'s sources when told which note', async () => {
+    const { request, login } = await buildTestApp();
+    login({ id: 'u1', email: 'a@b.com', name: 'A', tier: 'FREE' });
+
+    prismaMock.citation.findMany.mockResolvedValue([BASE] as any);
+    const res = await request('/api/citations?noteId=n1');
+    expect(res.status).toBe(200);
+    expect(prismaMock.citation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: 'u1', noteId: 'n1' } }),
+    );
   });
 
   it('refuses everything without a session', async () => {

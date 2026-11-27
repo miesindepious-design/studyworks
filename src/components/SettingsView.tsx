@@ -102,7 +102,11 @@ export default function SettingsView({
 
   // Daily study targets — shared with the Dashboard.
   const { goals, updateGoal } = useStudyGoals();
-  const { limits, setLimits } = useDeckSettings();
+  const { limits, setLimits, decks, setDeckLimit } = useDeckSettings();
+  // Which folder the student is about to give its own limits. Kept apart
+  // from the overrides themselves so the picker does not reset every time
+  // one is changed.
+  const [deckToAdd, setDeckToAdd] = useState('');
 
   // Weekly email digest — off until the student turns it on.
   const [digestOn, setDigestOn] = useState(false);
@@ -821,6 +825,116 @@ export default function SettingsView({
                 <p className="card-note" style={{ margin: '1rem 0 0' }}>
                   The Study Plan and the flashcard review both stop at these limits.
                 </p>
+
+                {/* ── Per-deck overrides ────────────────────────────────── */}
+                {/*
+                  A student often wants to hammer one subject before an exam.
+                  A deck's own limit replaces the global one for the material
+                  filed in it, so "20 new Biology cards today, nothing else"
+                  is one line rather than a whole second plan.
+                */}
+                <div className="sw-settings-decks">
+                  <div className="sw-settings-decks-head">
+                    <span className="sw-kv-key">Per-deck limits</span>
+                    <span className="sw-row" style={{ gap: 8 }}>
+                      <select
+                        className="select"
+                        value={deckToAdd}
+                        onChange={e => setDeckToAdd(e.target.value)}
+                        aria-label="Choose a deck to give its own limits"
+                      >
+                        <option value="">Choose a deck…</option>
+                        {folders
+                          .filter(f => f.id !== 'default')
+                          .filter(f => !decks.some(d => d.folderId === f.id))
+                          .map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                      </select>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-xs"
+                        disabled={!deckToAdd}
+                        onClick={() => {
+                          const folder = folders.find(f => f.id === deckToAdd);
+                          if (!folder) return;
+                          // Start from the global numbers, so the deck starts
+                          // at "the same as everything else" and the student
+                          // adjusts from there.
+                          setDeckLimit(folder.id, folder.name, { ...limits });
+                          setDeckToAdd('');
+                        }}
+                      >
+                        Add
+                      </button>
+                    </span>
+                  </div>
+
+                  {decks.length === 0 ? (
+                    <p className="card-note" style={{ margin: '0.5rem 0 0' }}>
+                      No deck has its own limits yet — every deck follows the numbers above.
+                    </p>
+                  ) : (
+                    <div className="sw-settings-deck-list">
+                      {decks.map(d => {
+                        const deckNew = d.newPerDay ?? limits.newPerDay;
+                        const deckReviews = d.reviewsPerDay ?? limits.reviewsPerDay;
+                        const set = (next: { newPerDay?: number; reviewsPerDay?: number }) =>
+                          setDeckLimit(d.folderId, d.name, next);
+                        return (
+                          <div key={d.folderId} className="sw-settings-deck">
+                            <div className="sw-settings-deck-head">
+                              <span className="sw-settings-deck-name">📁 {d.name || 'Folder'}</span>
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-xs"
+                                onClick={() => setDeckLimit(d.folderId, d.name, {})}
+                              >
+                                Use the global limits
+                              </button>
+                            </div>
+                            <div className="sw-settings-deck-rows">
+                              <div className="sw-kv-row">
+                                <span className="sw-kv-key">New per day</span>
+                                <span className="sw-row" style={{ gap: 8 }}>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-xs"
+                                    onClick={() => set({ newPerDay: Math.max(0, deckNew - 5) })}
+                                    aria-label={`Fewer new cards in ${d.name}`}
+                                  >−</button>
+                                  <span className="sw-kv-val">{deckNew}</span>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-xs"
+                                    onClick={() => set({ newPerDay: Math.min(MAX_LIMIT, deckNew + 5) })}
+                                    aria-label={`More new cards in ${d.name}`}
+                                  >+</button>
+                                </span>
+                              </div>
+                              <div className="sw-kv-row">
+                                <span className="sw-kv-key">Reviews per day</span>
+                                <span className="sw-row" style={{ gap: 8 }}>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-xs"
+                                    onClick={() => set({ reviewsPerDay: Math.max(0, deckReviews - 25) })}
+                                    aria-label={`Fewer reviews in ${d.name}`}
+                                  >−</button>
+                                  <span className="sw-kv-val">{deckReviews}</span>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-xs"
+                                    onClick={() => set({ reviewsPerDay: Math.min(MAX_LIMIT, deckReviews + 25) })}
+                                    aria-label={`More reviews in ${d.name}`}
+                                  >+</button>
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 

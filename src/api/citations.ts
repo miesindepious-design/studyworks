@@ -17,6 +17,8 @@ import type { SourceType } from '../utils/citations';
  */
 export interface CitationDTO {
   id: string;
+  /** The note this source was used in, if any. */
+  noteId: string | null;
   type: SourceType;
   authors: string[];
   editor: string | null;
@@ -35,11 +37,14 @@ export interface CitationDTO {
   updatedAt: string;
 }
 
-export function listCitations(): Promise<CitationDTO[]> {
-  return apiGet<CitationDTO[]>('/api/citations');
+export function listCitations(noteId?: string): Promise<CitationDTO[]> {
+  const query = noteId ? `?noteId=${encodeURIComponent(noteId)}` : '';
+  return apiGet<CitationDTO[]>(`/api/citations${query}`);
 }
 
 export function createCitation(body: {
+  /** The note this source was used in, if any. */
+  noteId?: string | null;
   type: SourceType;
   authors: string[];
   editor?: string | null;
@@ -61,6 +66,7 @@ export function createCitation(body: {
 export function updateCitation(
   id: string,
   body: Partial<{
+    noteId: string | null;
     type: SourceType;
     authors: string[];
     editor: string | null;

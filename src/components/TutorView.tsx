@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { serverTutor, serverAnalyzeDocuments, saveUserProfile } from '../api/ai';
-import type { KeyPoint, DocumentAnalysis, TutorDocument } from '../api/ai';
+import type { KeyPoint, DocumentAnalysis, TutorDocument, TutorSource } from '../api/ai';
 import type { Note, StudyDocument, PendingTutorDocument, GeneratedDocFormat, GeneratedDocumentMeta } from '../types';
 import { renderAiText, toPlainText } from '../utils/aiText';
 import { buildTutorDoc, chooseDocFormat, describeContext } from '../utils/tutorDoc';
@@ -16,6 +16,69 @@ import {
   pickBestVoice, splitForSpeech, stripEmoji,
   SPEECH_RATES, SPEECH_SPEED_LABELS, type SpeechSpeed,
 } from '../utils/speech';
+
+// ── Sources panel ─────────────────────────────────────────────────────────────
+// Collapsible list of web sources cited in a tutor reply.
+// Only rendered when the reply actually used web search.
+function TutorSourcesPanel({ sources }: { sources: TutorSource[] }) {
+  const [open, setOpen] = useState(false);
+  if (!sources || sources.length === 0) return null;
+  return (
+    <div
+      style={{
+        marginTop: '0.9rem',
+        borderTop: '1px solid var(--border)',
+        paddingTop: '0.6rem',
+      }}
+    >
+      <button
+        className="btn btn-ghost btn-sm"
+        onClick={() => setOpen(v => !v)}
+        style={{ padding: '0.2rem 0.4rem', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+        aria-expanded={open}
+      >
+        <span>🔗</span>
+        <span>Sources ({sources.length})</span>
+        <span style={{ fontSize: '0.65rem', opacity: 0.7 }}>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+          {sources.map((s, i) => (
+            <a
+              key={s.url}
+              href={s.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                padding: '0.5rem 0.65rem',
+                borderRadius: 'var(--radius)',
+                background: 'var(--surface-2)',
+                border: '1px solid var(--border)',
+                textDecoration: 'none',
+                color: 'inherit',
+                gap: '0.15rem',
+              }}
+            >
+              <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--accent)' }}>
+                [{i + 1}] {s.title}
+              </span>
+              <span style={{ fontSize: '0.68rem', color: 'var(--text-2)', opacity: 0.75 }}>
+                {s.domain}
+              </span>
+              {s.snippet && (
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-2)', marginTop: '0.1rem', lineHeight: 1.5 }}>
+                  {s.snippet.slice(0, 160)}{s.snippet.length > 160 ? '…' : ''}
+                </span>
+              )}
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface Props {
   tier: string;
@@ -80,6 +143,11 @@ interface ChatTurn {
   followUp?: { quote?: string; note?: string };
   /** The instruction that produced this turn ("show me a diagram", …). */
   instruction?: string;
+  /**
+   * Web sources used in this reply.  Empty / absent when no search ran.
+   * Stored here so the Sources panel re-appears when the student reopens chat.
+   */
+  sources?: TutorSource[];
 }
 
 interface TopicGroup {
@@ -214,6 +282,9 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
   const [savingLevel, setSavingLevel] = useState(false);
   const [topic, setTopic] = useState('');
   const [loading, setLoading] = useState(false);
+  // True while the tutor is running a web search — shows the "Searching the
+  // web…" pulse in both text and voice modes.
+  const [searching, setSearching] = useState(false);
   const [history, setHistory] = useState<ChatTurn[]>([]);
   const [answer, setAnswer] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -313,7 +384,15 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
   }, [voices, voiceURI]);
 
   // Strip markdown + maths so the TTS reads sentences, not symbols.
-  const cleanForSpeech = useCallback((text: string): string => stripEmoji(toPlainText(text)), []);
+  const cleanForSpeech = useCallback((text: string): string => {
+    // Strip inline citation markers [1], [2], [3] and the whole Sources
+    // section — the voice should read only the answer prose.
+    const stripped = text
+      .replace(/\[\d+\]/g, '')           // inline markers like [1]
+      .replace(/\n+#{1,3}\s*Sources?.*$/si, '')  // "## Sources" block at end
+      .replace(/\n+\*\*Sources?\*\*.*$/si, '');  // "**Sources**" bold variant
+    return stripEmoji(toPlainText(stripped));
+  }, []);
 
   const clearWatchdog = useCallback(() => {
     if (watchdogRef.current) {
@@ -556,6 +635,10 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
     setLoading(true);
     setError(null);
     try {
+      // Show searching indicator immediately — it'll be cleared once the
+      // response arrives.  The model decides whether to search, so we set
+      // it optimistically and clear it after the response.
+      setSearching(true);
       // The student's own reply rides along as `lastAnswer`. A quiz answer
       // and a Socratic reply are both answers to a question the tutor asked,
       // so they travel the same road.
@@ -575,6 +658,7 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
         documents: tutorDocs,
         documentBrief,
       });
+      setSearching(false);
 
       // Adaptive difficulty: adjust based on quiz performance for this topic
       let newDifficulty: 'easy' | 'medium' | 'hard' = 'medium';
@@ -605,6 +689,7 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
         followUp: opts?.followUp,
         instruction: opts?.instruction,
         keyPoints: res.keyPoints,
+        sources: res.sources && res.sources.length > 0 ? res.sources : undefined,
         at: new Date(),
         difficulty: newDifficulty,
       };
@@ -630,6 +715,7 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
       addToast(msg, 'error');
     } finally {
       setLoading(false);
+      setSearching(false);
     }
   }, [topic, unlocked, level, history, answer, socraticAnswer, addToast, setCurrentView, speakText, tutorDocs, documentBrief, updateDocument]);
 
@@ -1122,7 +1208,7 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
             onClick={sendSocraticAnswer}
             disabled={loading || !socraticAnswer.trim()}
           >
-            {loading ? 'Thinking…' : 'Answer'}
+            {loading && searching ? '🔍 Searching…' : loading ? 'Thinking…' : 'Answer'}
           </button>
         </div>
       </div>
@@ -1197,8 +1283,8 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
     if (displayedHistory.length === 0 && !loading) {
       return (
         <div className="card empty-state" style={{ padding: '3rem 2rem' }}>
-          <div className="empty-state-icon">{isTyping ? '🤔' : '🎓'}</div>
-          <h3>{isTyping ? 'Thinking...' : 'Start a lesson'}</h3>
+          <div className="empty-state-icon">{isTyping ? (searching ? '🔍' : '🤔') : '🎓'}</div>
+          <h3>{isTyping ? (searching ? 'Searching the web…' : 'Thinking...') : 'Start a lesson'}</h3>
           <p>Enter any topic above and press <strong>Teach me</strong> to begin. Try "Cell division" or "Supply and demand".<br />
             You can also drop a document below — the tutor reads it and shows you the points you must know.</p>
           {isTyping && (
@@ -1271,6 +1357,10 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
                 briefing uses, so revision looks consistent everywhere. */}
             {turn.keyPoints && turn.keyPoints.length > 0 && (
               <KeyPointsPanel points={turn.keyPoints} compact />
+            )}
+            {/* Sources used in this reply — only shown when search ran. */}
+            {turn.sources && turn.sources.length > 0 && (
+              <TutorSourcesPanel sources={turn.sources} />
             )}
           </>
         )}
@@ -1430,6 +1520,12 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
       </div>
       <div className="sw-tutor-fs-list" ref={panelRef}>
         {historyList}
+        {loading && history.length > 0 && (
+          <div className="card animate-in" style={{ padding: '1rem 1.2rem', display: 'flex', alignItems: 'center', gap: '0.6rem', color: 'var(--text-2)', fontSize: '0.88rem' }}>
+            <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⟳</span>
+            {searching ? '🔍 Searching the web…' : 'Thinking…'}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1578,6 +1674,12 @@ export default function TutorView({ tier, aiUnlocked, setCurrentView, addToast, 
           </button>
         </div>
         {historyList}
+        {loading && history.length > 0 && (
+          <div className="card animate-in" style={{ padding: '1rem 1.2rem', display: 'flex', alignItems: 'center', gap: '0.6rem', color: 'var(--text-2)', fontSize: '0.88rem' }}>
+            <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⟳</span>
+            {searching ? '🔍 Searching the web…' : 'Thinking…'}
+          </div>
+        )}
       </div>
 
       {fullscreen && createPortal(fullscreenOverlay, document.body)}

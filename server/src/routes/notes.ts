@@ -20,6 +20,7 @@ const NoteBody = z.object({
   folderId:     z.string().optional().nullable(),
   summary:      z.string().optional().nullable(),
   nextReminder: z.string().datetime().optional().nullable(),
+  lastRevisited: z.string().datetime().optional().nullable(),
 });
 
 const HighlightBody = z.object({
@@ -90,8 +91,9 @@ notesRouter.post('/', zValidator('json', NoteBody), async c => {
   const note = await prisma.note.create({
     data: {
       ...body,
-      userId:      user.id,
-      nextReminder: body.nextReminder ? new Date(body.nextReminder) : undefined,
+      userId:        user.id,
+      nextReminder:  body.nextReminder  ? new Date(body.nextReminder)  : undefined,
+      lastRevisited: body.lastRevisited ? new Date(body.lastRevisited) : undefined,
     },
     include: { highlights: true, personalNotes: true, attachments: true },
   });
@@ -114,6 +116,9 @@ notesRouter.put('/:id', zValidator('json', NoteBody.partial()), async c => {
       nextReminder: body.nextReminder !== undefined
         ? (body.nextReminder ? new Date(body.nextReminder) : null)
         : undefined,
+      ...(body.lastRevisited !== undefined
+        ? { lastRevisited: body.lastRevisited ? new Date(body.lastRevisited) : null }
+        : {}),
     },
     include: { highlights: true, personalNotes: true, attachments: true },
   });

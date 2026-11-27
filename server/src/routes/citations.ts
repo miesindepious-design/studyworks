@@ -22,6 +22,8 @@ citationsRouter.use('*', requireAuth);
 const SOURCE_TYPES = ['book', 'journal', 'website', 'chapter', 'video', 'report', 'thesis'] as const;
 
 const CitationBody = z.object({
+  // The note this source was used in, if any.
+  noteId:    z.string().max(200).nullable().optional(),
   type:      z.enum(SOURCE_TYPES).default('book'),
   authors:   z.array(z.string().max(120)).max(40).default([]),
   editor:    z.string().max(120).nullable().optional(),
@@ -45,10 +47,11 @@ function shape(c: {
   year: string; title: string; container: string | null; publisher: string | null;
   place: string | null; volume: string | null; issue: string | null;
   pages: string | null; url: string | null; doi: string | null;
-  accessed: string | null; createdAt: Date; updatedAt: Date;
+  accessed: string | null; noteId: string | null; createdAt: Date; updatedAt: Date;
 }) {
   return {
     id: c.id,
+    noteId: c.noteId,
     type: c.type,
     authors: c.authors,
     editor: c.editor,
@@ -68,10 +71,28 @@ function shape(c: {
   };
 }
 
+/**
+ * Check a note belongs to this student, and return its id.
+ *
+ * `null` in means "no note" and `null` out means "not yours" — the caller
+ * tells them apart by whether it asked for a note at all.
+ */
+async function ownNote(userId: string, noteId: string | null): Promise<string | null> {
+  if (!noteId) return null;
+  const note = await prisma.note.findFirst({
+    where: { id: noteId, userId },
+    select: { id: true },
+  });
+  return note ? note.id : null;
+}
+
 citationsRouter.get('/', async c => {
   const user = c.get('user');
+  // ?noteId=… asks for the sources used in one note. Without it, the whole
+  // library comes back.
+  const noteId = c.req.query('noteId');
   const items = await prisma.citation.findMany({
-    where: { userId: user.id },
+    where: { userId: user.id, ...(noteId ? { noteId } : {}) },
     orderBy: [{ year: 'desc' }, { title: 'asc' }],
   });
   return c.json(items.map(shape));
@@ -81,9 +102,18 @@ citationsRouter.post('/', zValidator('json', CitationBody), async c => {
   const user = c.get('user');
   const body = c.req.valid('json');
 
+  // A citation may only point at a note the student owns. Without this check
+  // a student could attach a source to somebody else's note by guessing its
+  // id.
+  const noteId = await ownNote(user.id, body.noteId ?? null);
+  if (body.noteId && !noteId) {
+    return c.json({ error: 'That note is not yours.' }, 400);
+  }
+
   const created = await prisma.citation.create({
     data: {
       userId: user.id,
+      noteId,
       type: body.type,
       authors: body.authors,
       editor: body.editor ?? null,
@@ -111,9 +141,18 @@ citationsRouter.patch('/:id', zValidator('json', PatchBody), async c => {
   const existing = await prisma.citation.findFirst({ where: { id, userId: user.id } });
   if (!existing) return c.json({ error: 'Source not found' }, 404);
 
+  let noteId: string | null | undefined;
+  if (body.noteId !== undefined) {
+    noteId = await ownNote(user.id, body.noteId);
+    if (body.noteId && !noteId) {
+      return c.json({ error: 'That note is not yours.' }, 400);
+    }
+  }
+
   const updated = await prisma.citation.update({
     where: { id },
     data: {
+      ...(noteId !== undefined ? { noteId } : {}),
       ...(body.type !== undefined ? { type: body.type } : {}),
       ...(body.authors !== undefined ? { authors: body.authors } : {}),
       ...(body.editor !== undefined ? { editor: body.editor } : {}),

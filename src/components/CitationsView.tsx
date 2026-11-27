@@ -30,6 +30,7 @@ import {
   formatBibliography,
   formatCitation,
   inTextCitation,
+  sortKey,
   sourceLabel,
   toBibTeX,
   toRIS,
@@ -39,7 +40,7 @@ import {
 
 const LOCAL_KEY = 'sw-citations';
 
-const STYLES: CitationStyle[] = ['apa', 'mla', 'harvard', 'chicago'];
+const STYLES: CitationStyle[] = ['apa', 'mla', 'harvard', 'chicago', 'ieee'];
 
 const TYPES: SourceType[] = [
   'book', 'journal', 'website', 'chapter', 'video', 'report', 'thesis',
@@ -48,10 +49,14 @@ const TYPES: SourceType[] = [
 export interface CitationsViewProps {
   authenticated: boolean;
   addToast?: (message: string, type: 'success' | 'error' | 'info') => void;
+  /** The student's notes — a source can say which note it was used in. */
+  notes?: Array<{ id: string; title: string }>;
 }
 
 const EMPTY_FORM = {
   type: 'book' as SourceType,
+  /** The note this source was used in. */
+  noteId: '',
   /** One author per line — the easiest way to type several. */
   authors: '',
   editor: '',
@@ -71,8 +76,11 @@ const EMPTY_FORM = {
 /** The editable fields — every one of them a string, so the form is uniform. */
 type FormState = typeof EMPTY_FORM;
 
-/** The fields that are plain text boxes (everything except the type). */
-type TextField = Exclude<keyof FormState, 'type'>;
+/**
+ * The fields that are plain text boxes — everything except the type, and
+ * except the note picker, which is a select rather than a box.
+ */
+type TextField = Exclude<keyof FormState, 'type' | 'noteId'>;
 
 /** Which extra fields each source type actually uses. */
 function fieldsFor(type: SourceType): TextField[] {
@@ -177,7 +185,7 @@ async function copy(text: string): Promise<boolean> {
   }
 }
 
-export default function CitationsView({ authenticated, addToast }: CitationsViewProps) {
+export default function CitationsView({ authenticated, addToast, notes = [] }: CitationsViewProps) {
   const [items, setItems] = useState<CitationDTO[]>([]);
   const [loading, setLoading] = useState(false);
   const [style, setStyle] = useState<CitationStyle>('apa');
@@ -206,6 +214,19 @@ export default function CitationsView({ authenticated, addToast }: CitationsView
   }, [load]);
 
   const sources = useMemo(() => items.map(toSource), [items]);
+
+  /**
+   * IEEE numbers its references, so the in-text mark is a number in square
+   * brackets. The number is the source's place in the reference list — which
+   * is the list in sorted order, not the order the sources happen to be in.
+   */
+  const ieeeNumber = useMemo(() => {
+    const order = new Map<string, number>();
+    [...sources]
+      .sort((a, b) => sortKey(a).localeCompare(sortKey(b)))
+      .forEach((s, i) => order.set(s.id, i + 1));
+    return order;
+  }, [sources]);
   const bibliography = useMemo(
     () => (sources.length ? formatBibliography(sources, style) : ''),
     [sources, style],
@@ -230,6 +251,7 @@ export default function CitationsView({ authenticated, addToast }: CitationsView
       .filter(Boolean);
 
     const payload = {
+      noteId: form.noteId || null,
       type: form.type,
       authors,
       editor: form.editor.trim() || null,
@@ -277,6 +299,7 @@ export default function CitationsView({ authenticated, addToast }: CitationsView
       .map(a => a.trim())
       .filter(Boolean);
     const payload = {
+      noteId: form.noteId || null,
       type: form.type,
       authors,
       editor: form.editor.trim() || null,
@@ -328,6 +351,7 @@ export default function CitationsView({ authenticated, addToast }: CitationsView
     setEditingId(s.id);
     setAdding(true);
     setForm({
+      noteId: s.noteId ?? '',
       type: s.type,
       authors: s.authors.join('\n'),
       editor: s.editor ?? '',
@@ -450,6 +474,24 @@ export default function CitationsView({ authenticated, addToast }: CitationsView
               </select>
             </label>
 
+            {/*
+              Which note the source was used in. A source is often just a
+              book on the student's shelf, so this is optional — but an
+              essay needs to know which note said what, and which source
+              backs it.
+            */}
+            <label style={{ gridColumn: '1 / -1' }}>
+              <span className="text-xs text-muted">Used in note</span>
+              <select
+                className="select"
+                value={form.noteId}
+                onChange={e => setForm({ ...form, noteId: e.target.value })}
+              >
+                <option value="">Not tied to a note</option>
+                {notes.map(n => <option key={n.id} value={n.id}>{n.title || 'Untitled'}</option>)}
+              </select>
+            </label>
+
             <label style={{ gridColumn: '1 / -1' }}>
               <span className="text-xs text-muted">{FIELD_LABEL.authors}</span>
               <textarea
@@ -518,10 +560,18 @@ export default function CitationsView({ authenticated, addToast }: CitationsView
                     </div>
                     <div className="text-xs text-muted" style={{ marginTop: '0.2rem' }}>
                       {sourceLabel(s)}
+                      {dto?.noteId && (
+                        <>
+                          {' · '}
+                          <span className="sw-cite-note">
+                            📓 {notes.find(n => n.id === dto.noteId)?.title ?? 'a note'}
+                          </span>
+                        </>
+                      )}
                     </div>
                     <div className="sw-cite-preview">{formatCitation(s, style)}</div>
                     <div className="text-xs text-muted" style={{ marginTop: '0.25rem' }}>
-                      in-text: <code>{inTextCitation(s, style)}</code>
+                      in-text: <code>{inTextCitation(s, style, undefined, ieeeNumber.get(s.id))}</code>
                       {' · '}key: <code>{citationKey(s)}</code>
                     </div>
                   </div>

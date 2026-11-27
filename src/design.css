@@ -5088,3 +5088,218 @@ select.sw-focus-select option {
   color: var(--sw-text-2);
   border-color: var(--sw-line-strong);
 }
+
+/* Per-deck limits in Settings — a deck's own numbers, under the global
+   ones they replace. */
+.sw-settings-decks {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--sw-line-soft);
+}
+
+.sw-settings-decks-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.sw-settings-deck-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 0.75rem;
+}
+
+.sw-settings-deck {
+  padding: 10px 12px;
+  border: 1px solid var(--sw-line);
+  border-radius: var(--sw-r-sm);
+  background: var(--sw-panel-2);
+}
+
+.sw-settings-deck-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.sw-settings-deck-name {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--sw-text);
+}
+
+.sw-settings-deck-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* The grades card on the dashboard — where the student stands, and what is
+   still coming. */
+.sw-grade-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--sw-line-soft);
+}
+
+.sw-grade-figure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 76px;
+  padding: 6px 10px;
+  border-radius: var(--sw-r-sm);
+  background: var(--sw-accent-soft);
+}
+
+.sw-grade-pct {
+  font-family: var(--sw-font-display);
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--sw-accent);
+  line-height: 1.1;
+}
+
+.sw-grade-letter {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--sw-text-3);
+}
+
+.sw-grade-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.8125rem;
+  color: var(--sw-text-2);
+  min-width: 0;
+}
+
+.sw-grade-needed { font-size: 0.75rem; color: var(--sw-text-3); }
+.sw-grade-needed.is-good { color: var(--sw-success); font-weight: 600; }
+.sw-grade-needed.is-warn { color: var(--sw-warning); font-weight: 600; }
+
+.sw-grade-upcoming-head {
+  margin-top: 0.85rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--sw-text-3);
+}
+
+.sw-grade-upcoming {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sw-grade-due {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--sw-line-soft);
+  font-size: 0.8125rem;
+}
+.sw-grade-due:last-child { border-bottom: none; }
+
+.sw-grade-due-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  color: var(--sw-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sw-grade-due-course {
+  font-size: 0.6875rem;
+  color: var(--sw-text-3);
+  flex-shrink: 0;
+}
+
+.sw-grade-due-when {
+  font-size: 0.6875rem;
+  color: var(--sw-text-3);
+  flex-shrink: 0;
+  min-width: 74px;
+  text-align: right;
+}
+
+.sw-grade-due.is-soon .sw-grade-due-when {
+  color: var(--sw-warning);
+  font-weight: 600;
+}
+
+/* The sources behind a note — the handful that back it, where the student
+   is reading. The full reference is one click away. */
+.sw-note-sources {
+  margin-bottom: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--sw-radius, var(--sw-r));
+  border: 1px solid var(--sw-line);
+  background: var(--sw-panel-2);
+}
+
+.sw-note-sources-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--sw-text-3);
+  margin-bottom: 0.35rem;
+}
+
+.sw-note-sources-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sw-note-sources-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.8125rem;
+}
+
+.sw-note-source-title {
+  color: var(--sw-text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sw-note-source-who {
+  color: var(--sw-text-3);
+  font-size: 0.6875rem;
+  flex-shrink: 0;
+}
+
+/* The note a source was used in, shown in the bibliography list. */
+.sw-cite-note {
+  color: var(--sw-accent);
+  font-weight: 600;
+}

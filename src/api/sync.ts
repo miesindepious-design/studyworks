@@ -71,6 +71,12 @@ export async function pushSync(payload: SyncPushPayload): Promise<void> {
       createdAt: n.createdAt.toISOString(),
       updatedAt: n.updatedAt.toISOString(),
       nextReminder: n.nextReminder?.toISOString() ?? null,
+      // When the note was last opened on this device.  The server only
+      // overwrites this if the incoming value is non-null, so the most
+      // recent "last opened" across all devices wins.
+      lastRevisited: n.lastRevisited instanceof Date
+        ? n.lastRevisited.toISOString()
+        : (n.lastRevisited ?? null),
       // The note's spaced-repetition state travels with it, so a note that
       // is due in three days stays due in three days on the other device.
       nextReview:  n.nextReview?.toISOString() ?? null,
@@ -130,6 +136,8 @@ function reviveNote(n: any): Note {
     createdAt:    new Date(n.createdAt),
     updatedAt:    new Date(n.updatedAt),
     nextReminder: n.nextReminder ? new Date(n.nextReminder) : undefined,
+    // When the note was last opened on any device.
+    lastRevisited: n.lastRevisited ? new Date(n.lastRevisited) : undefined,
     // The note's spaced-repetition state, with the same defaults the card
     // revive uses, so every consumer can rely on these being present.
     nextReview:  n.nextReview ? new Date(n.nextReview) : undefined,

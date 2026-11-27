@@ -161,7 +161,11 @@ model Note {
   tags        String[] @default([])
   summary     String?  @db.Text
   folderId    String?
-  nextReminder DateTime?
+  nextReminder  DateTime?
+  // When the student last opened this note (not the same as a spaced-
+  // repetition review — just a "I looked at it" timestamp so the Dashboard
+  // can count how many notes were revisited this week).
+  lastRevisited DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -192,6 +196,7 @@ model Note {
   highlights    Highlight[]
   personalNotes PersonalNote[]
   attachments   Attachment[]
+  citations     Citation[]
 
   @@index([userId])
   @@index([userId, folderId])
@@ -747,6 +752,11 @@ model Assignment {
 model Citation {
   id        String   @id @default(cuid())
   userId    String
+  // The note this source was used in, if it was used in one. A citation is
+  // often just a book on the student's shelf, so this is optional — but a
+  // student writing an essay needs to know which note said what, and which
+  // source backs it.
+  noteId    String?
   // book | journal | website | chapter | video | report | thesis
   type      String   @default("book")
   // One author per entry, "Last, First" or "First Last".
@@ -769,5 +779,7 @@ model Citation {
   updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  note Note? @relation(fields: [noteId], references: [id], onDelete: SetNull)
   @@index([userId])
+  @@index([userId, noteId])
 }

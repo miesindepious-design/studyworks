@@ -16,12 +16,16 @@ import { rateLimitMiddleware } from '../lib/rateLimit.js';
 import { prisma } from '../lib/prisma.js';
 import { encryptApiKey, decryptApiKey } from '../lib/encryption.js';
 import { SYSTEM_BASE, loadAIConfig, callProvider, getServerAIFallback } from '../lib/aiProvider.js';
-import { DEFAULT_GEMINI_MODEL } from '../lib/gemini.js';
+import { DEFAULT_GEMINI_MODEL, buildGenerationConfig } from '../lib/gemini.js';
 import {
   KEY_POINTS_INSTRUCTION, extractKeyPointsBlock, parseKeyPoints,
   type KeyPoint,
 } from '../lib/keyPoints.js';
 import { studentProfileBits, studentPromptContext } from '../lib/studentProfile.js';
+import {
+  webSearch, logSearchUsage,
+  type SearchResult,
+} from '../lib/webSearch.js';
 
 export const aiRouter = new Hono();
 aiRouter.use('/*', requireAuth);
@@ -464,6 +468,210 @@ const TutorRequestBody = z.object({
   documentBrief: z.string().optional().nullable(),
 });
 
+// ── Web-search system-prompt addon ───────────────────────────────────────────
+// Appended to the tutor's system instruction only when TAVILY_API_KEY is set.
+const WEB_SEARCH_INSTRUCTION = `
+
+You are a friendly, patient study tutor. Explain in simple, clear language. Before answering, decide how much research the question needs.
+
+## When to search
+
+LEVEL 1 — NORMAL ANSWER (default, no search):
+Use for stable, well-known knowledge: definitions, standard concepts, formulas, textbook explanations, study tips, math or science fundamentals, or casual conversation. Do NOT call web_search. Show no Sources section.
+
+LEVEL 2 — QUICK SEARCH (1 search):
+Use when you are unsure of a specific fact, or when one extra detail would help (a current figure, a recent example, a specific standard).
+
+LEVEL 3 — DEEP RESEARCH (up to 2 searches):
+Use only when the question is complex, needs several viewpoints, involves recent developments, or the student explicitly asks to "research" or "go deeper".
+
+## Decision rules
+- If the student says "search this", "look it up", "research", or "go deeper" → always search.
+- If the student says "no need to search" or "just use your knowledge" → never search.
+- Hard limit: 2 searches per student message. Never search just to look thorough.
+- If search returns no useful results, answer from your own knowledge and do NOT show a Sources section.
+
+## Citation format
+After searching, incorporate results naturally and cite with [1], [2], [3] inline where the fact came from. Never invent sources. Only show a Sources section when you actually used search results.`;
+
+// ── Gemini function-calling tool definition ───────────────────────────────────
+// Sent with every tutor request when Tavily is configured; the model decides
+// whether to call it.
+const WEB_SEARCH_TOOL = {
+  functionDeclarations: [
+    {
+      name:        'web_search',
+      description: 'Search the web for recent or specific information. Use only when you cannot answer accurately from your own knowledge, or when the student explicitly asks you to search. Do not search for well-known facts or stable concepts.',
+      parameters: {
+        type:       'object',
+        properties: {
+          query: {
+            type:        'string',
+            description: 'A concise, specific search query. 3-10 words. Focus on the key fact or concept you need.',
+          },
+        },
+        required: ['query'],
+      },
+    },
+  ],
+};
+
+/**
+ * Run the tutor's function-calling loop against the Gemini API directly.
+ *
+ * We bypass `callProvider()` here because function-calling requires a
+ * multi-turn conversation that `callProvider` doesn't model — it's designed
+ * for single-shot text generation. We replicate just what we need:
+ *   1. Send messages + tools to Gemini.
+ *   2. If the model calls web_search, run it and add the result.
+ *   3. Repeat up to 2 times.
+ *   4. Return the final text + which sources were used.
+ *
+ * Falls back to plain text generation (no tools) on any error.
+ */
+async function runTutorWithSearch(opts: {
+  apiKey:       string;
+  model:        string;
+  messages:     { role: string; content: string }[];
+  temperature:  number;
+  maxTokens:    number;
+  thinking:     import('../lib/gemini.js').ThinkingLevel;
+  userId:       string;
+}): Promise<{ text: string; sources: SearchResult[]; searchCount: number; cacheHits: number }> {
+  const { apiKey, model, messages, temperature, maxTokens, thinking, userId } = opts;
+  const tavilyConfigured = !!process.env.TAVILY_API_KEY;
+
+  // No Tavily key → plain generation, no tools.
+  if (!tavilyConfigured) {
+    const systemMsg = messages.find(m => m.role === 'system');
+    const userMsgs  = messages.filter(m => m.role !== 'system');
+    const contents  = userMsgs.map(m => ({
+      role:  m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    }));
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const body: Record<string, unknown> = { contents };
+    if (systemMsg?.content?.trim()) body.systemInstruction = { parts: [{ text: systemMsg.content }] };
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...body, generationConfig: buildGenerationConfig({ model, temperature, maxTokens, thinking }) }),
+    });
+    if (!res.ok) throw new Error(`Gemini ${res.status}`);
+    const data = await res.json();
+    const parts: any[] = data?.candidates?.[0]?.content?.parts ?? [];
+    const text = parts.filter(p => !p?.thought && typeof p?.text === 'string').map(p => p.text).join('');
+    return { text, sources: [], searchCount: 0, cacheHits: 0 };
+  }
+
+  // ── Function-calling loop ─────────────────────────────────────────────────
+  const systemMsg = messages.find(m => m.role === 'system');
+  const userMsgs  = messages.filter(m => m.role !== 'system');
+
+  // Gemini contents array — grows as the tool loop progresses
+  let contents: any[] = userMsgs.map(m => ({
+    role:  m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }],
+  }));
+
+  const generationConfig = buildGenerationConfig({ model, temperature, maxTokens, thinking });
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  const usedSources: SearchResult[]      = [];
+  const sourceIndex: Map<string, number> = new Map(); // url → 1-based index
+  let searchCount  = 0;
+  let cacheHits    = 0;
+  const MAX_SEARCH_ROUNDS = 2;
+
+  for (let round = 0; round <= MAX_SEARCH_ROUNDS; round++) {
+    const reqBody: Record<string, unknown> = {
+      contents,
+      generationConfig,
+      tools: round < MAX_SEARCH_ROUNDS ? [WEB_SEARCH_TOOL] : [], // no more tools on final round
+    };
+    if (systemMsg?.content?.trim()) {
+      reqBody.systemInstruction = { parts: [{ text: systemMsg.content }] };
+    }
+
+    const res = await fetch(url, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(reqBody),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(`Gemini ${res.status}: ${(err as any)?.error?.message ?? res.statusText}`);
+    }
+
+    const data     = await res.json();
+    const candidate = data?.candidates?.[0];
+    const parts: any[] = candidate?.content?.parts ?? [];
+
+    // Check if the model wants to call a function
+    const funcCall = parts.find((p: any) => p.functionCall?.name === 'web_search');
+
+    if (!funcCall || round >= MAX_SEARCH_ROUNDS) {
+      // Model is done — extract the final text answer.
+      const text = parts
+        .filter((p: any) => !p?.thought && typeof p?.text === 'string')
+        .map((p: any) => p.text as string)
+        .join('');
+      return { text, sources: usedSources, searchCount, cacheHits };
+    }
+
+    // ── Execute the function call ───────────────────────────────────────────
+    const query  = String(funcCall.functionCall.args?.query ?? '').trim();
+    if (!query) {
+      // Model sent an empty query — append an empty result and continue.
+      contents = [
+        ...contents,
+        { role: 'model', parts },
+        {
+          role: 'user',
+          parts: [{ functionResponse: { name: 'web_search', response: { results: [] } } }],
+        },
+      ];
+      continue;
+    }
+
+    // Run the actual search (honours cache + rate limits).
+    const { results, cached } = await webSearch(userId, query, 5);
+    if (cached) {
+      cacheHits++;
+    } else {
+      searchCount++;
+    }
+
+    // Build numbered source references for newly-seen URLs.
+    const responseResults = results.map(r => {
+      if (!sourceIndex.has(r.url)) {
+        sourceIndex.set(r.url, usedSources.length + 1);
+        usedSources.push(r);
+      }
+      return { ...r, index: sourceIndex.get(r.url) };
+    });
+
+    // Add the model's function-call turn and our function-response turn.
+    contents = [
+      ...contents,
+      { role: 'model', parts },
+      {
+        role: 'user',
+        parts: [{
+          functionResponse: {
+            name:     'web_search',
+            response: { results: responseResults },
+          },
+        }],
+      },
+    ];
+  }
+
+  // Should not reach here, but return empty as a safety net.
+  return { text: '', sources: usedSources, searchCount, cacheHits };
+}
+
 /**
  * Ask the model for the key points of a passage it has just written.
  *
@@ -593,23 +801,22 @@ Diagram rules — a picture costs far more tokens than a sentence, so use the ch
   // to work out for themselves.
   const wantsKeyPoints = mode !== 'quiz' && mode !== 'socratic';
 
+  // Extend the system prompt with web-search instructions when Tavily is
+  // configured. This way the model understands exactly when to call web_search
+  // and how to cite results — it only reaches the model when the tool is live.
+  const systemInstructionBase = `${SYSTEM_BASE}\nYou are an expert AI tutor. ${modeInstructions[mode]}${studentContext}\n${FORMAT_RULES}${wantsKeyPoints ? `\n${KEY_POINTS_INSTRUCTION}` : ''}`;
+  const systemInstruction = process.env.TAVILY_API_KEY
+    ? `${systemInstructionBase}${WEB_SEARCH_INSTRUCTION}`
+    : systemInstructionBase;
+
   const messages = [
     {
       role: 'system',
-      content: `${SYSTEM_BASE}\nYou are an expert AI tutor. ${modeInstructions[mode]}${studentContext}\n${FORMAT_RULES}${wantsKeyPoints ? `\n${KEY_POINTS_INSTRUCTION}` : ''}`,
+      content: systemInstruction,
     },
     ...history,
     {
       role: 'user',
-      // The student's own ask rides along with the topic. `instruction` is
-      // how "show me a diagram" and "explain this part" reach the model, so
-      // it must never be dropped — not even when a quiz answer is present.
-      // The uploaded material rides here too: it is source material to
-      // ground the answer on, not an instruction.
-      //
-      // A Socratic session is different: the student's reply to the tutor's
-      // previous question arrives as `lastAnswer`, and the topic has to stay
-      // in view every time or the model loses what it is leading them to.
       content: mode === 'socratic'
         ? [
             `Topic: ${topic}`,
@@ -627,26 +834,38 @@ Diagram rules — a picture costs far more tokens than a sentence, so use the ch
     },
   ];
 
+  const startMs = Date.now();
+
   try {
-    const raw = await callProvider({
-      provider: cfg.provider,
-      model: cfg.model,
-      apiKey: cfg.apiKey,
-      messages,
-      temperature: mode === 'quiz' ? 0.4 : mode === 'socratic' ? 0.6 : 0.7,
-      // A lesson is long: exam-ready notes *plus* a labelled SVG diagram.
-      // At 4000 tokens the reply was sometimes cut off mid-diagram, which
-      // left the student staring at raw SVG markup instead of a picture.
-      //
-      // A Socratic reply is one question — a few sentences at most. Letting
-      // the model write 8000 tokens of it would break the whole point of the
-      // mode, so it gets a tight budget and it has to fit in one.
-      maxTokens: mode === 'quiz' ? 1200 : mode === 'socratic' ? 700 : 8000,
-      // A lesson is the one place where thinking pays off; a quiz just
-      // needs recall. A Socratic question needs thought but not deep
-      // reasoning — the model is asking, not solving.
-      thinking: mode === 'quiz' ? 'low' : mode === 'socratic' ? 'low' : 'medium',
-    });
+    // runTutorWithSearch drives the Gemini function-calling loop. For OpenAI
+    // users (who brought their own key) we fall back to a plain callProvider
+    // call with no tools — sources will be empty for that path.
+    const isGemini = (cfg.provider === 'gemini');
+
+    const { text: raw, sources, searchCount, cacheHits } = isGemini
+      ? await runTutorWithSearch({
+          apiKey:      cfg.apiKey,
+          model:       cfg.model,
+          messages,
+          temperature: mode === 'quiz' ? 0.4 : mode === 'socratic' ? 0.6 : 0.7,
+          maxTokens:   mode === 'quiz' ? 1200 : mode === 'socratic' ? 700 : 8000,
+          thinking:    mode === 'quiz' ? 'low' : mode === 'socratic' ? 'low' : 'medium',
+          userId:      user.id,
+        })
+      : {
+          text: await callProvider({
+            provider:    cfg.provider,
+            model:       cfg.model,
+            apiKey:      cfg.apiKey,
+            messages,
+            temperature: mode === 'quiz' ? 0.4 : mode === 'socratic' ? 0.6 : 0.7,
+            maxTokens:   mode === 'quiz' ? 1200 : mode === 'socratic' ? 700 : 8000,
+            thinking:    mode === 'quiz' ? 'low' : mode === 'socratic' ? 'low' : 'medium',
+          }),
+          sources:     [],
+          searchCount: 0,
+          cacheHits:   0,
+        };
 
     // Split the machine-readable key-points block out of the reply so the
     // user never sees the raw markers, and so the UI can render the points
@@ -659,12 +878,25 @@ Diagram rules — a picture costs far more tokens than a sentence, so use the ch
       keyPoints = await fallbackKeyPoints(cfg, extracted.text || raw, audience);
     }
 
+    // Determine which research level was used for logging
+    const level: 1 | 2 | 3 = searchCount === 0 ? 1 : searchCount === 1 ? 2 : 3;
+    logSearchUsage({
+      at:          new Date().toISOString(),
+      level,
+      searchCount,
+      responseMs:  Date.now() - startMs,
+      cacheHits,
+      queriesUsed: sources.map(s => s.domain), // domains only — no queries logged
+    });
+
     return c.json({
       topic,
       mode,
       educationLevel: effectiveLevel,
       response: extracted.text,
       keyPoints,
+      // Sources used in this reply. Empty array when no search happened.
+      sources,
     });
   } catch (e) {
     return c.json({ error: (e as Error).message }, 502);

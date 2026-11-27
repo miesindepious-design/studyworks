@@ -13,6 +13,7 @@ import {
   formatMla,
   formatHarvard,
   formatChicago,
+  formatIeee,
   parseAuthor,
   apaTitleCase,
   toBibTeX,
@@ -170,12 +171,52 @@ describe('Chicago', () => {
   });
 });
 
+describe('IEEE', () => {
+  it('puts the initials before the surname, the opposite way round from APA', () => {
+    const out = formatIeee(BOOK);
+    expect(out).toContain('T. Morrison');
+    expect(out).not.toContain('Morrison, T');
+  });
+
+  it('puts the place of publication before the publisher', () => {
+    const out = formatIeee(BOOK);
+    expect(out).toContain('New York: Alfred A. Knopf');
+    expect(out).toContain('1987');
+  });
+
+  it('quotes the title of a journal article but not the name of the journal', () => {
+    const out = formatIeee(ARTICLE);
+    expect(out).toContain('"The structure of scientific revolutions,"');
+    expect(out).toContain('Journal of Examples');
+    expect(out).toContain('vol. 12');
+    expect(out).toContain('no. 3');
+    expect(out).toContain('pp. 45-67');
+  });
+
+  it('joins two authors with "and" and three with commas', () => {
+    // "bell hooks" is read as the given name first, so the initials go
+    // before the surname: "B. hooks".
+    expect(formatIeee(CHAPTER)).toContain('B. hooks and C. West');
+    const three = formatIeee({ ...ARTICLE, authors: ['Ada Lovelace', 'Grace Hopper', 'Alan Turing'] });
+    expect(three).toContain('A. Lovelace, G. Hopper, and A. Turing');
+  });
+
+  it('numbers its references, so the in-text mark is a number', () => {
+    expect(inTextCitation(ARTICLE, 'ieee', undefined, 3)).toBe('[3]');
+  });
+
+  it('says [n] rather than a wrong number when it does not know the position', () => {
+    expect(inTextCitation(ARTICLE, 'ieee')).toBe('[n]');
+  });
+});
+
 describe('formatCitation', () => {
   it('routes to the right formatter', () => {
     expect(formatCitation(BOOK, 'apa')).toContain('(1987)');
     expect(formatCitation(BOOK, 'mla')).toContain('"Beloved."');
     expect(formatCitation(BOOK, 'harvard')).toContain('(1987)');
     expect(formatCitation(BOOK, 'chicago')).toContain('New York:');
+    expect(formatCitation(BOOK, 'ieee')).toContain('New York:');
   });
 });
 
