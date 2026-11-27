@@ -4756,3 +4756,335 @@ select.sw-focus-select option {
   .sw-cite-row { align-items: flex-start; }
   .sw-cite-row-main { flex: 1 1 100%; }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   The study group — a folder several people write in at the same time.
+
+   The layout is deliberately plain: a list of notes on the left, the note on
+   the right. Everything that is unusual about this screen — the live badge,
+   the presence avatars, the conflict panel — is styled here so the shape of
+   the room is readable at a glance.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+.collab-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sw-gap);
+  min-height: 0;
+}
+
+.collab-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  background: var(--sw-panel);
+  border: 1px solid var(--sw-line);
+  border-radius: var(--sw-r-xl);
+  box-shadow: var(--sw-shadow-sm);
+}
+
+.collab-head-main { min-width: 0; }
+
+.collab-head-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--sw-font-display);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.022em;
+  color: var(--sw-text);
+}
+
+.collab-head-sub {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 3px;
+  font-size: 0.75rem;
+  color: var(--sw-text-3);
+}
+
+/* The role badge. An owner is above an editor, an editor above a viewer. */
+.collab-role {
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: var(--sw-r-full);
+  border: 1px solid var(--sw-line);
+  color: var(--sw-text-3);
+  background: var(--sw-sunken);
+}
+.collab-role.owner  { color: var(--sw-accent);  border-color: var(--sw-accent-line); background: var(--sw-accent-soft); }
+.collab-role.editor { color: var(--sw-info);    border-color: color-mix(in srgb, var(--sw-info) 30%, transparent); background: var(--sw-info-soft); }
+
+/* Live means the socket is open. Offline does not mean broken — the folder
+   still saves, it just does not tell you who else is here. */
+.collab-live { font-weight: 600; }
+.collab-live.live       { color: var(--sw-success); }
+.collab-live.connecting { color: var(--sw-warning); }
+.collab-live.offline    { color: var(--sw-text-faint); }
+
+.collab-head-side {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.collab-avatars { display: flex; }
+.collab-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-left: -6px;
+  border-radius: var(--sw-r-full);
+  background: var(--sw-accent-soft);
+  color: var(--sw-accent);
+  border: 2px solid var(--sw-panel);
+  font-size: 0.6875rem;
+  font-weight: 700;
+}
+.collab-avatar:first-child { margin-left: 0; }
+
+.collab-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-radius: var(--sw-r);
+  background: var(--sw-warning-soft);
+  border: 1px solid color-mix(in srgb, var(--sw-warning) 28%, transparent);
+  color: var(--sw-text);
+  font-size: 0.8125rem;
+}
+
+.collab-body {
+  display: grid;
+  grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
+  gap: var(--sw-gap);
+  align-items: start;
+}
+
+.collab-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: var(--sw-panel);
+  border: 1px solid var(--sw-line);
+  border-radius: var(--sw-r-xl);
+  box-shadow: var(--sw-shadow-sm);
+  position: sticky;
+  top: calc(var(--sw-topbar-h) + 16px);
+  max-height: calc(100vh - var(--sw-topbar-h) - 48px);
+  overflow-y: auto;
+}
+
+.collab-new { align-self: flex-start; }
+
+.collab-notes { display: flex; flex-direction: column; gap: 2px; }
+
+.collab-note {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--sw-r-sm);
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: var(--sw-text);
+  transition: background var(--sw-fast) var(--sw-ease);
+}
+.collab-note:hover { background: var(--sw-hover); }
+.collab-note.active {
+  background: var(--sw-accent-soft);
+  border-color: var(--sw-accent-line);
+}
+
+.collab-note-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collab-note-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.6875rem;
+  color: var(--sw-text-3);
+}
+
+/* The dot on a note somebody else has open right now. */
+.collab-note-live { color: var(--sw-success); font-size: 0.625rem; }
+.collab-note-by { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.collab-main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  background: var(--sw-panel);
+  border: 1px solid var(--sw-line);
+  border-radius: var(--sw-r-xl);
+  box-shadow: var(--sw-shadow-sm);
+  min-width: 0;
+}
+
+.collab-title {
+  font-family: var(--sw-font-display);
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.collab-readonly {
+  padding: 1rem 0.5rem;
+  line-height: 1.7;
+  font-size: 0.9375rem;
+  color: var(--sw-text);
+  min-height: 320px;
+}
+
+.collab-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 12px;
+  border-top: 1px solid var(--sw-line-soft);
+}
+
+.collab-tags { flex: 1 1 220px; min-width: 0; }
+
+.collab-foot-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The conflict panel. Shown when the server refuses a save, or when a note
+   changed under a draft with unsaved typing. */
+.collab-conflict {
+  padding: 14px 16px;
+  border-radius: var(--sw-r);
+  background: var(--sw-warning-soft);
+  border: 1px solid color-mix(in srgb, var(--sw-warning) 30%, transparent);
+}
+
+.collab-conflict-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 10px;
+  font-size: 0.875rem;
+  color: var(--sw-text);
+}
+
+.collab-conflict-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.collab-version {
+  background: var(--sw-panel);
+  border: 1px solid var(--sw-line);
+  border-radius: var(--sw-r-sm);
+  overflow: hidden;
+}
+
+.collab-version-head {
+  padding: 6px 10px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--sw-text-3);
+  border-bottom: 1px solid var(--sw-line-soft);
+  background: var(--sw-panel-2);
+}
+
+.collab-version-body {
+  padding: 10px;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--sw-text-2);
+  max-height: 220px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.collab-conflict-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* The group panel — owner only. */
+.collab-group { display: flex; flex-direction: column; gap: 4px; }
+
+.collab-member {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--sw-line-soft);
+}
+.collab-member:last-of-type { border-bottom: none; }
+
+.collab-member .collab-avatar { margin-left: 0; flex-shrink: 0; }
+
+.collab-member-main { flex: 1; min-width: 0; }
+
+.collab-member-name {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--sw-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collab-member-sub {
+  font-size: 0.6875rem;
+  color: var(--sw-text-3);
+}
+
+.collab-member-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.collab-member-actions .select { padding: 3px 6px; font-size: 0.6875rem; }
+
+@media (max-width: 780px) {
+  .collab-body { grid-template-columns: 1fr; }
+  .collab-side { position: static; max-height: none; }
+}
+
+/* Your own avatar, so the row of people reads as the room — not just the
+   people who are not you. */
+.collab-avatar.self {
+  background: var(--sw-panel);
+  color: var(--sw-text-2);
+  border-color: var(--sw-line-strong);
+}

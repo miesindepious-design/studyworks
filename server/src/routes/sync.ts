@@ -18,6 +18,7 @@ import { zValidator } from '@hono/zod-validator';
 import { requireAuth } from '../lib/session.js';
 import { prisma } from '../lib/prisma.js';
 import { computeEffectiveTier } from '../lib/tier.js';
+import { collabManager } from '../lib/collabManager.js';
 
 export const syncRouter = new Hono();
 syncRouter.use('/*', requireAuth);
@@ -292,6 +293,11 @@ syncRouter.post('/', zValidator('json', SyncBody), async c => {
   // Stats so the client can show "synced N items, accepted M"
   const stats = { notes: 0, contacts: 0, flashcards: 0, folders: 0, practice: 0, searches: 0, conflicts: 0 };
 
+  // Notes this sync actually changed inside a folder. If a study group is in
+  // that folder right now, they are told after the commit — otherwise the
+  // owner's own edits only reach them on their next reload.
+  const changedNotes: Array<{ id: string; folderId: string | null }> = [];
+
   await prisma.$transaction(async (tx) => {
     // Upsert folders first (notes/contacts/flashcards reference them)
     for (const f of (body as any).folders) {
@@ -364,6 +370,7 @@ syncRouter.post('/', zValidator('json', SyncBody), async c => {
           },
         });
         stats.notes++;
+        if (n.folderId) changedNotes.push({ id: n.id, folderId: n.folderId });
       } else {
         stats.conflicts++;
       }
@@ -499,6 +506,18 @@ syncRouter.post('/', zValidator('json', SyncBody), async c => {
       }
     }
   });
+
+  // The commit has landed, so what the group is told about is really on disk.
+  // Only folders with somebody connected are worth announcing to; the ping
+  // carries no content, it just says "this note changed — fetch it".
+  for (const note of changedNotes) {
+    if (collabManager.roomSize(note.folderId as string) === 0) continue;
+    collabManager.broadcast(note.folderId as string, {
+      type: 'note-updated',
+      noteId: note.id,
+      by: { userId: user.id, name: user.name ?? 'The owner' },
+    });
+  }
 
   return c.json({ success: true, stats });
 });

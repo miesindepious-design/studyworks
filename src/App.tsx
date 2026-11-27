@@ -55,6 +55,7 @@ import StudyPlanView from './components/StudyPlanView';
 import NoteRecallView from './components/NoteRecallView';
 import type { PlanItem } from './utils/reviewPlan';
 import DuelView from './components/DuelView';
+import CollabView from './components/CollabView';
 import { getRoomFile, type RoomFileInfo } from './api/roomFiles';
 import { createGameRoom } from './api/game';
 import { createDuel } from './api/progression';
@@ -241,6 +242,11 @@ export default function App() {
   // A duel code the player arrived with (?duel=ABCD12). Like the lobby code
   // it has to survive the auth gate, so it is stashed in sessionStorage.
   const [pendingDuelCode, setPendingDuelCode] = useState<string | null>(null);
+
+  // The share token of a study group the player arrived with (?collab=TOKEN).
+  // A group is written to by signed-in people only, so the token has to
+  // survive the auth gate the same way the lobby code does.
+  const [pendingCollabToken, setPendingCollabToken] = useState<string | null>(null);
 
   // A shared study file the player chose to hand to the AI tutor. The tutor
   // picks it up on mount, adds it to the document library and reads it.
@@ -515,6 +521,18 @@ export default function App() {
       window.history.replaceState({}, '', '/');
     }
 
+    // ?collab=TOKEN — the share token of a study group. The reader may not
+    // be signed in yet, so the token is stashed: the group screen only
+    // renders after auth, and the token has to survive that round trip.
+    const collabParam = params.get('collab');
+    if (collabParam && /^[A-Za-z0-9_-]{4,200}$/.test(collabParam.trim())) {
+      const token = collabParam.trim();
+      try { sessionStorage.setItem('studyworks:pendingCollab', token); } catch {}
+      setPendingCollabToken(token);
+      setCurrentView('collab');
+      window.history.replaceState({}, '', '/');
+    }
+
     // Handle SW postMessage clicks when tab is already open
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
@@ -549,6 +567,18 @@ export default function App() {
       setCurrentView('duel');
     }
   }, [session.status, pendingDuelCode]);
+
+  // A study-group link followed while signed out comes back after signing in.
+  useEffect(() => {
+    if (session.status !== 'authenticated') return;
+    if (pendingCollabToken) return;
+    let stashed: string | null = null;
+    try { stashed = sessionStorage.getItem('studyworks:pendingCollab'); } catch {}
+    if (stashed && /^[A-Za-z0-9_-]{4,200}$/.test(stashed)) {
+      setPendingCollabToken(stashed);
+      setCurrentView('collab');
+    }
+  }, [session.status, pendingCollabToken]);
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   // Built from the shared registry (src/config/shortcuts.ts) so a rebind in
@@ -872,6 +902,15 @@ export default function App() {
                 setPendingPlanItem({ id: noteId, kind: 'note', title: '', detail: '', priority: 0, reason: 'due', isNew: false });
                 setCurrentView('notes');
               }}
+            />
+          )}
+          {currentView === 'collab' && (
+            <CollabView
+              token={pendingCollabToken}
+              folders={db.folders}
+              userId={session.user!.id}
+              userName={session.user!.name || session.user!.email.split('@')[0]}
+              addToast={addToast}
             />
           )}
           {currentView === 'notes' && (

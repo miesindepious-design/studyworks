@@ -8,7 +8,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Folder } from '../types';
 import {
-  listShares, createShare, revokeShare, type FolderShare,
+  listShares, createShare, revokeShare, type FolderShare, type ShareRole,
   getInboundAddress, type InboundAddress,
   listTickets, createTicket, type SupportTicket,
 } from '../api/phase2';
@@ -26,6 +26,7 @@ export default function Phase2Tools({ folders, tier, onAddToast, filtered = fals
   // ── Folder sharing ──────────────────────────────────────────────────────────
   const [shares, setShares] = useState<FolderShare[]>([]);
   const [shareFolder, setShareFolder] = useState('');
+  const [shareRole, setShareRole] = useState<ShareRole>('viewer');
   const [creating, setCreating] = useState(false);
 
   // ── Email-to-save ───────────────────────────────────────────────────────────
@@ -49,10 +50,15 @@ export default function Phase2Tools({ folders, tier, onAddToast, filtered = fals
     if (!shareFolder) { onAddToast('Pick a folder to share.', 'info'); return; }
     setCreating(true);
     try {
-      const share = await createShare(shareFolder);
+      const share = await createShare(shareFolder, undefined, shareRole);
       setShares([share, ...shares]);
       await navigator.clipboard?.writeText(shareUrl(share.token)).catch(() => {});
-      onAddToast('Share link created & copied!', 'success');
+      onAddToast(
+        shareRole === 'editor'
+          ? 'Study-group link created & copied!'
+          : 'Share link created & copied!',
+        'success',
+      );
     } catch (e: any) {
       onAddToast(e?.message || 'Could not create share link.', 'error');
     } finally {
@@ -105,11 +111,25 @@ export default function Phase2Tools({ folders, tier, onAddToast, filtered = fals
           <p className="text-sm text-muted">Upgrade to Pro to create read-only share links for your folders.</p>
         ) : (
           <>
-            <p className="text-sm text-muted" style={{ marginBottom: '0.75rem' }}>Create a public read-only link to any folder. Anyone with the link can view (not edit) its notes.</p>
-            <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
-              <select className="select" value={shareFolder} onChange={e => setShareFolder(e.target.value)} style={{ flex: 1 }}>
+            <p className="text-sm text-muted" style={{ marginBottom: '0.75rem' }}>
+              Create a public link to any folder. A <strong>viewer</strong> link opens a
+              read-only page anybody can look at. An <strong>editor</strong> link turns the
+              folder into a study group: classmates who sign in can write in it with you.
+            </p>
+            <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+              <select className="select" value={shareFolder} onChange={e => setShareFolder(e.target.value)} style={{ flex: 1, minWidth: 160 }}>
                 <option value="">Select a folder…</option>
                 {folders.filter(f => f.id !== 'default').map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+              <select
+                className="select"
+                value={shareRole}
+                onChange={e => setShareRole(e.target.value as ShareRole)}
+                style={{ width: 130 }}
+                aria-label="What the link lets people do"
+              >
+                <option value="viewer">Viewer</option>
+                <option value="editor">Editor</option>
               </select>
               <button className="btn btn-primary" onClick={handleCreateShare} disabled={creating || !shareFolder}>{creating ? 'Creating…' : 'Create link'}</button>
             </div>
@@ -120,7 +140,10 @@ export default function Phase2Tools({ folders, tier, onAddToast, filtered = fals
                 {shares.map(s => (
                   <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--surface-2)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="text-sm" style={{ fontWeight: 600 }}>📁 {folderName(s.folderId)}</div>
+                      <div className="text-sm" style={{ fontWeight: 600 }}>
+                        📁 {folderName(s.folderId)}{' '}
+                        <span className="tag accent text-xs">{s.role ?? 'viewer'}</span>
+                      </div>
                       <div className="text-xs text-muted" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{shareUrl(s.token)}</div>
                     </div>
                     <button className="btn btn-secondary btn-xs" onClick={() => { navigator.clipboard?.writeText(shareUrl(s.token)); onAddToast('Copied!', 'success'); }}>Copy</button>

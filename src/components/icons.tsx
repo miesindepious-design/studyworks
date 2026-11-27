@@ -74,6 +74,21 @@ export function IconPeople(p: IconProps) {
   );
 }
 
+/**
+ * A folder with somebody in it — a study group: one folder, several people
+ * writing in it. Distinct from IconNotes (a page) and IconPeople (a pair of
+ * people with no folder in sight).
+ */
+export function IconCollab(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M3 8.5A2 2 0 0 1 5 6.5h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      <circle cx="12" cy="13.5" r="2.2" />
+      <path d="M8.6 18a3.5 3.5 0 0 1 6.8 0" />
+    </Svg>
+  );
+}
+
 export function IconCards(p: IconProps) {
   return (
     <Svg {...p}>

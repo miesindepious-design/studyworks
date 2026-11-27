@@ -6,9 +6,17 @@
  */
 
 export class APIError extends Error {
+  /**
+   * The error response's JSON body, when it was JSON.
+   *
+   * Some errors carry more than a sentence. A refused collaborative save
+   * returns the note as it is now, so the person can see what they would
+   * have overwritten. Dropping the body turned those into a bare message.
+   */
   constructor(
     public readonly status: number,
-    message: string
+    message: string,
+    public readonly body: unknown = undefined,
   ) {
     super(message);
     this.name = 'APIError';
@@ -30,9 +38,10 @@ export async function apiFetch<T = unknown>(
 
   if (!res.ok) {
     let message = res.statusText;
+    let body: unknown;
     try {
-      const body = await res.json();
-      const errVal = body?.error ?? body?.message;
+      body = await res.json();
+      const errVal = (body as any)?.error ?? (body as any)?.message;
       if (typeof errVal === 'string') {
         message = errVal;
       } else if (errVal && typeof errVal === 'object') {
@@ -46,7 +55,7 @@ export async function apiFetch<T = unknown>(
         }
       }
     } catch {}
-    throw new APIError(res.status, message);
+    throw new APIError(res.status, message, body);
   }
 
   // 204 No Content

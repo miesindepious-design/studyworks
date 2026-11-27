@@ -6,8 +6,9 @@
  * `updatedAt >= existing.updatedAt` are applied; older ones are rejected
  * and counted as conflicts.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { buildTestApp, prismaMock } from './helpers.js';
+import { collabManager } from '../lib/collabManager.js';
 
 const baseUser = { id: 'u1', email: 'a@b.com', name: 'A', tier: 'PRO' as const };
 
@@ -298,5 +299,97 @@ describe('Sync LWW — push endpoint', () => {
     expect(body.stats.contacts).toBe(0);
     expect(body.stats.conflicts).toBe(1);
     expect(prismaMock.contact.upsert).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The owner edits a shared folder through their own notes editor, which
+ * saves through sync — not through the collaboration route. The study group
+ * is connected over a socket, so they have to be told, or their copy of the
+ * folder silently goes stale until somebody reloads.
+ */
+describe('Sync — announcing changes to a study group', () => {
+  const push = (request: any, folderId: string | null) => request('/api/sync', {
+    method: 'POST',
+    body: JSON.stringify({
+      notes: [{
+        id: 'n1', title: 'Hello', content: 'world', tags: [], type: 'note', folderId,
+        createdAt: '2026-07-13T10:00:00.000Z', updatedAt: '2026-07-13T10:00:00.000Z',
+      }],
+      contacts: [], flashcards: [], folders: [], practiceQuestions: [], savedSearches: [],
+    }),
+  });
+
+  function quietMocks() {
+    prismaMock.folder.findUnique.mockResolvedValue(null);
+    prismaMock.folder.upsert.mockResolvedValue({} as any);
+    prismaMock.contact.findUnique.mockResolvedValue(null);
+    prismaMock.flashcard.findUnique.mockResolvedValue(null);
+    prismaMock.practiceQuestion.findUnique.mockResolvedValue(null);
+    prismaMock.savedSearch.findUnique.mockResolvedValue(null);
+  }
+
+  /** Put a connected member in the folder and return their socket. */
+  function someoneIn(folderId: string, userId: string) {
+    const frames: string[] = [];
+    const identity = collabManager.redeemTicket(folderId, collabManager.issueTicket(folderId, userId, userId));
+    collabManager.join(folderId, identity!, { send: (d: string) => { frames.push(d); }, readyState: 1, close: () => {} });
+    return { frames, types: () => frames.map(f => (JSON.parse(f) as any).type) };
+  }
+
+  beforeEach(() => { vi.clearAllMocks(); collabManager.reset(); quietMocks(); });
+
+  it('tells the group when the owner\u2019s sync changes a note in their folder', async () => {
+    const { request, login } = await buildTestApp();
+    prismaMock.note.findUnique.mockResolvedValue(null);
+    prismaMock.note.upsert.mockResolvedValue({} as any);
+    login(baseUser);
+    const member = someoneIn('f1', 'ada');
+
+    const res = await push(request, 'f1');
+    expect(res.status).toBe(200);
+
+    expect(member.types()).toContain('note-updated');
+    const frame = member.frames.map(f => JSON.parse(f)).find((f: any) => f.type === 'note-updated');
+    expect(frame).toMatchObject({ noteId: 'n1', by: { userId: 'u1' } });
+    // A nudge, not the content: the member fetches it through REST, where
+    // access is checked.
+    expect(frame.content).toBeUndefined();
+  });
+
+  it('says nothing for a note the sync did not change', async () => {
+    const { request, login } = await buildTestApp();
+    // The server's copy is newer, so the push is rejected as a conflict.
+    prismaMock.note.findUnique.mockResolvedValue({ updatedAt: new Date('2027-01-01T00:00:00.000Z') } as any);
+    login(baseUser);
+    const member = someoneIn('f1', 'ada');
+
+    const res = await push(request, 'f1');
+    expect((await res.json()).stats.conflicts).toBe(1);
+    expect(member.types()).not.toContain('note-updated');
+  });
+
+  it('does no work for a folder nobody is in', async () => {
+    const { request, login } = await buildTestApp();
+    prismaMock.note.findUnique.mockResolvedValue(null);
+    prismaMock.note.upsert.mockResolvedValue({} as any);
+    const broadcast = vi.spyOn(collabManager, 'broadcast').mockImplementation(() => {});
+    login(baseUser);
+
+    const res = await push(request, 'nobody-here');
+    expect(res.status).toBe(200);
+    expect(broadcast).not.toHaveBeenCalled();
+  });
+
+  it('ignores notes that are not in any folder', async () => {
+    const { request, login } = await buildTestApp();
+    prismaMock.note.findUnique.mockResolvedValue(null);
+    prismaMock.note.upsert.mockResolvedValue({} as any);
+    const broadcast = vi.spyOn(collabManager, 'broadcast').mockImplementation(() => {});
+    login(baseUser);
+
+    const res = await push(request, null);
+    expect(res.status).toBe(200);
+    expect(broadcast).not.toHaveBeenCalled();
   });
 });

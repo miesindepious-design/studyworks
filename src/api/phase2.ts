@@ -44,6 +44,16 @@ export function unfurlUrl(url: string) {
 }
 
 // ── Folder shares ─────────────────────────────────────────────────────────────
+/**
+ * What a link lets its holder do.
+ *
+ * "viewer" is the original behaviour: a read-only page anybody with the link
+ * can read. "editor" makes it a study group — the public page stays
+ * read-only, but somebody who signs in and joins through the link can write
+ * into the folder.
+ */
+export type ShareRole = 'viewer' | 'editor';
+
 export interface FolderShare {
   id: string;
   token: string;
@@ -51,6 +61,7 @@ export interface FolderShare {
   createdAt: string;
   expiresAt: string | null;
   revoked: boolean;
+  role: ShareRole;
 }
 
 export interface PublicShare {
@@ -60,10 +71,12 @@ export interface PublicShare {
     id: string; title: string; content: string;
     tags: string[]; type: string; createdAt: string; updatedAt: string;
   }>;
+  /** Tells the public page whether to offer "sign in to edit". */
+  role: ShareRole;
 }
 
-export function createShare(folderId: string, expiresInDays?: number) {
-  return apiPost<FolderShare>('/api/shares', { folderId, expiresInDays });
+export function createShare(folderId: string, expiresInDays?: number, role: ShareRole = 'viewer') {
+  return apiPost<FolderShare>('/api/shares', { folderId, expiresInDays, role });
 }
 
 export function listShares() {

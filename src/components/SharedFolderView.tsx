@@ -1,8 +1,13 @@
 /**
- * SharedFolderView — public, read-only view of a shared folder.
+ * SharedFolderView — public view of a shared folder.
  *
  * Rendered standalone (no auth, no app shell) when the URL is
  * /shared/:token. Fetches the public share payload and lists the notes.
+ *
+ * The page itself is always read-only, whatever the link's role. A link can
+ * be an "editor" link, which means the folder is a study group — so the page
+ * offers "edit together", which sends the reader to the signed-in app. The
+ * write permission is decided there, after they have signed in, not here.
  */
 import { useEffect, useState } from 'react';
 import { getPublicShare, type PublicShare } from '../api/phase2';
@@ -38,14 +43,33 @@ export default function SharedFolderView({ token }: { token: string }) {
 
   return (
     <div style={{ minHeight: '100vh', background: '#0f1117', color: '#e7e9ee' }}>
-      <header style={{ borderBottom: '1px solid #23262f', padding: '1.25rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <header style={{ borderBottom: '1px solid #23262f', padding: '1.25rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
         <div>
-          <div style={{ fontSize: '0.75rem', color: '#7c8299', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Shared folder · read-only</div>
+          <div style={{ fontSize: '0.75rem', color: '#7c8299', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Shared folder · {data.role === 'editor' ? 'study group' : 'read-only'}
+          </div>
           <h1 style={{ fontSize: '1.5rem', fontWeight: 700 }}>📁 {data.folderName}</h1>
           <p style={{ color: '#7c8299', fontSize: '0.875rem' }}>{data.noteCount} note{data.noteCount === 1 ? '' : 's'}</p>
         </div>
-        <a href="/" style={linkBtn}>StudyWorks</a>
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          {data.role === 'editor' && (
+            <a href={`/?collab=${encodeURIComponent(token)}`} style={editBtn}>
+              ✍️ Edit together
+            </a>
+          )}
+          <a href="/" style={linkBtn}>StudyWorks</a>
+        </div>
       </header>
+
+      {data.role === 'editor' && (
+        <div style={{ maxWidth: 800, margin: '1.25rem auto 0', padding: '0 1.5rem' }}>
+          <p style={{ background: '#171a21', border: '1px solid #23262f', borderRadius: 12, padding: '0.875rem 1.125rem', fontSize: '0.875rem', color: '#a9b1c6', lineHeight: 1.6 }}>
+            This folder is a <strong style={{ color: '#e7e9ee' }}>study group</strong>. Sign in to
+            write in it with the others — you will see who is there, and nobody can overwrite
+            your work without asking.
+          </p>
+        </div>
+      )}
 
       <main style={{ maxWidth: 800, margin: '0 auto', padding: '1.5rem' }}>
         {data.notes.length === 0 ? (
@@ -74,3 +98,7 @@ const wrap: React.CSSProperties = { minHeight: '100vh', display: 'flex', alignIt
 const card: React.CSSProperties = { background: '#171a21', border: '1px solid #23262f', borderRadius: 12, padding: '1rem 1.25rem', marginBottom: '0.75rem' };
 const tag: React.CSSProperties = { background: '#23262f', color: '#a9b1c6', fontSize: '0.75rem', padding: '0.1rem 0.5rem', borderRadius: 6 };
 const linkBtn: React.CSSProperties = { display: 'inline-block', marginTop: '1rem', color: '#6ea8fe', textDecoration: 'none', fontWeight: 600 };
+const editBtn: React.CSSProperties = {
+  display: 'inline-block', background: '#6ea8fe', color: '#0f1117', textDecoration: 'none',
+  fontWeight: 700, padding: '0.55rem 1rem', borderRadius: 8, fontSize: '0.875rem',
+};

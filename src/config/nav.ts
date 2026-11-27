@@ -9,14 +9,15 @@ import type { ComponentType } from 'react';
 import {
   IconDashboard, IconNotes, IconPeople, IconCards, IconTimer,
   IconTutor, IconStudyRoom, IconQuiz, IconLobby, IconPricing, IconSettings,
-  IconTrophy, IconDuel, IconTarget, IconGrades, IconCitations, IconNotes as IconRecall,
+  IconTrophy, IconDuel, IconTarget, IconGrades, IconCitations, IconCollab,
+  IconNotes as IconRecall,
   type IconProps,
 } from '../components/icons';
 
 export type View =
   | 'dashboard' | 'notes' | 'contacts' | 'flashcards' | 'pricing' | 'settings'
   | 'multiplayer' | 'studyRoom' | 'tutor' | 'timer' | 'admin' | 'lobby'
-  | 'leaderboard' | 'duel' | 'plan' | 'recall' | 'grades' | 'citations';
+  | 'leaderboard' | 'duel' | 'plan' | 'recall' | 'grades' | 'citations' | 'collab';
 
 export interface NavItem {
   view: View;
@@ -40,6 +41,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { view: 'dashboard',   label: 'Dashboard',   icon: IconDashboard },
       { view: 'plan',        label: 'Study Plan',  icon: IconTarget },
       { view: 'notes',       label: 'Notes',       icon: IconNotes },
+      { view: 'collab',      label: 'Study Group', icon: IconCollab },
       { view: 'contacts',    label: 'People',      icon: IconPeople },
       { view: 'flashcards',  label: 'Flashcards',  icon: IconCards },
       { view: 'recall',      label: 'Recall Notes', icon: IconRecall },
@@ -75,6 +77,7 @@ export const PAGE_TITLES: Record<View, string> = {
   dashboard:   'Dashboard',
   plan:        'Study Plan',
   notes:       'Notes & Knowledge Base',
+  collab:      'Study Group',
   contacts:    'People & Reminders',
   flashcards:  'Flashcards',
   recall:      'Recall Notes',

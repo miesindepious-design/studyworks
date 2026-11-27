@@ -80,6 +80,7 @@ model User {
   examPlans  ExamPlan[]
   assignments Assignment[]
   citations   Citation[]
+  shareMemberships ShareMember[]
 
   // Phase 5: matches (live results + asynchronous duels)
   matchesAsChallenger GameMatch[] @relation("MatchChallenger")
@@ -173,6 +174,17 @@ model Note {
   nextReview   DateTime?
   reviewHistory Json?
   leechCount   Int      @default(0)
+
+  // Collaborative editing. A save is only allowed through if the note is
+  // still exactly as the editor loaded it, and that check is made inside the
+  // write itself. Two fields are compared, because either alone has a hole:
+  //   - `updatedAt` is moved by every write path, including the owner's own
+  //     sync, which never touches the counter below.
+  //   - `collabRevision` is incremented by every collaborative save, so two
+  //     saves inside the same millisecond cannot both match it.
+  collabRevision Int     @default(0)
+  // Who last changed the note, so the group can see whose edit is whose.
+  lastEditedBy   String?
 
   user      User      @relation(fields: [userId],  references: [id], onDelete: Cascade)
   folder    Folder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
@@ -372,9 +384,34 @@ model FolderShare {
   createdAt DateTime  @default(now())
   expiresAt DateTime? // null = never expires
   revoked   Boolean   @default(false)
+  // What somebody who joins through this link may do. "viewer" is the old
+  // read-only behaviour; "editor" turns the link into a study group.
+  role      String    @default("viewer")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  members ShareMember[]
+
   @@index([folderId])
+  @@index([userId])
+}
+
+// Somebody who joined a study group through a share link.
+model ShareMember {
+  id       String   @id @default(cuid())
+  shareId  String
+  userId   String
+  // "viewer" or "editor". The owner's own access is never stored here — the
+  // owner is always an editor by definition.
+  role     String   @default("viewer")
+  joinedAt DateTime @default(now())
+  // When this person was last seen in the folder, so the group list can show
+  // who is actually around.
+  lastSeenAt DateTime @default(now())
+
+  share FolderShare @relation(fields: [shareId], references: [id], onDelete: Cascade)
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([shareId, userId])
   @@index([userId])
 }
 
