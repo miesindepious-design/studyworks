@@ -1,11 +1,11 @@
 {
   "version": "0.2.0",
   "notes": "Initial release.",
-  "pub_date": "2026-11-27T21:31:33.080Z",
+  "pub_date": "2026-11-27T22:24:44.668Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "F0sAHRHV7O2YMWJ3YDrVx5n3WDmVKeZ0gopZWWR7pMfHfZgvMTXd8v6Jwww61fcSMNTD/Pb5EGuArRqvXh41Bw==",
-      "url": "https://github.com/miesindepious-design/studyworks/releases/download/v0.2.0/StudyWorks_0.2.0_x64-setup.zip"
+      "signature": "Lmjd1+KW67FdR/OrA+i79s1n6jNMOTA9X90fFAhy9CNQgo9ITvcIop/cMHN57Rd0hTUZPzLzAocaQfXwuvGoCw==",
+      "url": "https://github.com/miesindepious-design/studyworks/releases/download/v0.2.0/StudyWorks_0.2.0_x64-setup.exe"
     }
   }
 }

@@ -23,7 +23,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self' tauri: https://studyworks-seven.vercel.app; connect-src 'self' tauri: https://studyworks-seven.vercel.app wss://studyworks-seven.vercel.app https://*.vercel.app; img-src 'self' tauri: data: blob: https:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; media-src 'self' blob:; worker-src 'self' blob:"
     }
   },
   "plugins": {
