@@ -5,6 +5,7 @@
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { prisma } from './prisma.js';
+import { TRUSTED_ORIGINS } from './origins.js';
 import { Resend } from 'resend';
 
 // Lazy Resend client — only created when an email is actually sent.
@@ -40,19 +41,11 @@ export const auth = betterAuth({
       httpOnly: true,
     },
   },
-  trustedOrigins: [
-    process.env.FRONTEND_URL || 'http://localhost:5173',
-    'https://studyworksfirst-git-master-miesindepious-designs-projects.vercel.app',
-    'https://studyworks.vercel.app',
-    'https://studyworks-miesindepious-designs-projects.vercel.app',
-    'https://studyworks-eight.vercel.app',
-    'https://studyworks-seven.vercel.app',
-    'http://localhost:5173',
-    'http://localhost:3000',
-    // Tauri desktop app origins
-    'tauri://localhost',
-    'https://tauri.localhost',
-  ],
+  // The same list the CORS middleware uses — see lib/origins.ts. Better Auth
+  // rejects any request whose Origin is not trusted with 403 INVALID_ORIGIN,
+  // so the Windows desktop origin (http://tauri.localhost) has to be here as
+  // well, not just in the CORS allowlist.
+  trustedOrigins: TRUSTED_ORIGINS,
 
   emailAndPassword: {
     enabled: true,

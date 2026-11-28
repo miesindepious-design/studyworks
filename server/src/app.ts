@@ -3,6 +3,8 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { secureHeaders } from 'hono/secure-headers';
 
+import { TRUSTED_ORIGINS } from './lib/origins.js';
+
 import { authRouter } from './routes/auth.js';
 import { notesRouter } from './routes/notes.js';
 import { contactsRouter } from './routes/contacts.js';
@@ -32,32 +34,16 @@ import { citationsRouter } from './routes/citations.js';
 import { collabRouter } from './routes/collab.js';
 import { digestRouter } from './routes/digest.js';
 
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
-
 export const app = new Hono();
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use('*', logger());
 app.use('*', secureHeaders());
 app.use('*', cors({
-  origin:      [
-    FRONTEND_URL,
-    'https://studyworksfirst-git-master-miesindepious-designs-projects.vercel.app',
-    'https://studyworks.vercel.app',
-    'https://studyworks-miesindepious-designs-projects.vercel.app',
-    'https://studyworks-eight.vercel.app',
-    'https://studyworks-seven.vercel.app',
-    // Tauri desktop app — the webview origin in production builds.
-    // macOS and Linux use tauri://localhost; Windows (WebView2) uses
-    // http://tauri.localhost, or https:// when the app turns on
-    // `app.security.useHttpsScheme`. Missing the Windows origin made every
-    // API call from the desktop build fail with "Failed to fetch".
-    'tauri://localhost',
-    'http://tauri.localhost',
-    'https://tauri.localhost',
-    // Tauri desktop app in dev mode
-    'http://localhost:5173',
-  ],
+  // One list, shared with Better Auth's trustedOrigins — see lib/origins.ts.
+  // When the two lists drifted, the desktop app's sign-in broke in two
+  // different ways depending on which gate rejected it first.
+  origin:      TRUSTED_ORIGINS,
   credentials: true,
   allowHeaders:  ['Content-Type', 'Authorization'],
   allowMethods:  ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
