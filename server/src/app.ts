@@ -47,8 +47,14 @@ app.use('*', cors({
     'https://studyworks-miesindepious-designs-projects.vercel.app',
     'https://studyworks-eight.vercel.app',
     'https://studyworks-seven.vercel.app',
-    // Tauri desktop app — the webview origin in production builds
+    // Tauri desktop app — the webview origin in production builds.
+    // macOS and Linux use tauri://localhost; Windows (WebView2) uses
+    // http://tauri.localhost, or https:// when the app turns on
+    // `app.security.useHttpsScheme`. Missing the Windows origin made every
+    // API call from the desktop build fail with "Failed to fetch".
     'tauri://localhost',
+    'http://tauri.localhost',
+    'https://tauri.localhost',
     // Tauri desktop app in dev mode
     'http://localhost:5173',
   ],

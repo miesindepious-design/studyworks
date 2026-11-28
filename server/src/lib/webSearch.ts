@@ -204,7 +204,7 @@ export async function webSearch(
   maxResults = 5,
 ): Promise<SearchOutput> {
   const trimmed = query.trim();
-  if (!trimmed) return { query: trimmed, results: [] };
+  if (!trimmed) return { query: trimmed, results: [], cached: false };
 
   // 1. Cache hit — free and instant.
   const cached = cacheGet(trimmed);
