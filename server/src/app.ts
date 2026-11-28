@@ -102,13 +102,13 @@ app.route('/api/admin', adminRouter);
 // The updater in tauri.conf.json points here.
 app.get('/api/releases/latest', c => {
   return c.json({
-    version: '0.2.0',
-    notes: 'Fixed Google sign-in, multiplayer sockets, share URLs and notifications in the desktop app.',
-    pub_date: '2026-11-27T23:20:13.000Z',
+    version: '0.2.1',
+    notes: 'Desktop sign-in fixes: the Windows desktop origin is now trusted by the API, Google sign-in opens in the system browser, and the updater has a working signing key so future versions install automatically.',
+    pub_date: '2026-11-28T17:31:44.000Z',
     platforms: {
       'windows-x86_64': {
-        signature: 'F0sAHRHV7O2YMWJ3YDrVx5n3WDmVKeZ0gopZWWR7pMfHfZgvMTXd8v6Jwww61fcSMNTD/Pb5EGuArRqvXh41Bw==',
-        url: 'https://github.com/miesindepious-design/studyworks/releases/download/v0.2.0/StudyWorks_0.2.0_x64-setup.zip',
+        signature: 'dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRdTU5SG1nUTkrLzh6QWY2YlRpQjRNMGdjdG9HN1VXZUtQeGtrLzdvQUpiT25DWnkzUGMrd0tkVjJHaHBYQVBxemdWNFFLYld1MGNxU3F6SzFuV0JZQ0VDWHljU2JwNEFZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1ODcwNDk4CWZpbGU6U3R1ZHlXb3Jrc18wLjIuMV94NjQtc2V0dXAuZXhlCXZlcnNpb246MC4yLjEKR0xPS0F5SzlpMC9FTkZTSjE0d01LeUZGK1NvWEc2VmxMbVhLWmpZZnVPTmRENm43dHBUdzVsN0tkMC9pSUxLcERsdEhEWEtrNGRYeVhvc1RxbzJQRFE9PQo=',
+        url: 'https://github.com/miesindepious-design/studyworks/releases/download/v0.2.1/StudyWorks_0.2.1_x64-setup.exe',
       },
     },
   });
